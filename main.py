@@ -846,7 +846,7 @@ def main_page():
             chart_area.clear()
             stats_area.clear()
             calc_panel.clear()
-            # Chat panels are recreated each time, so we don't clear them here
+            # Chat panels will be recreated inside this function, so we don't clear them here
 
             nonlocal stage_stats_holder, current_meta_data
 
@@ -948,10 +948,10 @@ REQUIRED REPORT STRUCTURE:
                     )
                     ui.plotly(fig).classes('w-full mt-2')
 
-                # ---- Detailed Calculations Panel ----
+                # ---- Detailed Calculations Panel (FIXED: use value=True) ----
                 calc_panel.clear()
                 with calc_panel:
-                    with ui.expansion('📊 View Detailed Calculations (full math breakdown)', icon='calculate').classes('w-full bg-[#0d1a35] rounded-lg mt-4').expand():
+                    with ui.expansion('📊 View Detailed Calculations (full math breakdown)', icon='calculate', value=True).classes('w-full bg-[#0d1a35] rounded-lg mt-4'):
                         md = build_detailed_calculations_md(stage_stats)
                         ui.markdown(md).classes('markdown-body')
 
@@ -1201,8 +1201,7 @@ REQUIRED REPORT STRUCTURE:
                         ui.button('📊 Download Calculations PDF', on_click=download_calc_pdf).classes('primary-btn')
                         ui.button('📊 Download Calculations Word', on_click=download_calc_word).classes('primary-btn')
 
-                # ---- Chatbots ----
-                # We'll create a fresh row for chat toggles and panels each time
+                # ---- Chatbots (recreated each run) ----
                 chat_toggle_row = ui.row().classes('w-full gap-4 mt-4')
                 with chat_toggle_row:
                     chat_result_visible = {'show': False}
