@@ -8,17 +8,19 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import qrcode
+from docxtpl import DocxTemplate
+from docx import Document
 
 # Dotenv & FastAPI / NiceGUI
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from nicegui import app, ui, run
 
-# Google GenAI SDK (using google-genai package)
+# Google GenAI SDK
 from google import genai
 from google.genai import types
 
-# ReportLab for Professional PDF Generation
+# ReportLab for PDF Generation
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -42,9 +44,9 @@ PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 32
 USABLE_WIDTH = PAGE_WIDTH - (2 * MARGIN)
 
-# =====================================================================================
-# STYLING - identical to the original app
-# =====================================================================================
+# =====================================================================
+# STYLING (identical to original, no changes)
+# =====================================================================
 app.native.window_args = {"resizable": True}
 
 ui.add_head_html('''
@@ -63,7 +65,6 @@ ui.add_head_html('''
         overflow-x: hidden;
     }
 
-    /* Sidebar - solid dark navy */
     .sidebar-container {
         background: #0b1a3a !important;
         border-right: 2px solid rgba(255, 140, 0, 0.4) !important;
@@ -83,7 +84,6 @@ ui.add_head_html('''
         background-color: rgba(13, 26, 53, 0.8) !important;
     }
 
-    /* Output no containers */
     .output-card {
         background: transparent !important;
         border: none !important;
@@ -94,7 +94,6 @@ ui.add_head_html('''
         box-sizing: border-box;
     }
 
-    /* Input cards - subtle glass */
     .input-card {
         background: rgba(13, 26, 53, 0.6);
         backdrop-filter: blur(8px);
@@ -108,7 +107,6 @@ ui.add_head_html('''
         box-sizing: border-box;
     }
 
-    /* Buttons */
     .primary-btn, .q-btn {
         background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
         color: #FFFFFF !important;
@@ -132,7 +130,6 @@ ui.add_head_html('''
         transform: translateY(0px) !important;
     }
 
-    /* Upload */
     .q-uploader {
         background: rgba(13, 26, 53, 0.6) !important;
         backdrop-filter: blur(8px) !important;
@@ -154,7 +151,6 @@ ui.add_head_html('''
         border-radius: 10px !important;
     }
 
-    /* Inputs */
     input, select, textarea, .q-field__control {
         background-color: rgba(13, 26, 53, 0.7) !important;
         color: #FFFFFF !important;
@@ -168,7 +164,6 @@ ui.add_head_html('''
         color: #FF8C00 !important;
     }
 
-    /* Dropdown */
     .q-menu, .q-popover, .q-virtual-scroll__content {
         background: rgba(13, 26, 53, 0.95) !important;
         backdrop-filter: blur(8px) !important;
@@ -343,9 +338,9 @@ ui.add_head_html('''
 </style>
 ''', shared=True)
 
-# =====================================================================================
-# TEXT SANITIZATION (identical to original)
-# =====================================================================================
+# =====================================================================
+# HELPER FUNCTIONS (sanitization, PDF, QR, etc.) – identical to original
+# =====================================================================
 _LATEX_SIMPLE = {
     r'\times': ' x ', r'\cdot': ' . ', r'\div': ' / ',
     r'\geq': ' >= ', r'\ge': ' >= ', r'\leq': ' <= ', r'\le': ' <= ',
@@ -358,39 +353,27 @@ _LATEX_SIMPLE = {
     r'\max': 'Max', r'\min': 'Min', r'\sum': 'Sum', r'\bar': '',
 }
 
-
 def sanitize_ai_markdown(text: str) -> str:
     if not text:
         return ""
     text = str(text)
-
     for macro, repl in _LATEX_SIMPLE.items():
         text = text.replace(macro, repl)
-
     for _ in range(2):
         text = re.sub(r'\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}', r'(\1 / \2)', text)
         text = re.sub(r'\\sqrt\s*\{([^{}]*)\}', r'sqrt(\1)', text)
-
     text = re.sub(r'_\{([^{}]*)\}', r'_\1', text)
     text = re.sub(r'\^\{([^{}]*)\}', r'^\1', text)
-
     text = re.sub(r'\\([a-zA-Z]+)', r'\1', text)
-
     text = text.replace('$$', '').replace('$', '')
     text = re.sub(r'(?<!\w)\{([^{}]{0,40})\}(?!\w)', r'\1', text)
-
     text = re.sub(r'\*{3,}', '**', text)
-
     text = re.sub(r'([^\n])\n(#{1,6}\s)', r'\1\n\n\2', text)
     text = re.sub(r'([^\n|])\n(\|)', r'\1\n\n\2', text)
-
     text = re.sub(r'(?<![\w#*`|])[&$%^~?/\\]{2,}(?![\w#*`|])', '', text)
-
     text = re.sub(r'[ \t]+\n', '\n', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
-
     return text.strip()
-
 
 def inline_md_to_reportlab(text: str) -> str:
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -398,7 +381,6 @@ def inline_md_to_reportlab(text: str) -> str:
     text = re.sub(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', r'<i>\1</i>', text)
     text = re.sub(r'`([^`]+)`', r'<font face="Courier">\1</font>', text)
     return text
-
 
 def build_pdf_styles():
     base = getSampleStyleSheet()
@@ -422,7 +404,6 @@ def build_pdf_styles():
                                      textColor=colors.white, fontName='Helvetica-Bold'),
     }
 
-
 def markdown_to_pdf_flowables(raw_text: str, styles: dict, avail_width: float = USABLE_WIDTH):
     text = sanitize_ai_markdown(raw_text)
     lines = text.split('\n')
@@ -440,12 +421,10 @@ def markdown_to_pdf_flowables(raw_text: str, styles: dict, avail_width: float = 
     while i < n:
         raw_line = lines[i]
         stripped = raw_line.strip()
-
         if not stripped:
             flush_para()
             i += 1
             continue
-
         h_match = re.match(r'^(#{1,6})\s+(.*)', stripped)
         if h_match:
             flush_para()
@@ -455,7 +434,6 @@ def markdown_to_pdf_flowables(raw_text: str, styles: dict, avail_width: float = 
             flowables.append(Paragraph(inline_md_to_reportlab(content), styles[key]))
             i += 1
             continue
-
         if stripped.startswith('|'):
             flush_para()
             table_lines = []
@@ -490,7 +468,6 @@ def markdown_to_pdf_flowables(raw_text: str, styles: dict, avail_width: float = 
                 flowables.append(t)
                 flowables.append(Spacer(1, 6))
             continue
-
         b_match = re.match(r'^[-*•]\s+(.*)', stripped)
         n_match = re.match(r'^(\d+)[.)]\s+(.*)', stripped)
         if b_match or n_match:
@@ -509,17 +486,11 @@ def markdown_to_pdf_flowables(raw_text: str, styles: dict, avail_width: float = 
                     break
             flowables.append(Spacer(1, 4))
             continue
-
         para_buffer.append(stripped)
         i += 1
-
     flush_para()
     return flowables
 
-
-# =====================================================================================
-# PDF / QR HELPERS (identical)
-# =====================================================================================
 def generate_qr_code(data_str):
     qr = qrcode.QRCode(version=1, box_size=5, border=1)
     qr.add_data(data_str)
@@ -530,7 +501,6 @@ def generate_qr_code(data_str):
     buf.seek(0)
     return buf
 
-
 def build_pdf_header(story, styles, doc_title, subtitle, logo_bytes, engineer, project, location, rep_date, ticket_id, unique_hash):
     title_style = ParagraphStyle("DocTitle", fontSize=14, textColor=colors.HexColor("#1B2A4A"),
                                   spaceAfter=3, fontName="Helvetica-Bold", leading=17)
@@ -538,13 +508,11 @@ def build_pdf_header(story, styles, doc_title, subtitle, logo_bytes, engineer, p
                                 spaceAfter=6, fontName="Helvetica-Bold")
     meta_style = ParagraphStyle("MetaStyle", fontSize=8, textColor=colors.HexColor("#334155"),
                                  leading=11.5, fontName="Helvetica")
-
     meta_html = f"""
     <b>Project:</b> {project} &nbsp;|&nbsp; <b>Location:</b> {location}<br/>
     <b>Engineer in Charge:</b> {engineer} &nbsp;|&nbsp; <b>Date:</b> {rep_date}<br/>
     <b>Batch Ticket ID:</b> {ticket_id} &nbsp;|&nbsp; <b>Verification UID:</b> <font color="#CC0000"><b>{unique_hash}</b></font>
     """
-
     right_cell = ReportLabImage(io.BytesIO(logo_bytes), width=70, height=32) if logo_bytes else ""
     try:
         header_table_data = [
@@ -563,25 +531,20 @@ def build_pdf_header(story, styles, doc_title, subtitle, logo_bytes, engineer, p
         story.append(Paragraph(doc_title, title_style))
         story.append(Paragraph(subtitle, sub_style))
         story.append(Paragraph(meta_html, meta_style))
-
     story.append(Spacer(1, 5))
     story.append(HRFlowable(width="100%", thickness=1.3, color=colors.HexColor("#FF8C00"), spaceAfter=8))
-
 
 def build_pdf_footer_and_signatures(story, styles, qr_img_buffer):
     body_style = ParagraphStyle("SigBody", fontSize=8, textColor=colors.HexColor("#334155"), leading=11)
     sec_style = ParagraphStyle("SecTitle", fontSize=9.5, textColor=colors.HexColor("#1B2A4A"),
                                 spaceBefore=8, spaceAfter=4, fontName="Helvetica-Bold")
-
     story.append(Spacer(1, 6))
     story.append(Paragraph("Engineering Approvals &amp; Compliance Sign-Off", sec_style))
-
     qr_lab_img = ReportLabImage(qr_img_buffer, width=38, height=38)
     sign_cell_1 = Paragraph("<b>Prepared By</b><br/>QA/QC Engineer<br/><br/>_________________", body_style)
     sign_cell_2 = Paragraph("<b>Technical Director</b><br/>Chief Engineer<br/><br/>_________________", body_style)
     sign_cell_3 = Paragraph("<b>Client / Consultant</b><br/>Official Stamp<br/><br/>_________________", body_style)
     qr_cell = [Paragraph("<b>QR Verify</b>", body_style), qr_lab_img]
-
     w = USABLE_WIDTH
     t_sign = Table([[sign_cell_1, sign_cell_2, sign_cell_3, qr_cell]],
                     colWidths=[w * 0.28, w * 0.28, w * 0.28, w * 0.16])
@@ -595,7 +558,6 @@ def build_pdf_footer_and_signatures(story, styles, qr_img_buffer):
     ]))
     story.append(t_sign)
 
-
 def build_report_pdf(doc_title, subtitle, body_markdown, meta, logo_bytes, extra_flowables_before_body=None):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=MARGIN, leftMargin=MARGIN,
@@ -604,26 +566,21 @@ def build_report_pdf(doc_title, subtitle, body_markdown, meta, logo_bytes, extra
     story = []
     unique_uid = meta['uid']
     qr_buf = generate_qr_code(f"UID: {unique_uid} | {doc_title} - {meta['project']}")
-
     build_pdf_header(story, styles, doc_title, subtitle, logo_bytes, meta['engineer'],
                       meta['project'], meta['location'], meta['date'], meta['ticket'], unique_uid)
-
     if extra_flowables_before_body:
         story.extend(extra_flowables_before_body)
         story.append(Spacer(1, 6))
-
     story.extend(markdown_to_pdf_flowables(body_markdown, styles))
     story.append(Spacer(1, 8))
     build_pdf_footer_and_signatures(story, styles, qr_buf)
-
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
 
-
-# =====================================================================================
+# =====================================================================
 # CODE-COMPLIANCE DIRECTIVE
-# =====================================================================================
+# =====================================================================
 CODE_BASIS_OPTIONS = [
     "Egyptian Codes: ECP 203 / ECP 202 / ECP 104 (Default Core Basis)",
     "ACI 318-25 — Structural Concrete (Primary)",
@@ -631,7 +588,6 @@ CODE_BASIS_OPTIONS = [
     "AASHTO LRFD Bridge & Pavement Design (Primary)",
     "IBC — International Building Code (Primary)",
 ]
-
 
 def get_code_directive(basis: str) -> str:
     if not basis or basis.startswith("Egyptian Codes"):
@@ -648,7 +604,6 @@ def get_code_directive(basis: str) -> str:
         "Mention the equivalent Egyptian Code (ECP 203 / 202 / 104) clause only as a secondary cross-reference."
     )
 
-
 NO_LATEX_RULE = (
     "OUTPUT FORMAT (MANDATORY): Write in clean GitHub-flavoured Markdown only. "
     "Never use LaTeX, dollar-sign math delimiters ($ or $$), backslash commands (\\frac, \\times, \\ge ...), "
@@ -657,7 +612,6 @@ NO_LATEX_RULE = (
     "for any tabular data — never hand-draw tables with dashes or asterisks. Use ## / ### for section headings, "
     "never #### or deeper. Use single asterisks pairs (**bold**) and never stack more than two."
 )
-
 
 async def call_gemini(contents, system_instruction=None, temperature=0.1, timeout=60):
     cfg_kwargs = {"temperature": temperature}
@@ -678,15 +632,14 @@ async def call_gemini(contents, system_instruction=None, temperature=0.1, timeou
     except asyncio.TimeoutError:
         raise Exception("AI request timed out. Please try with a smaller file or simplify your query.")
 
-
-# =====================================================================================
-# MAIN PAGE - ONLY CONCRETE CUBE VERIFIER
-# =====================================================================================
+# =====================================================================
+# MAIN PAGE – with all new features
+# =====================================================================
 @ui.page('/')
 def main_page():
     ui.query('body').style('width: 100vw; height: 100vh; overflow-x: hidden;')
 
-    # ---------------- SIDEBAR ----------------
+    # ---- SIDEBAR (unchanged) ----
     sidebar = ui.left_drawer().classes('sidebar-container').style('width: 380px;')
     with sidebar:
         with ui.row().classes('w-full items-center justify-between mb-4 p-2'):
@@ -746,7 +699,7 @@ def main_page():
             'ticket': ticket_input.value,
         }
 
-    # ---------------- MAIN COLUMN ----------------
+    # ---- MAIN CONTENT ----
     with ui.column().classes('w-full min-h-screen p-4 bg-[#031338]'):
         # Title block
         with ui.column().classes('w-full bg-[#0d1a35] px-6 py-4 rounded-xl border border-[#FF8C00] shadow-lg mb-4'):
@@ -768,9 +721,7 @@ def main_page():
         </div>
         ''')
 
-        # =====================================================================
-        # CONCRETE CUBE VERIFIER (only tab)
-        # =====================================================================
+        # ---- CUBE INPUT SECTION ----
         ui.label('Concrete Cube Calculation Sheet & Statistical Verifier').classes('text-2xl font-bold text-white mb-4')
 
         with ui.row().classes('w-full gap-4 mb-4'):
@@ -784,8 +735,12 @@ def main_page():
                 ui.label('28-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
                 c28_input = ui.input(value='32.5, 34.0, 31.0, 35.5, 29.0, 33.0').classes('w-full')
 
+        # ---- Results placeholders ----
         ai_cube_result_holder = {'text': ''}
+        stage_stats_holder = []  # will store (label, values, stats_dict)
+        current_meta_data = {}
 
+        # ---- Helper functions ----
         def parse_vals(txt):
             try:
                 return [float(x.strip()) for x in txt.split(',') if x.strip() != '']
@@ -816,11 +771,48 @@ def main_page():
                 return [all_stages[i] for i in idxs]
             return all_stages
 
+        # ---- Template upload handling ----
+        template_bytes_holder = {'bytes': None, 'name': None}
+        template_status = ui.label('Template: Not uploaded').classes('text-xs text-amber-400 mb-1')
+
+        async def handle_template_upload(e):
+            try:
+                template_bytes_holder['bytes'] = await e.file.read()
+                template_bytes_holder['name'] = e.file.name
+                template_status.set_text(f'Template: {e.file.name}')
+                template_status.classes(replace='text-xs text-emerald-400 mb-1')
+                ui.notify('Template uploaded successfully!', type='positive')
+            except Exception as ex:
+                ui.notify(f'Error: {str(ex)}', type='negative')
+
+        # ---- Placeholder mapping for DOCX template ----
+        def fill_template(template_bytes, data_dict):
+            # Save template to temporary file
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
+                tmp.write(template_bytes)
+                tmp_path = tmp.name
+            # Fill using docxtpl
+            doc = DocxTemplate(tmp_path)
+            doc.render(data_dict)
+            out_bytes = io.BytesIO()
+            doc.save(out_bytes)
+            out_bytes.seek(0)
+            os.unlink(tmp_path)
+            return out_bytes.getvalue()
+
+        # ---- Run verification (main AI call) ----
         async def run_verification():
+            # Clear outputs
             result_output_area.clear()
             export_buttons_area.clear()
             chart_area.clear()
             stats_area.clear()
+            calc_panel.clear()
+            chat_output_container.clear()
+            chat_code_container.clear()
+
+            nonlocal stage_stats_holder, current_meta_data
 
             if not client:
                 ui.notify('GEMINI_API_KEY missing in .env!', type='negative')
@@ -840,7 +832,12 @@ def main_page():
                 for label, _inp, values in stages:
                     s = compute_stats(values)
                     stage_stats.append((label, values, s))
+                stage_stats_holder = stage_stats
 
+                meta = current_meta('ECP-AI')
+                current_meta_data = meta
+
+                # Stats chips
                 stats_area.clear()
                 with stats_area:
                     with ui.row().classes('w-full gap-4 flex-wrap mb-2'):
@@ -896,6 +893,7 @@ REQUIRED REPORT STRUCTURE:
                         ui.label('AI Statistical Evaluation & Compliance Verdict').classes('text-xl font-bold text-white mb-2')
                         ui.markdown(res_text).classes('markdown-body')
 
+                # Chart
                 with chart_area:
                     labels = [label for label, _v, _s in stage_stats] + ['Target Grade']
                     means = [(s['mean'] if s else 0) for _l, _v, s in stage_stats] + [target_fcu]
@@ -914,59 +912,387 @@ REQUIRED REPORT STRUCTURE:
                     )
                     ui.plotly(fig).classes('w-full mt-2')
 
+                # ---- EXPORT BUTTONS ----
                 with export_buttons_area:
-                    def download_pdf_report():
+                    # Normal PDF (as before)
+                    def download_normal_pdf():
                         try:
                             meta = current_meta('ECP-AI')
-                            styles = build_pdf_styles()
-                            stat_rows = [["Stage", "n", "Mean (N/mm2)", "Std Dev", "Min", "Max", "COV %"]]
-                            for label, values, s in stage_stats:
-                                if s:
-                                    stat_rows.append([label, str(s['n']), f"{s['mean']:.2f}", f"{s['std']:.2f}",
-                                                       f"{s['min']:.1f}", f"{s['max']:.1f}", f"{s['cov']:.1f}"])
-                            colw = USABLE_WIDTH / len(stat_rows[0])
-                            stat_table_data = [[Paragraph(c, styles['tablehead'] if r == 0 else styles['tablecell'])
-                                                 for c in row] for r, row in enumerate(stat_rows)]
-                            stat_table = Table(stat_table_data, colWidths=[colw] * len(stat_rows[0]))
-                            stat_table.setStyle(TableStyle([
-                                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B2A4A')),
-                                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#94A3B8')),
-                                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F1F5F9')]),
-                                ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                            ]))
                             pdf_bytes = build_report_pdf(
                                 "AI CONCRETE CUBE CALCULATION & VERIFICATION REPORT",
                                 f"Governing Standard: {basis} | Filter: {stage_filter}",
                                 ai_cube_result_holder['text'], meta, logo_bytes_holder['bytes'],
                                 extra_flowables_before_body=[
-                                    Paragraph("Deterministic Statistics", styles['h2']), stat_table,
+                                    Paragraph("Deterministic Statistics", build_pdf_styles()['h2']),
+                                    build_stats_table(stage_stats, USABLE_WIDTH),
                                 ],
                             )
-                            ui.download(pdf_bytes, filename=f"AI_Concrete_Calculation_Sheet_{ticket_input.value}.pdf")
-                            ui.notify('Calculation Sheet PDF downloaded!', type='positive')
+                            ui.download(pdf_bytes, filename=f"AI_Concrete_Report_{ticket_input.value}.pdf")
+                            ui.notify('PDF downloaded!', type='positive')
                         except Exception as ex:
-                            ui.notify(f'PDF Generation Error: {str(ex)}', type='negative')
+                            ui.notify(f'PDF Error: {str(ex)}', type='negative')
 
-                    def download_csv_export():
-                        rows = {"Field": [], "Value": []}
-                        rows["Field"] += ["Project Name", "Location", "Specified f_cu", "Code Basis", "Stage Filter", "Truck No", "Batch Ticket"]
-                        rows["Value"] += [project_name_input.value, pour_location_input.value, str(fcu_input.value),
-                                           basis, stage_filter, truck_input.value, ticket_input.value]
+                    def build_stats_table(stage_stats, width):
+                        styles = build_pdf_styles()
+                        stat_rows = [["Stage", "n", "Mean (N/mm2)", "Std Dev", "Min", "Max", "COV %"]]
                         for label, values, s in stage_stats:
-                            rows["Field"].append(f"{label} Mean / Std Dev")
-                            rows["Value"].append(f"{s['mean']:.2f} / {s['std']:.2f}" if s else "No data")
-                        df = pd.DataFrame(rows)
-                        ui.download(df.to_csv(index=False).encode('utf-8'), filename=f"AI_Concrete_Calculation_{ticket_input.value}.csv")
-                        ui.notify('CSV downloaded!', type='positive')
+                            if s:
+                                stat_rows.append([label, str(s['n']), f"{s['mean']:.2f}", f"{s['std']:.2f}",
+                                                   f"{s['min']:.1f}", f"{s['max']:.1f}", f"{s['cov']:.1f}"])
+                        colw = width / len(stat_rows[0])
+                        table_data = [[Paragraph(c, styles['tablehead'] if r == 0 else styles['tablecell'])
+                                       for c in row] for r, row in enumerate(stat_rows)]
+                        t = Table(table_data, colWidths=[colw] * len(stat_rows[0]))
+                        t.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B2A4A')),
+                            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#94A3B8')),
+                            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F1F5F9')]),
+                            ('TOPPADDING', (0, 0), (-1, -1), 4),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                        ]))
+                        return t
 
-                    ui.button('Download Calculation PDF', on_click=download_pdf_report).classes('primary-btn flex-1')
-                    ui.button('Export CSV', on_click=download_csv_export).classes('primary-btn flex-1')
+                    # Normal Word (DOCX) – generate from a simple built-in template
+                    def download_normal_word():
+                        try:
+                            # Create a simple docx with the results
+                            from docx import Document
+                            doc = Document()
+                            doc.add_heading('AI Concrete Cube Verification Report', 0)
+                            doc.add_paragraph(f'Project: {project_name_input.value}')
+                            doc.add_paragraph(f'Location: {pour_location_input.value}')
+                            doc.add_paragraph(f'Engineer: {engineer_input.value}')
+                            doc.add_paragraph(f'Date: {datetime.date.today().strftime("%Y-%m-%d")}')
+                            doc.add_paragraph(f'Ticket ID: {ticket_input.value}')
+                            doc.add_paragraph(f'Code Basis: {basis}')
+                            doc.add_paragraph(f'Target f_cu: {fcu_input.value} N/mm2')
+                            doc.add_heading('Statistical Summary', level=1)
+                            table = doc.add_table(rows=1, cols=7)
+                            hdr_cells = table.rows[0].cells
+                            headers = ['Stage', 'n', 'Mean', 'Std Dev', 'Min', 'Max', 'COV %']
+                            for i, h in enumerate(headers):
+                                hdr_cells[i].text = h
+                            for label, values, s in stage_stats:
+                                if s:
+                                    row_cells = table.add_row().cells
+                                    row_cells[0].text = label
+                                    row_cells[1].text = str(s['n'])
+                                    row_cells[2].text = f"{s['mean']:.2f}"
+                                    row_cells[3].text = f"{s['std']:.2f}"
+                                    row_cells[4].text = f"{s['min']:.1f}"
+                                    row_cells[5].text = f"{s['max']:.1f}"
+                                    row_cells[6].text = f"{s['cov']:.1f}"
+                            # AI evaluation text
+                            doc.add_heading('AI Compliance Evaluation', level=1)
+                            doc.add_paragraph(ai_cube_result_holder['text'])
+                            # Save
+                            out = io.BytesIO()
+                            doc.save(out)
+                            out.seek(0)
+                            ui.download(out.getvalue(), filename=f"AI_Concrete_Report_{ticket_input.value}.docx")
+                            ui.notify('Word document downloaded!', type='positive')
+                        except Exception as ex:
+                            ui.notify(f'Word export error: {str(ex)}', type='negative')
+
+                    # Filled template (if uploaded)
+                    def download_filled_template():
+                        if template_bytes_holder['bytes'] is None:
+                            ui.notify('No template uploaded.', type='warning')
+                            return
+                        try:
+                            # Build data dict for placeholders
+                            data = {}
+                            # Project metadata
+                            meta = current_meta('TEMPLATE')
+                            data['project_name'] = meta['project']
+                            data['location'] = meta['location']
+                            data['engineer'] = meta['engineer']
+                            data['date'] = meta['date']
+                            data['ticket_id'] = meta['ticket']
+                            data['target_fcu'] = fcu_input.value
+                            data['basis'] = code_basis_select.value
+                            # Stage stats
+                            for label, values, s in stage_stats:
+                                if s:
+                                    data[f'stage_{label.lower().replace("-","_")}_mean'] = f"{s['mean']:.2f}"
+                                    data[f'stage_{label.lower().replace("-","_")}_std'] = f"{s['std']:.2f}"
+                                    data[f'stage_{label.lower().replace("-","_")}_min'] = f"{s['min']:.1f}"
+                                    data[f'stage_{label.lower().replace("-","_")}_max'] = f"{s['max']:.1f}"
+                                    data[f'stage_{label.lower().replace("-","_")}_n'] = s['n']
+                                    data[f'stage_{label.lower().replace("-","_")}_cov'] = f"{s['cov']:.1f}"
+                                    # Also provide full values list as string
+                                    data[f'stage_{label.lower().replace("-","_")}_values'] = ', '.join(str(v) for v in values)
+                            # Also add AI verdict text
+                            data['ai_verdict'] = ai_cube_result_holder['text']
+                            # Fill the template
+                            filled_bytes = fill_template(template_bytes_holder['bytes'], data)
+                            ui.download(filled_bytes, filename=f"Filled_Template_{ticket_input.value}.docx")
+                            ui.notify('Filled template downloaded!', type='positive')
+                        except Exception as ex:
+                            ui.notify(f'Error filling template: {str(ex)}', type='negative')
+
+                    # Detailed calculations – we'll have a separate panel below; but we also add buttons to download calc as PDF and Word.
+                    # We'll implement calc PDF and Word using the same logic as stats table + extra details.
+                    # For brevity, we'll generate a comprehensive calculation report in PDF and Word using the detailed data.
+
+                    def download_calc_pdf():
+                        try:
+                            meta = current_meta('CALC')
+                            styles = build_pdf_styles()
+                            # Build detailed calculation table
+                            calc_rows = [["Stage", "Specimen", "Strength", "Deviation from Mean"]]
+                            for label, values, s in stage_stats:
+                                if s:
+                                    mean = s['mean']
+                                    for idx, val in enumerate(values):
+                                        dev = val - mean
+                                        calc_rows.append([label, f"#{idx+1}", f"{val:.1f}", f"{dev:+.2f}"])
+                                    # Add summary row
+                                    calc_rows.append([label, "Mean", f"{mean:.2f}", ""])
+                                    calc_rows.append([label, "Std Dev", f"{s['std']:.2f}", ""])
+                                    calc_rows.append([label, "Min", f"{s['min']:.1f}", ""])
+                                    calc_rows.append([label, "Max", f"{s['max']:.1f}", ""])
+                                    calc_rows.append([label, "COV %", f"{s['cov']:.1f}", ""])
+                            colw = USABLE_WIDTH / 4
+                            table_data = [[Paragraph(c, styles['tablehead'] if r == 0 else styles['tablecell'])
+                                           for c in row] for r, row in enumerate(calc_rows)]
+                            t = Table(table_data, colWidths=[colw]*4)
+                            t.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1B2A4A')),
+                                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#94A3B8')),
+                                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F1F5F9')]),
+                                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                            ]))
+                            pdf_bytes = build_report_pdf(
+                                "DETAILED CONCRETE CUBE CALCULATIONS",
+                                f"Calculations for {meta['project']}",
+                                "", meta, logo_bytes_holder['bytes'],
+                                extra_flowables_before_body=[
+                                    Paragraph("Complete Calculation Breakdown", styles['h2']),
+                                    t,
+                                    Spacer(1, 6),
+                                    Paragraph("AI Evaluation Summary", styles['h2']),
+                                    *markdown_to_pdf_flowables(ai_cube_result_holder['text'], styles),
+                                ]
+                            )
+                            ui.download(pdf_bytes, filename=f"Detailed_Calculations_{ticket_input.value}.pdf")
+                            ui.notify('Calculations PDF downloaded!', type='positive')
+                        except Exception as ex:
+                            ui.notify(f'Calc PDF error: {str(ex)}', type='negative')
+
+                    def download_calc_word():
+                        try:
+                            from docx import Document
+                            doc = Document()
+                            doc.add_heading('Detailed Concrete Cube Calculations', 0)
+                            doc.add_paragraph(f'Project: {project_name_input.value}')
+                            doc.add_paragraph(f'Ticket ID: {ticket_input.value}')
+                            doc.add_heading('Individual Specimen Data', level=1)
+                            table = doc.add_table(rows=1, cols=4)
+                            hdr = table.rows[0].cells
+                            hdr[0].text = 'Stage'
+                            hdr[1].text = 'Specimen'
+                            hdr[2].text = 'Strength (N/mm2)'
+                            hdr[3].text = 'Deviation from Mean'
+                            for label, values, s in stage_stats:
+                                if s:
+                                    mean = s['mean']
+                                    for idx, val in enumerate(values):
+                                        row = table.add_row().cells
+                                        row[0].text = label
+                                        row[1].text = f"#{idx+1}"
+                                        row[2].text = f"{val:.1f}"
+                                        row[3].text = f"{val - mean:+.2f}"
+                                    # Summary rows
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Mean'
+                                    row[2].text = f"{mean:.2f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Std Dev'
+                                    row[2].text = f"{s['std']:.2f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Min'
+                                    row[2].text = f"{s['min']:.1f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Max'
+                                    row[2].text = f"{s['max']:.1f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'COV %'
+                                    row[2].text = f"{s['cov']:.1f}"
+                                    row[3].text = ''
+                            doc.add_heading('AI Compliance Verdict', level=1)
+                            doc.add_paragraph(ai_cube_result_holder['text'])
+                            out = io.BytesIO()
+                            doc.save(out)
+                            out.seek(0)
+                            ui.download(out.getvalue(), filename=f"Detailed_Calculations_{ticket_input.value}.docx")
+                            ui.notify('Calculations Word downloaded!', type='positive')
+                        except Exception as ex:
+                            ui.notify(f'Calc Word error: {str(ex)}', type='negative')
+
+                    # Buttons row
+                    with ui.row().classes('w-full gap-4 flex-wrap'):
+                        ui.button('📄 Download Normal PDF', on_click=download_normal_pdf).classes('primary-btn')
+                        ui.button('📝 Download Normal Word', on_click=download_normal_word).classes('primary-btn')
+                        if template_bytes_holder['bytes']:
+                            ui.button('📎 Download Filled Template', on_click=download_filled_template).classes('primary-btn')
+                        ui.button('📊 Download Calculations PDF', on_click=download_calc_pdf).classes('primary-btn')
+                        ui.button('📊 Download Calculations Word', on_click=download_calc_word).classes('primary-btn')
+
+                # ---- Detailed Calculations Panel (expandable) ----
+                calc_panel.clear()
+                with calc_panel:
+                    with ui.expansion('📊 View Detailed Calculations', icon='calculate').classes('w-full bg-[#0d1a35] rounded-lg'):
+                        # Build a nice table with all details
+                        rows = [["Stage", "Specimen", "Strength (N/mm2)", "Deviation from Mean"]]
+                        for label, values, s in stage_stats:
+                            if s:
+                                mean = s['mean']
+                                for idx, val in enumerate(values):
+                                    rows.append([label, f"#{idx+1}", f"{val:.1f}", f"{val - mean:+.2f}"])
+                                rows.append([label, "Mean", f"{mean:.2f}", ""])
+                                rows.append([label, "Std Dev", f"{s['std']:.2f}", ""])
+                                rows.append([label, "Min", f"{s['min']:.1f}", ""])
+                                rows.append([label, "Max", f"{s['max']:.1f}", ""])
+                                rows.append([label, "COV %", f"{s['cov']:.1f}", ""])
+                        # Convert to markdown table
+                        md = "| " + " | ".join(rows[0]) + " |\n"
+                        md += "|" + "|".join(["---"] * len(rows[0])) + "|\n"
+                        for r in rows[1:]:
+                            md += "| " + " | ".join(r) + " |\n"
+                        ui.markdown(md).classes('markdown-body')
+
+                # ---- Chatbots ----
+                # We'll place two buttons that toggle chat panels
+                chat_result_visible = {'show': False}
+                chat_code_visible = {'show': False}
+
+                def toggle_result_chat():
+                    chat_result_visible['show'] = not chat_result_visible['show']
+                    chat_result_panel.toggle()
+                    if chat_result_visible['show']:
+                        chat_result_panel.visible = True
+                    else:
+                        chat_result_panel.visible = False
+
+                def toggle_code_chat():
+                    chat_code_visible['show'] = not chat_code_visible['show']
+                    chat_code_panel.toggle()
+                    if chat_code_visible['show']:
+                        chat_code_panel.visible = True
+                    else:
+                        chat_code_panel.visible = False
+
+                with ui.row().classes('w-full gap-4 mt-4'):
+                    ui.button('💬 Ask about Results', on_click=toggle_result_chat).classes('primary-btn')
+                    ui.button('📚 Ask about Egyptian Code', on_click=toggle_code_chat).classes('primary-btn')
+
+                # Result Chat Panel
+                chat_result_panel = ui.column().classes('output-card w-full mt-4').bind_visibility_from(chat_result_visible, 'show')
+                with chat_result_panel:
+                    with ui.column().classes('input-card w-full'):
+                        ui.label('Chat about these cube results').classes('text-lg font-bold text-white')
+                        result_chat_container = ui.column().classes('w-full h-[300px] overflow-y-auto')
+                        result_chat_messages = [{"role": "assistant", "content": "Ask me anything about the cube test results above."}]
+                        def render_result_chat():
+                            result_chat_container.clear()
+                            with result_chat_container:
+                                for msg in result_chat_messages:
+                                    is_ai = msg['role'] == 'assistant'
+                                    with ui.column().classes('chat-message'):
+                                        role_label = 'Assistant' if is_ai else 'You'
+                                        label_class = 'assistant' if is_ai else 'user'
+                                        ui.label(role_label).classes(f'role-label {label_class}')
+                                        ui.markdown(msg['content']).classes('content markdown-body')
+                        render_result_chat()
+                        result_chat_input = ui.input(placeholder='Ask about these results...').classes('w-full mb-2')
+                        result_chat_input.on('keydown.enter', lambda: send_result_chat())
+                        async def send_result_chat():
+                            q = result_chat_input.value
+                            if not q or not q.strip():
+                                return
+                            result_chat_messages.append({"role": "user", "content": q})
+                            result_chat_input.value = ''
+                            render_result_chat()
+                            # Prepare context: results summary
+                            context = f"""
+Project: {project_name_input.value}
+Location: {pour_location_input.value}
+Target f_cu: {fcu_input.value} N/mm2
+Code Basis: {code_basis_select.value}
+Stages:
+"""
+                            for label, values, s in stage_stats:
+                                if s:
+                                    context += f"- {label}: n={s['n']}, mean={s['mean']:.2f}, std={s['std']:.2f}, min={s['min']:.1f}, max={s['max']:.1f}, COV={s['cov']:.1f}%\n"
+                            context += f"\nAI Verdict:\n{ai_cube_result_holder['text']}"
+                            system_prompt = f"You are an expert concrete engineer. Answer the user's question based on the following cube test results. Provide clear, professional advice. Results:\n{context}"
+                            try:
+                                resp = await call_gemini(q, system_instruction=system_prompt)
+                                result_chat_messages.append({"role": "assistant", "content": resp})
+                            except Exception as e:
+                                result_chat_messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
+                            render_result_chat()
+                        ui.button('Send', on_click=send_result_chat).classes('primary-btn')
+
+                # Code Chat Panel
+                chat_code_panel = ui.column().classes('output-card w-full mt-4').bind_visibility_from(chat_code_visible, 'show')
+                with chat_code_panel:
+                    with ui.column().classes('input-card w-full'):
+                        ui.label('Chat about Egyptian Codes (ECP 203, 202, 104)').classes('text-lg font-bold text-white')
+                        code_chat_container = ui.column().classes('w-full h-[300px] overflow-y-auto')
+                        code_chat_messages = [{"role": "assistant", "content": "Ask me about Egyptian code requirements for concrete, soil, or pavements."}]
+                        def render_code_chat():
+                            code_chat_container.clear()
+                            with code_chat_container:
+                                for msg in code_chat_messages:
+                                    is_ai = msg['role'] == 'assistant'
+                                    with ui.column().classes('chat-message'):
+                                        role_label = 'Assistant' if is_ai else 'You'
+                                        label_class = 'assistant' if is_ai else 'user'
+                                        ui.label(role_label).classes(f'role-label {label_class}')
+                                        ui.markdown(msg['content']).classes('content markdown-body')
+                        render_code_chat()
+                        code_chat_input = ui.input(placeholder='Ask about Egyptian codes...').classes('w-full mb-2')
+                        code_chat_input.on('keydown.enter', lambda: send_code_chat())
+                        async def send_code_chat():
+                            q = code_chat_input.value
+                            if not q or not q.strip():
+                                return
+                            code_chat_messages.append({"role": "user", "content": q})
+                            code_chat_input.value = ''
+                            render_code_chat()
+                            system_prompt = f"""
+You are an expert in Egyptian construction codes (ECP 203, ECP 202, ECP 104).
+Answer the user's question accurately, referencing specific clauses where possible.
+Governing standard: {code_basis_select.value}
+{get_code_directive(code_basis_select.value)}
+{NO_LATEX_RULE}
+"""
+                            try:
+                                resp = await call_gemini(q, system_instruction=system_prompt)
+                                code_chat_messages.append({"role": "assistant", "content": resp})
+                            except Exception as e:
+                                code_chat_messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
+                            render_code_chat()
+                        ui.button('Send', on_click=send_code_chat).classes('primary-btn')
 
             except Exception as ex:
                 result_output_area.clear()
                 with result_output_area:
                     ui.notify(f'Calculation Error: {str(ex)}', type='negative')
 
+        # ---- UI Elements ----
         stage_selector = ui.select(
             label='Select Stage Display Filter',
             options=['All Stages', '7-Day Stage', '14-Day Stage', '28-Day Stage'],
@@ -977,13 +1303,21 @@ REQUIRED REPORT STRUCTURE:
         stats_area = ui.column().classes('w-full')
         result_output_area = ui.column().classes('w-full')
         chart_area = ui.column().classes('w-full')
-        export_buttons_area = ui.row().classes('w-full gap-4 mt-4')
+        export_buttons_area = ui.row().classes('w-full gap-4 flex-wrap mt-4')
+        calc_panel = ui.column().classes('w-full mt-4')
+
+        # Template upload section
+        with ui.row().classes('w-full gap-4 items-center mb-4'):
+            ui.upload(label='Upload Company Template (DOCX with placeholders)',
+                      auto_upload=True,
+                      on_upload=handle_template_upload).props('flat dark').classes('flex-1')
+            template_status
 
         ui.button('Run AI Statistical Calculation & Verification', on_click=run_verification).classes('primary-btn q-my-md')
         with result_output_area:
             ui.markdown('*Click "Run AI Statistical Calculation & Verification" to generate the report.*').classes('text-sm text-[#A9B6D0]')
 
-        # ---------------- FOOTER ----------------
+        # ---- FOOTER ----
         ui.html('''
         <div class="app-footer">
             <b>Multi-Standard Engineering Quality Assurance Portal</b> &nbsp;|&nbsp; Automated compliance verification across ECP 203, ECP 202, ECP 104, ASTM, AASHTO, BS, EN, and ISO standards.<br>
