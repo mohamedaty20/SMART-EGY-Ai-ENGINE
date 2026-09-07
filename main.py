@@ -7,6 +7,7 @@ import asyncio
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import qrcode
 from docxtpl import DocxTemplate
 from docx import Document
@@ -839,6 +840,144 @@ def main_page():
                 md_lines.append("")
             return "\n".join(md_lines)
 
+        # ---- Predictive Analysis & Charts (new) ----
+        def create_predictive_charts(stage_stats):
+            if not stage_stats:
+                return None, None, None, None
+            # Combine all values with stage labels for histogram
+            all_vals = []
+            all_labels = []
+            for label, values, stats in stage_stats:
+                if stats:
+                    all_vals.extend(values)
+                    all_labels.extend([label]*len(values))
+            if not all_vals:
+                return None, None, None, None
+
+            # Histogram
+            hist_fig = go.Figure()
+            hist_fig.add_trace(go.Histogram(
+                x=all_vals,
+                nbinsx=10,
+                marker_color='#FF8C00',
+                opacity=0.7,
+                name='Strengths'
+            ))
+            hist_fig.update_layout(
+                title='Distribution of All Cube Strengths',
+                xaxis_title='Strength (N/mm²)',
+                yaxis_title='Frequency',
+                template='plotly_dark',
+                paper_bgcolor='#0d1a35',
+                plot_bgcolor='#0d1a35',
+                height=300
+            )
+
+            # Time series (assuming order: 7-day, 14-day, 28-day within each)
+            # We'll create a sequence index and plot values
+            seq_vals = []
+            seq_labels = []
+            for label, values, stats in stage_stats:
+                if stats:
+                    seq_vals.extend(values)
+                    seq_labels.extend([label]*len(values))
+            x_seq = list(range(1, len(seq_vals)+1))
+            time_fig = go.Figure()
+            time_fig.add_trace(go.Scatter(
+                x=x_seq,
+                y=seq_vals,
+                mode='lines+markers',
+                marker=dict(color='#4FC3F7', size=8),
+                line=dict(color='#FF8C00', width=2),
+                name='Strengths'
+            ))
+            # Add trend line (linear regression)
+            if len(x_seq) > 1:
+                from scipy import stats as scipy_stats
+                slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(x_seq, seq_vals)
+                trend_y = [slope*x + intercept for x in x_seq]
+                time_fig.add_trace(go.Scatter(
+                    x=x_seq,
+                    y=trend_y,
+                    mode='lines',
+                    line=dict(color='#22C55E', width=2, dash='dash'),
+                    name=f'Trend (R²={r_value**2:.3f})'
+                ))
+            time_fig.update_layout(
+                title='Strength Progression (Sequential)',
+                xaxis_title='Sample Index',
+                yaxis_title='Strength (N/mm²)',
+                template='plotly_dark',
+                paper_bgcolor='#0d1a35',
+                plot_bgcolor='#0d1a35',
+                height=300
+            )
+
+            # Control chart (X-bar) – using overall mean and moving range
+            # For simplicity, we use overall mean and standard deviation for UCL/LCL
+            overall_mean = np.mean(seq_vals)
+            overall_std = np.std(seq_vals)
+            ucl = overall_mean + 3 * overall_std
+            lcl = overall_mean - 3 * overall_std
+            control_fig = go.Figure()
+            control_fig.add_trace(go.Scatter(
+                x=x_seq,
+                y=seq_vals,
+                mode='lines+markers',
+                marker=dict(color='#4FC3F7', size=8),
+                line=dict(color='#FF8C00', width=2),
+                name='Values'
+            ))
+            control_fig.add_hline(y=overall_mean, line_dash="solid", line_color="#22C55E", annotation_text="Mean")
+            control_fig.add_hline(y=ucl, line_dash="dash", line_color="#FF0000", annotation_text="UCL")
+            control_fig.add_hline(y=lcl, line_dash="dash", line_color="#FF0000", annotation_text="LCL")
+            control_fig.update_layout(
+                title='Control Chart (X-bar)',
+                xaxis_title='Sample Index',
+                yaxis_title='Strength (N/mm²)',
+                template='plotly_dark',
+                paper_bgcolor='#0d1a35',
+                plot_bgcolor='#0d1a35',
+                height=300
+            )
+
+            # Simple forecast – linear regression for next 3 points
+            if len(x_seq) > 1:
+                slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(x_seq, seq_vals)
+                future_x = list(range(len(x_seq)+1, len(x_seq)+4))
+                future_y = [slope*x + intercept for x in future_x]
+                forecast_fig = go.Figure()
+                forecast_fig.add_trace(go.Scatter(
+                    x=x_seq,
+                    y=seq_vals,
+                    mode='lines+markers',
+                    marker=dict(color='#4FC3F7', size=8),
+                    line=dict(color='#FF8C00', width=2),
+                    name='Historical'
+                ))
+                forecast_fig.add_trace(go.Scatter(
+                    x=future_x,
+                    y=future_y,
+                    mode='lines+markers+text',
+                    text=[f"{y:.1f}" for y in future_y],
+                    textposition="top center",
+                    marker=dict(color='#22C55E', size=10),
+                    line=dict(color='#22C55E', width=2, dash='dot'),
+                    name='Forecast'
+                ))
+                forecast_fig.update_layout(
+                    title='Predictive Forecast (Next 3 Tests)',
+                    xaxis_title='Sample Index',
+                    yaxis_title='Strength (N/mm²)',
+                    template='plotly_dark',
+                    paper_bgcolor='#0d1a35',
+                    plot_bgcolor='#0d1a35',
+                    height=300
+                )
+                return hist_fig, time_fig, control_fig, forecast_fig
+            else:
+                return hist_fig, time_fig, control_fig, None
+
         # ---- Main run function ----
         async def run_verification():
             result_output_area.clear()
@@ -846,7 +985,8 @@ def main_page():
             chart_area.clear()
             stats_area.clear()
             calc_panel.clear()
-            # Chat panels will be recreated inside this function, so we don't clear them here
+            # Predictive tab will be filled after calculation
+            predictive_charts_area.clear()
 
             nonlocal stage_stats_holder, current_meta_data
 
@@ -926,10 +1066,10 @@ REQUIRED REPORT STRUCTURE:
                 result_output_area.clear()
                 with result_output_area:
                     with ui.column().classes('output-card w-full'):
-                        ui.label('AI Statistical Evaluation & Compliance Verdict').classes('text-xl font-bold text-white mb-2')
+                        ui.label('Statistical Evaluation & Compliance Verdict').classes('text-xl font-bold text-white mb-2')
                         ui.markdown(res_text).classes('markdown-body')
 
-                # Chart
+                # Chart (main)
                 with chart_area:
                     labels = [label for label, _v, _s in stage_stats] + ['Target Grade']
                     means = [(s['mean'] if s else 0) for _l, _v, s in stage_stats] + [target_fcu]
@@ -948,20 +1088,42 @@ REQUIRED REPORT STRUCTURE:
                     )
                     ui.plotly(fig).classes('w-full mt-2')
 
-                # ---- Detailed Calculations Panel (FIXED: use value=True) ----
+                # ---- Detailed Calculations Panel ----
                 calc_panel.clear()
                 with calc_panel:
                     with ui.expansion('📊 View Detailed Calculations (full math breakdown)', icon='calculate', value=True).classes('w-full bg-[#0d1a35] rounded-lg mt-4'):
                         md = build_detailed_calculations_md(stage_stats)
                         ui.markdown(md).classes('markdown-body')
 
-                # ---- EXPORT BUTTONS ----
+                # ---- Predictive Analysis & Charts (populate the new tab) ----
+                predictive_charts_area.clear()
+                with predictive_charts_area:
+                    ui.label('Predictive Analysis & Advanced Charts').classes('text-xl font-bold text-white mb-2')
+                    hist_fig, time_fig, control_fig, forecast_fig = create_predictive_charts(stage_stats)
+                    if hist_fig:
+                        with ui.row().classes('w-full flex-wrap'):
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                ui.plotly(hist_fig).classes('w-full')
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                ui.plotly(time_fig).classes('w-full')
+                        with ui.row().classes('w-full flex-wrap'):
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                ui.plotly(control_fig).classes('w-full')
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                if forecast_fig:
+                                    ui.plotly(forecast_fig).classes('w-full')
+                                else:
+                                    ui.label('Forecast not available (need at least 2 data points).').classes('text-amber-400')
+                    else:
+                        ui.label('Not enough data for predictive charts. Please provide at least one value per stage.').classes('text-amber-400')
+
+                # ---- EXPORT BUTTONS (updated titles without "AI") ----
                 with export_buttons_area:
                     def download_normal_pdf():
                         try:
                             meta = current_meta('ECP-AI')
                             pdf_bytes = build_report_pdf(
-                                "AI CONCRETE CUBE CALCULATION & VERIFICATION REPORT",
+                                "CONCRETE CUBE CALCULATION & VERIFICATION REPORT",  # removed "AI"
                                 f"Governing Standard: {basis} | Filter: {stage_filter}",
                                 ai_cube_result_holder['text'], meta, logo_bytes_holder['bytes'],
                                 extra_flowables_before_body=[
@@ -969,7 +1131,7 @@ REQUIRED REPORT STRUCTURE:
                                     build_stats_table(stage_stats, USABLE_WIDTH),
                                 ],
                             )
-                            ui.download(pdf_bytes, filename=f"AI_Concrete_Report_{ticket_input.value}.pdf")
+                            ui.download(pdf_bytes, filename=f"Concrete_Report_{ticket_input.value}.pdf")
                             ui.notify('PDF downloaded!', type='positive')
                         except Exception as ex:
                             ui.notify(f'PDF Error: {str(ex)}', type='negative')
@@ -997,7 +1159,7 @@ REQUIRED REPORT STRUCTURE:
                     def download_normal_word():
                         try:
                             doc = Document()
-                            doc.add_heading('AI Concrete Cube Verification Report', 0)
+                            doc.add_heading('Concrete Cube Verification Report', 0)  # removed "AI"
                             doc.add_paragraph(f'Project: {project_name_input.value}')
                             doc.add_paragraph(f'Location: {pour_location_input.value}')
                             doc.add_paragraph(f'Engineer: {engineer_input.value}')
@@ -1021,12 +1183,12 @@ REQUIRED REPORT STRUCTURE:
                                     row_cells[4].text = f"{s['min']:.1f}"
                                     row_cells[5].text = f"{s['max']:.1f}"
                                     row_cells[6].text = f"{s['cov']:.1f}"
-                            doc.add_heading('AI Compliance Evaluation', level=1)
+                            doc.add_heading('Compliance Evaluation', level=1)  # removed "AI"
                             doc.add_paragraph(ai_cube_result_holder['text'])
                             out = io.BytesIO()
                             doc.save(out)
                             out.seek(0)
-                            ui.download(out.getvalue(), filename=f"AI_Concrete_Report_{ticket_input.value}.docx")
+                            ui.download(out.getvalue(), filename=f"Concrete_Report_{ticket_input.value}.docx")
                             ui.notify('Word document downloaded!', type='positive')
                         except Exception as ex:
                             ui.notify(f'Word export error: {str(ex)}', type='negative')
@@ -1111,7 +1273,7 @@ REQUIRED REPORT STRUCTURE:
                                     Paragraph("Formulas & Intermediate Values", styles['h2']),
                                     *formula_flowables,
                                     Spacer(1, 6),
-                                    Paragraph("AI Evaluation Summary", styles['h2']),
+                                    Paragraph("Compliance Evaluation Summary", styles['h2']),
                                     *markdown_to_pdf_flowables(ai_cube_result_holder['text'], styles),
                                 ]
                             )
@@ -1182,7 +1344,7 @@ REQUIRED REPORT STRUCTURE:
                                     row[1].text = 'Σx²'
                                     row[2].text = f"{s['sum_sq']:.2f}"
                                     row[3].text = ''
-                            doc.add_heading('AI Compliance Verdict', level=1)
+                            doc.add_heading('Compliance Verdict', level=1)
                             doc.add_paragraph(ai_cube_result_holder['text'])
                             out = io.BytesIO()
                             doc.save(out)
@@ -1256,7 +1418,7 @@ Stages:
                             for label, values, s in stage_stats:
                                 if s:
                                     context += f"- {label}: n={s['n']}, mean={s['mean']:.2f}, std={s['std']:.2f}, min={s['min']:.1f}, max={s['max']:.1f}, COV={s['cov']:.1f}%\n"
-                            context += f"\nAI Verdict:\n{ai_cube_result_holder['text']}"
+                            context += f"\nCompliance Verdict:\n{ai_cube_result_holder['text']}"
                             system_prompt = f"You are an expert concrete engineer. Answer the user's question based on the following cube test results. Provide clear, professional advice. Results:\n{context}"
                             try:
                                 resp = await call_gemini(q, system_instruction=system_prompt)
@@ -1328,6 +1490,8 @@ Governing standard: {code_basis_select.value}
         chart_area = ui.column().classes('w-full')
         export_buttons_area = ui.row().classes('w-full gap-4 flex-wrap mt-4')
         calc_panel = ui.column().classes('w-full mt-4')
+        # New predictive area – we'll show it after calculation
+        predictive_charts_area = ui.column().classes('w-full mt-4')
 
         # Template upload (optional)
         with ui.row().classes('w-full gap-4 items-center mb-4'):
@@ -1336,9 +1500,9 @@ Governing standard: {code_basis_select.value}
                       on_upload=handle_template_upload).props('flat dark').classes('flex-1')
             template_status
 
-        ui.button('Run AI Statistical Calculation & Verification', on_click=run_verification).classes('primary-btn q-my-md')
+        ui.button('Run Statistical Calculation & Verification', on_click=run_verification).classes('primary-btn q-my-md')
         with result_output_area:
-            ui.markdown('*Click "Run AI Statistical Calculation & Verification" to generate the report.*').classes('text-sm text-[#A9B6D0]')
+            ui.markdown('*Click "Run Statistical Calculation & Verification" to generate the report and charts.*').classes('text-sm text-[#A9B6D0]')
 
         # ---- FOOTER ----
         ui.html('''
@@ -1348,7 +1512,7 @@ Governing standard: {code_basis_select.value}
             LinkedIn: <a href="https://www.linkedin.com/in/mohamed-abd-al-aty-a326a1214/" target="_blank">Mohamed Abd Al Aty</a> &nbsp;|&nbsp;
             Email: <a href="mailto:mohamedabdalaty63@gmail.com">mohamedabdalaty63@gmail.com</a><br>
             <i>Specialized in QA/QC, Civil Engineering Standards &amp; Automated Compliance.</i> &copy; 2026 Eng. Mohamed Abd Al Aty. All rights reserved.<br>
-            <span style="color: #FFFFFF; font-weight: 600;">Disclaimer:</span> These AI modules have high accuracy and are specified for the Egyptian codes, but results should be rechecked by a qualified engineer before any decision-making.
+            <span style="color: #FFFFFF; font-weight: 600;">Disclaimer:</span> These modules have high accuracy and are specified for the Egyptian codes, but results should be rechecked by a qualified engineer before any decision-making.
         </div>
         ''')
 
