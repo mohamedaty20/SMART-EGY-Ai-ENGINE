@@ -504,15 +504,8 @@ def main_page():
     ui.query('body').style('width: 100vw; height: 100vh; overflow-x: hidden;')
     apply_theme()
 
-    # ---- Ensure storage exists ----
-    if 'user' not in app.storage:
-        app.storage.user = {}
-
-    # ---- Load saved state ----
-    if 'app_state' in app.storage.user:
-        state = app.storage.user['app_state']
-    else:
-        state = {}
+    # ---- Load saved state (app.storage.user is always a dict) ----
+    state = app.storage.user.get('app_state', {})
 
     # ---- Sidebar ----
     sidebar = ui.left_drawer().classes('sidebar-container').style('width: 380px;')
@@ -1569,7 +1562,6 @@ Governing standard: {code_basis_select.value}
 
 
 if __name__ == '__main__':
-    # Add storage_secret to enable persistent storage
     ui.run(
         host='0.0.0.0',
         port=int(os.environ.get('PORT', 8080)),
