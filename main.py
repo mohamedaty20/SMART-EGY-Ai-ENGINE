@@ -45,7 +45,7 @@ MARGIN = 32
 USABLE_WIDTH = PAGE_WIDTH - (2 * MARGIN)
 
 # =====================================================================
-# STYLING (identical to original, no changes)
+# STYLING (identical to original)
 # =====================================================================
 app.native.window_args = {"resizable": True}
 
@@ -339,7 +339,7 @@ ui.add_head_html('''
 ''', shared=True)
 
 # =====================================================================
-# HELPER FUNCTIONS (sanitization, PDF, QR, etc.) – identical to original
+# HELPER FUNCTIONS (sanitization, PDF, QR, etc.)
 # =====================================================================
 _LATEX_SIMPLE = {
     r'\times': ' x ', r'\cdot': ' . ', r'\div': ' / ',
@@ -633,7 +633,7 @@ async def call_gemini(contents, system_instruction=None, temperature=0.1, timeou
         raise Exception("AI request timed out. Please try with a smaller file or simplify your query.")
 
 # =====================================================================
-# MAIN PAGE – with all new features
+# MAIN PAGE
 # =====================================================================
 @ui.page('/')
 def main_page():
@@ -751,12 +751,20 @@ def main_page():
             if not values:
                 return None
             arr = np.array(values, dtype=float)
-            std = float(arr.std(ddof=1)) if len(arr) > 1 else 0.0
+            n = len(arr)
             mean = float(arr.mean())
+            # sample standard deviation (ddof=1)
+            std = float(arr.std(ddof=1)) if n > 1 else 0.0
             return {
-                'n': len(arr), 'mean': mean, 'std': std,
-                'min': float(arr.min()), 'max': float(arr.max()),
+                'n': n,
+                'mean': mean,
+                'std': std,
+                'min': float(arr.min()),
+                'max': float(arr.max()),
                 'cov': (std / mean * 100.0) if mean > 0 else 0.0,
+                'sum': float(arr.sum()),
+                'sum_sq': float((arr**2).sum()),
+                'values': arr.tolist(),
             }
 
         def get_selected_stages(stage_filter):
@@ -771,7 +779,7 @@ def main_page():
                 return [all_stages[i] for i in idxs]
             return all_stages
 
-        # ---- Template upload handling ----
+        # ---- Template upload handling (optional) ----
         template_bytes_holder = {'bytes': None, 'name': None}
         template_status = ui.label('Template: Not uploaded').classes('text-xs text-amber-400 mb-1')
 
@@ -787,12 +795,10 @@ def main_page():
 
         # ---- Placeholder mapping for DOCX template ----
         def fill_template(template_bytes, data_dict):
-            # Save template to temporary file
             import tempfile
             with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
                 tmp.write(template_bytes)
                 tmp_path = tmp.name
-            # Fill using docxtpl
             doc = DocxTemplate(tmp_path)
             doc.render(data_dict)
             out_bytes = io.BytesIO()
@@ -800,6 +806,44 @@ def main_page():
             out_bytes.seek(0)
             os.unlink(tmp_path)
             return out_bytes.getvalue()
+
+        # ---- Build detailed calculations markdown ----
+        def build_detailed_calculations_md(stage_stats):
+            md_lines = []
+            for label, values, stats in stage_stats:
+                if not stats:
+                    continue
+                md_lines.append(f"### {label} Stage")
+                md_lines.append("**Raw Data (N/mm²):** " + ", ".join(f"{v:.1f}" for v in values))
+                n = stats['n']
+                sum_vals = stats['sum']
+                sum_sq = stats['sum_sq']
+                mean = stats['mean']
+                std = stats['std']
+                cov = stats['cov']
+                md_lines.append("")
+                md_lines.append("**Calculations:**")
+                md_lines.append(f"- Number of specimens (n) = {n}")
+                md_lines.append(f"- Sum (Σx) = {sum_vals:.2f}")
+                md_lines.append(f"- Sum of squares (Σx²) = {sum_sq:.2f}")
+                md_lines.append(f"- Mean (x̄) = Σx / n = {sum_vals:.2f} / {n} = **{mean:.2f}** N/mm²")
+                md_lines.append(f"- Standard deviation (s) = sqrt((Σx² - (Σx)²/n) / (n-1)) = **{std:.2f}** N/mm²")
+                md_lines.append(f"- Coefficient of variation (COV) = (s / x̄) × 100 = **{cov:.1f}%**")
+                md_lines.append(f"- Minimum = {stats['min']:.1f} N/mm²")
+                md_lines.append(f"- Maximum = {stats['max']:.1f} N/mm²")
+                md_lines.append("")
+                # Individual deviations
+                md_lines.append("**Individual Deviations from Mean:**")
+                dev_table = "| Specimen | Strength | Deviation (x - x̄) |"
+                dev_table += "\n|----------|----------|-------------------|"
+                for idx, v in enumerate(values):
+                    dev = v - mean
+                    dev_table += f"\n| #{idx+1} | {v:.1f} | {dev:+.2f} |"
+                md_lines.append(dev_table)
+                md_lines.append("")
+                # Pass/fail check (if target fcu is available)
+                # We'll add at the end a summary
+            return "\n".join(md_lines)
 
         # ---- Run verification (main AI call) ----
         async def run_verification():
@@ -809,8 +853,8 @@ def main_page():
             chart_area.clear()
             stats_area.clear()
             calc_panel.clear()
-            chat_output_container.clear()
-            chat_code_container.clear()
+            chat_result_panel.clear()
+            chat_code_panel.clear()
 
             nonlocal stage_stats_holder, current_meta_data
 
@@ -912,6 +956,14 @@ REQUIRED REPORT STRUCTURE:
                     )
                     ui.plotly(fig).classes('w-full mt-2')
 
+                # ---- Detailed Calculations Panel (new tab-like) ----
+                calc_panel.clear()
+                with calc_panel:
+                    with ui.expansion('📊 View Detailed Calculations (full math breakdown)', icon='calculate').classes('w-full bg-[#0d1a35] rounded-lg mt-4').expand():
+                        md = build_detailed_calculations_md(stage_stats)
+                        ui.markdown(md).classes('markdown-body')
+                        # Add a download button for this detailed calculation as PDF/Word – we'll include it in export area
+
                 # ---- EXPORT BUTTONS ----
                 with export_buttons_area:
                     # Normal PDF (as before)
@@ -952,10 +1004,9 @@ REQUIRED REPORT STRUCTURE:
                         ]))
                         return t
 
-                    # Normal Word (DOCX) – generate from a simple built-in template
+                    # Normal Word
                     def download_normal_word():
                         try:
-                            # Create a simple docx with the results
                             from docx import Document
                             doc = Document()
                             doc.add_heading('AI Concrete Cube Verification Report', 0)
@@ -982,10 +1033,8 @@ REQUIRED REPORT STRUCTURE:
                                     row_cells[4].text = f"{s['min']:.1f}"
                                     row_cells[5].text = f"{s['max']:.1f}"
                                     row_cells[6].text = f"{s['cov']:.1f}"
-                            # AI evaluation text
                             doc.add_heading('AI Compliance Evaluation', level=1)
                             doc.add_paragraph(ai_cube_result_holder['text'])
-                            # Save
                             out = io.BytesIO()
                             doc.save(out)
                             out.seek(0)
@@ -1000,9 +1049,7 @@ REQUIRED REPORT STRUCTURE:
                             ui.notify('No template uploaded.', type='warning')
                             return
                         try:
-                            # Build data dict for placeholders
                             data = {}
-                            # Project metadata
                             meta = current_meta('TEMPLATE')
                             data['project_name'] = meta['project']
                             data['location'] = meta['location']
@@ -1011,35 +1058,29 @@ REQUIRED REPORT STRUCTURE:
                             data['ticket_id'] = meta['ticket']
                             data['target_fcu'] = fcu_input.value
                             data['basis'] = code_basis_select.value
-                            # Stage stats
                             for label, values, s in stage_stats:
                                 if s:
-                                    data[f'stage_{label.lower().replace("-","_")}_mean'] = f"{s['mean']:.2f}"
-                                    data[f'stage_{label.lower().replace("-","_")}_std'] = f"{s['std']:.2f}"
-                                    data[f'stage_{label.lower().replace("-","_")}_min'] = f"{s['min']:.1f}"
-                                    data[f'stage_{label.lower().replace("-","_")}_max'] = f"{s['max']:.1f}"
-                                    data[f'stage_{label.lower().replace("-","_")}_n'] = s['n']
-                                    data[f'stage_{label.lower().replace("-","_")}_cov'] = f"{s['cov']:.1f}"
-                                    # Also provide full values list as string
-                                    data[f'stage_{label.lower().replace("-","_")}_values'] = ', '.join(str(v) for v in values)
-                            # Also add AI verdict text
+                                    key = label.lower().replace('-', '_')
+                                    data[f'stage_{key}_mean'] = f"{s['mean']:.2f}"
+                                    data[f'stage_{key}_std'] = f"{s['std']:.2f}"
+                                    data[f'stage_{key}_min'] = f"{s['min']:.1f}"
+                                    data[f'stage_{key}_max'] = f"{s['max']:.1f}"
+                                    data[f'stage_{key}_n'] = s['n']
+                                    data[f'stage_{key}_cov'] = f"{s['cov']:.1f}"
+                                    data[f'stage_{key}_values'] = ', '.join(str(v) for v in values)
                             data['ai_verdict'] = ai_cube_result_holder['text']
-                            # Fill the template
                             filled_bytes = fill_template(template_bytes_holder['bytes'], data)
                             ui.download(filled_bytes, filename=f"Filled_Template_{ticket_input.value}.docx")
                             ui.notify('Filled template downloaded!', type='positive')
                         except Exception as ex:
                             ui.notify(f'Error filling template: {str(ex)}', type='negative')
 
-                    # Detailed calculations – we'll have a separate panel below; but we also add buttons to download calc as PDF and Word.
-                    # We'll implement calc PDF and Word using the same logic as stats table + extra details.
-                    # For brevity, we'll generate a comprehensive calculation report in PDF and Word using the detailed data.
-
+                    # Download detailed calculations PDF
                     def download_calc_pdf():
                         try:
                             meta = current_meta('CALC')
                             styles = build_pdf_styles()
-                            # Build detailed calculation table
+                            # Build detailed table
                             calc_rows = [["Stage", "Specimen", "Strength", "Deviation from Mean"]]
                             for label, values, s in stage_stats:
                                 if s:
@@ -1047,12 +1088,15 @@ REQUIRED REPORT STRUCTURE:
                                     for idx, val in enumerate(values):
                                         dev = val - mean
                                         calc_rows.append([label, f"#{idx+1}", f"{val:.1f}", f"{dev:+.2f}"])
-                                    # Add summary row
+                                    # summary
                                     calc_rows.append([label, "Mean", f"{mean:.2f}", ""])
                                     calc_rows.append([label, "Std Dev", f"{s['std']:.2f}", ""])
                                     calc_rows.append([label, "Min", f"{s['min']:.1f}", ""])
                                     calc_rows.append([label, "Max", f"{s['max']:.1f}", ""])
                                     calc_rows.append([label, "COV %", f"{s['cov']:.1f}", ""])
+                                    calc_rows.append([label, "n", str(s['n']), ""])
+                                    calc_rows.append([label, "Σx", f"{s['sum']:.2f}", ""])
+                                    calc_rows.append([label, "Σx²", f"{s['sum_sq']:.2f}", ""])
                             colw = USABLE_WIDTH / 4
                             table_data = [[Paragraph(c, styles['tablehead'] if r == 0 else styles['tablecell'])
                                            for c in row] for r, row in enumerate(calc_rows)]
@@ -1064,6 +1108,15 @@ REQUIRED REPORT STRUCTURE:
                                 ('TOPPADDING', (0, 0), (-1, -1), 4),
                                 ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
                             ]))
+                            # Also add formulas
+                            formula_flowables = []
+                            for label, values, s in stage_stats:
+                                if s:
+                                    formula_flowables.append(Paragraph(f"{label} Stage Calculations", styles['h3']))
+                                    formula_flowables.append(Paragraph(f"n = {s['n']}, Σx = {s['sum']:.2f}, Σx² = {s['sum_sq']:.2f}", styles['body']))
+                                    formula_flowables.append(Paragraph(f"Mean = {s['sum']:.2f} / {s['n']} = {s['mean']:.2f}", styles['body']))
+                                    formula_flowables.append(Paragraph(f"Std Dev = sqrt(({s['sum_sq']:.2f} - ({s['sum']:.2f})²/{s['n']}) / ({s['n']-1})) = {s['std']:.2f}", styles['body']))
+                                    formula_flowables.append(Spacer(1, 6))
                             pdf_bytes = build_report_pdf(
                                 "DETAILED CONCRETE CUBE CALCULATIONS",
                                 f"Calculations for {meta['project']}",
@@ -1071,6 +1124,9 @@ REQUIRED REPORT STRUCTURE:
                                 extra_flowables_before_body=[
                                     Paragraph("Complete Calculation Breakdown", styles['h2']),
                                     t,
+                                    Spacer(1, 6),
+                                    Paragraph("Formulas & Intermediate Values", styles['h2']),
+                                    *formula_flowables,
                                     Spacer(1, 6),
                                     Paragraph("AI Evaluation Summary", styles['h2']),
                                     *markdown_to_pdf_flowables(ai_cube_result_holder['text'], styles),
@@ -1130,6 +1186,21 @@ REQUIRED REPORT STRUCTURE:
                                     row[1].text = 'COV %'
                                     row[2].text = f"{s['cov']:.1f}"
                                     row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'n'
+                                    row[2].text = str(s['n'])
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Σx'
+                                    row[2].text = f"{s['sum']:.2f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Σx²'
+                                    row[2].text = f"{s['sum_sq']:.2f}"
+                                    row[3].text = ''
                             doc.add_heading('AI Compliance Verdict', level=1)
                             doc.add_paragraph(ai_cube_result_holder['text'])
                             out = io.BytesIO()
@@ -1140,7 +1211,7 @@ REQUIRED REPORT STRUCTURE:
                         except Exception as ex:
                             ui.notify(f'Calc Word error: {str(ex)}', type='negative')
 
-                    # Buttons row
+                    # Buttons
                     with ui.row().classes('w-full gap-4 flex-wrap'):
                         ui.button('📄 Download Normal PDF', on_click=download_normal_pdf).classes('primary-btn')
                         ui.button('📝 Download Normal Word', on_click=download_normal_word).classes('primary-btn')
@@ -1149,56 +1220,25 @@ REQUIRED REPORT STRUCTURE:
                         ui.button('📊 Download Calculations PDF', on_click=download_calc_pdf).classes('primary-btn')
                         ui.button('📊 Download Calculations Word', on_click=download_calc_word).classes('primary-btn')
 
-                # ---- Detailed Calculations Panel (expandable) ----
-                calc_panel.clear()
-                with calc_panel:
-                    with ui.expansion('📊 View Detailed Calculations', icon='calculate').classes('w-full bg-[#0d1a35] rounded-lg'):
-                        # Build a nice table with all details
-                        rows = [["Stage", "Specimen", "Strength (N/mm2)", "Deviation from Mean"]]
-                        for label, values, s in stage_stats:
-                            if s:
-                                mean = s['mean']
-                                for idx, val in enumerate(values):
-                                    rows.append([label, f"#{idx+1}", f"{val:.1f}", f"{val - mean:+.2f}"])
-                                rows.append([label, "Mean", f"{mean:.2f}", ""])
-                                rows.append([label, "Std Dev", f"{s['std']:.2f}", ""])
-                                rows.append([label, "Min", f"{s['min']:.1f}", ""])
-                                rows.append([label, "Max", f"{s['max']:.1f}", ""])
-                                rows.append([label, "COV %", f"{s['cov']:.1f}", ""])
-                        # Convert to markdown table
-                        md = "| " + " | ".join(rows[0]) + " |\n"
-                        md += "|" + "|".join(["---"] * len(rows[0])) + "|\n"
-                        for r in rows[1:]:
-                            md += "| " + " | ".join(r) + " |\n"
-                        ui.markdown(md).classes('markdown-body')
-
-                # ---- Chatbots ----
-                # We'll place two buttons that toggle chat panels
+                # ---- Chatbots (toggled) ----
                 chat_result_visible = {'show': False}
                 chat_code_visible = {'show': False}
 
                 def toggle_result_chat():
                     chat_result_visible['show'] = not chat_result_visible['show']
-                    chat_result_panel.toggle()
-                    if chat_result_visible['show']:
-                        chat_result_panel.visible = True
-                    else:
-                        chat_result_panel.visible = False
+                    chat_result_panel.set_visibility(chat_result_visible['show'])
 
                 def toggle_code_chat():
                     chat_code_visible['show'] = not chat_code_visible['show']
-                    chat_code_panel.toggle()
-                    if chat_code_visible['show']:
-                        chat_code_panel.visible = True
-                    else:
-                        chat_code_panel.visible = False
+                    chat_code_panel.set_visibility(chat_code_visible['show'])
 
                 with ui.row().classes('w-full gap-4 mt-4'):
                     ui.button('💬 Ask about Results', on_click=toggle_result_chat).classes('primary-btn')
                     ui.button('📚 Ask about Egyptian Code', on_click=toggle_code_chat).classes('primary-btn')
 
                 # Result Chat Panel
-                chat_result_panel = ui.column().classes('output-card w-full mt-4').bind_visibility_from(chat_result_visible, 'show')
+                chat_result_panel = ui.column().classes('output-card w-full mt-4')
+                chat_result_panel.set_visibility(False)
                 with chat_result_panel:
                     with ui.column().classes('input-card w-full'):
                         ui.label('Chat about these cube results').classes('text-lg font-bold text-white')
@@ -1224,7 +1264,6 @@ REQUIRED REPORT STRUCTURE:
                             result_chat_messages.append({"role": "user", "content": q})
                             result_chat_input.value = ''
                             render_result_chat()
-                            # Prepare context: results summary
                             context = f"""
 Project: {project_name_input.value}
 Location: {pour_location_input.value}
@@ -1246,7 +1285,8 @@ Stages:
                         ui.button('Send', on_click=send_result_chat).classes('primary-btn')
 
                 # Code Chat Panel
-                chat_code_panel = ui.column().classes('output-card w-full mt-4').bind_visibility_from(chat_code_visible, 'show')
+                chat_code_panel = ui.column().classes('output-card w-full mt-4')
+                chat_code_panel.set_visibility(False)
                 with chat_code_panel:
                     with ui.column().classes('input-card w-full'):
                         ui.label('Chat about Egyptian Codes (ECP 203, 202, 104)').classes('text-lg font-bold text-white')
@@ -1305,8 +1345,10 @@ Governing standard: {code_basis_select.value}
         chart_area = ui.column().classes('w-full')
         export_buttons_area = ui.row().classes('w-full gap-4 flex-wrap mt-4')
         calc_panel = ui.column().classes('w-full mt-4')
+        chat_result_panel = ui.column().classes('w-full')
+        chat_code_panel = ui.column().classes('w-full')
 
-        # Template upload section
+        # Template upload section (optional)
         with ui.row().classes('w-full gap-4 items-center mb-4'):
             ui.upload(label='Upload Company Template (DOCX with placeholders)',
                       auto_upload=True,
