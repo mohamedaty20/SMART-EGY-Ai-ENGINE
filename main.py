@@ -47,7 +47,7 @@ MARGIN = 32
 USABLE_WIDTH = PAGE_WIDTH - (2 * MARGIN)
 
 # =====================================================================
-# STYLING – Dark Navy with Premium Glows & Hovers
+# STYLING – Dark Navy with Black/White/Gray, no bright blue
 # =====================================================================
 app.native.window_args = {"resizable": True}
 
@@ -65,6 +65,16 @@ ui.add_head_html('''
         margin: 0; padding: 0;
         width: 100vw; height: 100vh;
         overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    /* Force all containers to respect viewport width */
+    .container-full {
+        width: 100% !important;
+        max-width: 100vw !important;
+        box-sizing: border-box !important;
+        padding: 0 12px !important;
+        overflow-x: auto !important;
     }
 
     /* Sidebar – dark navy with glow on hover */
@@ -109,6 +119,7 @@ ui.add_head_html('''
         box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
         transition: all 0.3s ease !important;
         min-height: 44px !important;
+        white-space: nowrap;
     }
     .primary-btn:hover, .q-btn:hover {
         background: linear-gradient(135deg, #2d2d2d 0%, #444444 100%) !important;
@@ -154,6 +165,8 @@ ui.add_head_html('''
         border: 1px solid #2c3f6b !important;
         border-radius: 10px !important;
         transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
     }
     input:focus, select:focus, textarea:focus, .q-field--highlighted .q-field__control {
         border-color: #FF8C00 !important;
@@ -198,6 +211,7 @@ ui.add_head_html('''
         max-width: none !important;
         box-sizing: border-box;
         transition: all 0.3s ease;
+        overflow-x: auto;
     }
     .input-card:hover {
         border-color: #FF8C00 !important;
@@ -215,6 +229,7 @@ ui.add_head_html('''
         text-align: center;
         min-width: 140px;
         transition: all 0.3s ease;
+        flex: 1 1 auto;
     }
     .stat-chip:hover {
         border-color: #FF8C00 !important;
@@ -234,7 +249,7 @@ ui.add_head_html('''
         margin-top: 4px;
     }
 
-    /* Main title – big, bold */
+    /* Main title */
     .main-title {
         font-size: 3.2rem !important;
         font-weight: 900 !important;
@@ -242,13 +257,15 @@ ui.add_head_html('''
         text-shadow: 0 0 30px rgba(255, 140, 0, 0.1);
         color: #FFFFFF;
         margin-bottom: 8px;
+        word-break: break-word;
     }
 
-    /* Sub title */
+    /* Sub title – gray/silver */
     .sub-title {
-        color: #A9B6D0 !important;
+        color: #C0C8D8 !important;
         font-weight: 500;
         font-size: 1.1rem;
+        word-break: break-word;
     }
 
     /* Chat messages */
@@ -272,10 +289,11 @@ ui.add_head_html('''
         color: #FF8C00;
     }
     .chat-message .role-label.user {
-        color: #4FC3F7;
+        color: #FFFFFF;
     }
     .chat-message .content {
         padding-left: 8px;
+        word-break: break-word;
     }
 
     /* Footer */
@@ -292,12 +310,13 @@ ui.add_head_html('''
         box-sizing: border-box;
         border-radius: 16px 16px 0 0;
         transition: border-color 0.3s ease;
+        word-break: break-word;
     }
     .app-footer:hover {
         border-top-color: #FF8C00;
     }
     .app-footer a {
-        color: #4FC3F7;
+        color: #FFFFFF;
         text-decoration: none;
         transition: color 0.3s ease;
     }
@@ -314,6 +333,8 @@ ui.add_head_html('''
         color: #E9EDF5;
         background: transparent !important;
         padding: 0 !important;
+        word-break: break-word;
+        overflow-x: auto;
     }
     .markdown-body h1, .markdown-body h2, .markdown-body h3,
     .markdown-body h4, .markdown-body h5, .markdown-body h6 {
@@ -325,8 +346,8 @@ ui.add_head_html('''
     }
     .markdown-body h1 { font-size: 22px !important; border-bottom: 2px solid #FF8C00; padding-bottom: 8px; }
     .markdown-body h2 { font-size: 19px !important; }
-    .markdown-body h3 { font-size: 17px !important; color: #4FC3F7 !important; }
-    .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 15px !important; color: #4FC3F7 !important; }
+    .markdown-body h3 { font-size: 17px !important; color: #FFFFFF !important; }
+    .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 15px !important; color: #FFFFFF !important; }
     .markdown-body p { margin: 10px 0 !important; }
     .markdown-body strong { color: #FFFFFF; }
     .markdown-body ul, .markdown-body ol { padding-left: 25px !important; margin: 10px 0 !important; }
@@ -338,7 +359,7 @@ ui.add_head_html('''
         border-radius: 4px;
         padding: 2px 6px;
         font-size: 12.5px;
-        color: #4FC3F7;
+        color: #FFFFFF;
     }
     .markdown-body table {
         border-collapse: collapse !important;
@@ -350,6 +371,9 @@ ui.add_head_html('''
         overflow: hidden !important;
         box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
         transition: box-shadow 0.3s ease;
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
     }
     .markdown-body table:hover {
         box-shadow: 0 6px 30px rgba(255, 140, 0, 0.15) !important;
@@ -373,7 +397,26 @@ ui.add_head_html('''
         background-color: rgba(255, 140, 0, 0.08);
     }
 
-    /* Responsive */
+    /* Make all columns responsive */
+    .q-field, .q-field__control, .q-field__native, .q-field__input {
+        max-width: 100% !important;
+    }
+
+    /* Fix for mobile: add padding-left and allow horizontal scroll */
+    .q-page-container, .q-layout, .q-page {
+        width: 100% !important;
+        max-width: 100vw !important;
+        overflow-x: auto !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    /* Ensure all content is within viewport */
+    .q-page {
+        padding: 0 6px !important;
+    }
+
+    /* Responsive tweaks */
     @media (max-width: 768px) {
         .main-title {
             font-size: 2.2rem !important;
@@ -390,19 +433,19 @@ ui.add_head_html('''
         }
         .input-card {
             padding: 12px 14px !important;
+            margin-left: 0;
+            margin-right: 0;
         }
         .primary-btn, .q-btn {
             padding: 8px 16px !important;
             font-size: 13px !important;
             min-height: 36px !important;
             border-radius: 10px !important;
+            white-space: normal;
         }
         .app-footer {
             font-size: 11px !important;
             padding: 14px 12px !important;
-        }
-        .markdown-body {
-            overflow-x: auto;
         }
         .markdown-body table {
             display: block;
@@ -411,16 +454,30 @@ ui.add_head_html('''
         }
         .markdown-body table td, .markdown-body table th {
             white-space: normal !important;
+            word-break: break-word;
         }
-        .markdown-body {
-            overflow-x: auto;
+        .q-field__native, .q-field__input {
+            font-size: 14px !important;
+        }
+        /* Add left margin to content on mobile */
+        .q-page {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+        }
+        .container-full {
+            padding-left: 6px !important;
+            padding-right: 6px !important;
+        }
+        /* Make sidebar more compact */
+        .sidebar-container {
+            width: 85vw !important;
         }
     }
 </style>
 ''', shared=True)
 
 # =====================================================================
-# HELPER FUNCTIONS (Full)
+# HELPER FUNCTIONS (Full – unchanged)
 # =====================================================================
 
 _LATEX_SIMPLE = {
@@ -713,11 +770,11 @@ async def call_gemini(contents, system_instruction=None, temperature=0.1, timeou
         raise Exception("AI request timed out. Please try with a smaller file or simplify your query.")
 
 # =====================================================================
-# MAIN PAGE – single tool, no tabs, no emojis
+# MAIN PAGE – single tool, no tabs, no emojis, fully responsive
 # =====================================================================
 @ui.page('/')
 def main_page():
-    ui.query('body').style('width: 100vw; height: 100vh; overflow-x: hidden;')
+    ui.query('body').style('width: 100vw; height: 100vh; overflow-x: hidden; overflow-y: auto;')
 
     # ---- Load saved state ----
     state = app.storage.user.get('app_state', {})
@@ -784,14 +841,14 @@ def main_page():
         }
 
     # ---- Main content ----
-    with ui.column().classes('w-full min-h-screen p-4'):
+    with ui.column().classes('w-full min-h-screen p-4 container-full'):
         # Title block
         with ui.column().classes('w-full bg-[#0d1a35] px-6 py-4 rounded-xl border border-[#FF8C00] shadow-lg mb-4'):
             ui.label('AI Concrete Cube Calculation Sheet & Statistical Verifier').classes('main-title text-white')
             ui.label('Precision-calibrated for Egyptian Code of Practice.').classes('sub-title mt-1')
             ui.label('Lead Technical Auditor: Eng. Mohamed Abd Al Aty').classes('text-base text-[#A9B6D0] font-semibold mt-1')
 
-        # Marquee
+        # Marquee – no blue
         ui.add_head_html('''
         <style>@keyframes marquee { 0% { transform: translate(0, 0); } 100% { transform: translate(-100%, 0); } }</style>
         ''')
@@ -804,7 +861,7 @@ def main_page():
         </div>
         ''')
 
-        # ---- Tool content (no tabs) ----
+        # ---- Tool content ----
         ui.label('Input Test Data').classes('text-xl font-bold text-white mb-4')
 
         with ui.row().classes('w-full gap-4 mb-4'):
@@ -818,7 +875,7 @@ def main_page():
                 ui.label('28-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
                 c28_input = ui.input(value=state.get('c28', '32.5, 34.0, 31.0, 35.5, 29.0, 33.0')).classes('w-full').props('helper="Comma-separated values"')
 
-        # Load Example & Save State (no emojis)
+        # Load Example & Save State
         def load_example():
             project_name_input.value = 'Highway Expansion Project'
             pour_location_input.value = 'Highway Section Ch. 12+500'
@@ -852,7 +909,7 @@ def main_page():
             app.storage.user['app_state'] = state
             ui.notify('State saved to browser storage.', type='positive')
 
-        with ui.row().classes('w-full gap-4 mb-4'):
+        with ui.row().classes('w-full gap-4 mb-4 flex-wrap'):
             ui.button('Load Example', on_click=load_example).classes('primary-btn')
             ui.button('Save State', on_click=save_state).classes('primary-btn')
 
@@ -908,7 +965,7 @@ def main_page():
                 return [all_stages[i] for i in idxs]
             return all_stages
 
-        # ---- Audit log (for history) ----
+        # ---- Audit log ----
         def log_action(action, details):
             if 'audit_log' not in app.storage.user:
                 app.storage.user['audit_log'] = []
@@ -1048,7 +1105,7 @@ def main_page():
                 x=x_seq,
                 y=all_vals,
                 mode='lines+markers',
-                marker=dict(color='#4FC3F7', size=8),
+                marker=dict(color='#FF8C00', size=8),
                 line=dict(color='#FF8C00', width=2),
                 name='Strengths'
             ))
@@ -1081,7 +1138,7 @@ def main_page():
                 x=x_seq,
                 y=all_vals,
                 mode='lines+markers',
-                marker=dict(color='#4FC3F7', size=8),
+                marker=dict(color='#FF8C00', size=8),
                 line=dict(color='#FF8C00', width=2),
                 name='Values'
             ))
@@ -1107,7 +1164,7 @@ def main_page():
                     x=x_seq,
                     y=all_vals,
                     mode='lines+markers',
-                    marker=dict(color='#4FC3F7', size=8),
+                    marker=dict(color='#FF8C00', size=8),
                     line=dict(color='#FF8C00', width=2),
                     name='Historical'
                 ))
@@ -1165,7 +1222,7 @@ def main_page():
             os.unlink(tmp_path)
             return out_bytes.getvalue()
 
-        with ui.row().classes('w-full gap-4 items-center mb-4'):
+        with ui.row().classes('w-full gap-4 items-center mb-4 flex-wrap'):
             ui.upload(label='Upload Company Template (DOCX with placeholders)',
                       auto_upload=True,
                       on_upload=handle_template_upload).props('flat dark').classes('flex-1')
@@ -1185,7 +1242,7 @@ def main_page():
                 return
 
             with result_output_area:
-                ui.spinner('ios', size='lg').classes('self-center text-[#4FC3F7]')
+                ui.spinner('ios', size='lg').classes('self-center text-[#FF8C00]')
                 ui.label('Running statistical evaluation & code compliance verification...').classes('self-center text-sm')
 
             try:
@@ -1274,7 +1331,7 @@ REQUIRED REPORT STRUCTURE:
                     fig.add_trace(go.Scatter(
                         x=labels, y=means, mode='lines+markers+text',
                         text=[f"{v:.1f}" for v in means], textposition="top center",
-                        line=dict(color='#4FC3F7', width=3), marker=dict(size=10, color='#FF8C00'),
+                        line=dict(color='#FF8C00', width=3), marker=dict(size=10, color='#FF8C00'),
                     ))
                     fig.add_hline(y=target_fcu, line_dash="dash", line_color="#22C55E",
                                   annotation_text=f"Target f_cu ({target_fcu} N/mm2)", annotation_position="bottom right")
@@ -1565,7 +1622,7 @@ REQUIRED REPORT STRUCTURE:
                         ui.button('Download Calculations Word', on_click=download_calc_word).classes('primary-btn')
 
                 # ---- Chatbots ----
-                chat_toggle_row = ui.row().classes('w-full gap-4 mt-4')
+                chat_toggle_row = ui.row().classes('w-full gap-4 mt-4 flex-wrap')
                 with chat_toggle_row:
                     chat_result_visible = {'show': False}
                     chat_code_visible = {'show': False}
@@ -1680,7 +1737,7 @@ Governing standard: {code_basis_select.value}
         with result_output_area:
             ui.markdown('*Click "Run Statistical Calculation & Verification" to generate the report and charts.*').classes('text-sm text-[#A9B6D0]')
 
-        # ---- Audit Trail History (at the bottom) ----
+        # ---- Audit Trail ----
         ui.separator().classes('my-6')
         ui.label('Audit Trail').classes('text-xl font-bold text-white mb-2')
         audit_container = ui.column().classes('w-full')
