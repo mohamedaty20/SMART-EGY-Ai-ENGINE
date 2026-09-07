@@ -8,3 +8,5 @@ nicegui
 google-genai
 reportlab
 Pillow
+python-docx
+docxtpl
