@@ -67,7 +67,7 @@ ui.add_head_html('''
         overflow-x: hidden;
     }
 
-    /* ---- SIDEBAR – dark navy with glow on hover ---- */
+    /* Sidebar – dark navy with glow on hover */
     .sidebar-container {
         background: #0b1a3a !important;
         border-right: 2px solid rgba(255, 140, 0, 0.4) !important;
@@ -96,7 +96,7 @@ ui.add_head_html('''
         background-color: rgba(13, 26, 53, 0.8) !important;
     }
 
-    /* ---- BUTTONS – black with white text, glow on hover ---- */
+    /* Buttons – black with white text, glow on hover */
     .primary-btn, .q-btn {
         background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
         color: #FFFFFF !important;
@@ -120,7 +120,7 @@ ui.add_head_html('''
         transform: translateY(0px) !important;
     }
 
-    /* ---- UPLOAD – dark with glow ---- */
+    /* Upload – dark with glow */
     .q-uploader {
         background: rgba(13, 26, 53, 0.6) !important;
         backdrop-filter: blur(8px) !important;
@@ -147,7 +147,7 @@ ui.add_head_html('''
         border-radius: 10px !important;
     }
 
-    /* ---- INPUT FIELDS – glow on focus ---- */
+    /* Input fields – glow on focus */
     input, select, textarea, .q-field__control {
         background-color: rgba(13, 26, 53, 0.7) !important;
         color: #FFFFFF !important;
@@ -166,7 +166,7 @@ ui.add_head_html('''
         color: #FF8C00 !important;
     }
 
-    /* ---- DROPDOWNS ---- */
+    /* Dropdowns */
     .q-menu, .q-popover, .q-virtual-scroll__content {
         background: rgba(13, 26, 53, 0.95) !important;
         backdrop-filter: blur(8px) !important;
@@ -185,7 +185,7 @@ ui.add_head_html('''
         box-shadow: 0 0 15px rgba(255, 140, 0, 0.1) !important;
     }
 
-    /* ---- CARDS – glass with glow on hover ---- */
+    /* Cards – glass with glow on hover */
     .input-card {
         background: rgba(13, 26, 53, 0.6);
         backdrop-filter: blur(8px);
@@ -205,7 +205,7 @@ ui.add_head_html('''
         transform: translateY(-2px);
     }
 
-    /* ---- STAT CHIPS – glowing on hover ---- */
+    /* Stat chips – glowing on hover */
     .stat-chip {
         background: rgba(13, 26, 53, 0.6);
         backdrop-filter: blur(8px);
@@ -234,58 +234,24 @@ ui.add_head_html('''
         margin-top: 4px;
     }
 
-    /* ---- TABS – with glow on active/hover ---- */
-    .q-tabs {
-        border-radius: 14px !important;
-        overflow: hidden !important;
-        background: rgba(13, 26, 53, 0.6) !important;
-        backdrop-filter: blur(8px) !important;
-        padding: 4px !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
-    }
-    .q-tabs__content {
-        overflow-x: auto !important;
-        flex-wrap: nowrap !important;
-        scrollbar-width: thin;
-        scrollbar-color: #FF8C00 transparent;
-    }
-    .q-tabs__content::-webkit-scrollbar {
-        height: 4px;
-    }
-    .q-tabs__content::-webkit-scrollbar-thumb {
-        background: #FF8C00;
-        border-radius: 2px;
-    }
-    .q-tabs__content::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    .q-tab {
-        color: #A9B6D0 !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        border-radius: 10px !important;
-        margin: 2px !important;
-        padding: 8px 16px !important;
-        white-space: nowrap;
-        flex-shrink: 0;
-    }
-    .q-tab:hover {
-        color: #FFFFFF !important;
-        background: rgba(255, 140, 0, 0.1) !important;
-        box-shadow: 0 0 20px rgba(255, 140, 0, 0.1) !important;
-    }
-    .q-tab--active {
-        color: #FF8C00 !important;
-        background: rgba(255, 140, 0, 0.15) !important;
-        box-shadow: 0 0 25px rgba(255, 140, 0, 0.15) !important;
-    }
-    .q-tab__indicator {
-        background: #FF8C00 !important;
-        height: 3px !important;
-        border-radius: 2px !important;
+    /* Main title – big, bold */
+    .main-title {
+        font-size: 3.2rem !important;
+        font-weight: 900 !important;
+        letter-spacing: -0.02em;
+        text-shadow: 0 0 30px rgba(255, 140, 0, 0.1);
+        color: #FFFFFF;
+        margin-bottom: 8px;
     }
 
-    /* ---- CHAT MESSAGES ---- */
+    /* Sub title */
+    .sub-title {
+        color: #A9B6D0 !important;
+        font-weight: 500;
+        font-size: 1.1rem;
+    }
+
+    /* Chat messages */
     .chat-message {
         padding: 8px 0;
         border-bottom: 1px solid rgba(255,255,255,0.05);
@@ -312,7 +278,7 @@ ui.add_head_html('''
         padding-left: 8px;
     }
 
-    /* ---- FOOTER ---- */
+    /* Footer */
     .app-footer {
         width: 100%;
         background: rgba(13, 26, 53, 0.7);
@@ -341,7 +307,7 @@ ui.add_head_html('''
         text-shadow: 0 0 8px rgba(255, 140, 0, 0.3);
     }
 
-    /* ---- MARKDOWN ---- */
+    /* Markdown */
     .markdown-body {
         font-size: 14px;
         line-height: 1.7;
@@ -407,25 +373,13 @@ ui.add_head_html('''
         background-color: rgba(255, 140, 0, 0.08);
     }
 
-    /* ---- MAIN TITLES ---- */
-    .main-title {
-        font-size: 3.8rem !important;
-        font-weight: 900 !important;
-        letter-spacing: -0.02em;
-        text-shadow: 0 0 30px rgba(255, 140, 0, 0.1);
-    }
-    .sub-title {
-        color: #FFFFFF !important;
-        font-weight: 500;
-    }
-
-    /* ---- RESPONSIVE ---- */
+    /* Responsive */
     @media (max-width: 768px) {
         .main-title {
             font-size: 2.2rem !important;
         }
         .sub-title {
-            font-size: 1rem !important;
+            font-size: 0.9rem !important;
         }
         .stat-chip {
             min-width: 100px !important;
@@ -446,16 +400,6 @@ ui.add_head_html('''
         .app-footer {
             font-size: 11px !important;
             padding: 14px 12px !important;
-        }
-        .q-tabs__content {
-            flex-wrap: nowrap !important;
-        }
-        .q-tab {
-            font-size: 12px !important;
-            padding: 6px 10px !important;
-        }
-        .q-uploader {
-            font-size: 12px !important;
         }
         .markdown-body {
             overflow-x: auto;
@@ -715,7 +659,7 @@ def build_report_pdf(doc_title, subtitle, body_markdown, meta, logo_bytes, extra
     return buffer.getvalue()
 
 # =====================================================================
-# CODE COMPLIANCE (unchanged)
+# CODE COMPLIANCE
 # =====================================================================
 CODE_BASIS_OPTIONS = [
     "Egyptian Codes: ECP 203 / ECP 202 / ECP 104 (Default Core Basis)",
@@ -769,7 +713,7 @@ async def call_gemini(contents, system_instruction=None, temperature=0.1, timeou
         raise Exception("AI request timed out. Please try with a smaller file or simplify your query.")
 
 # =====================================================================
-# MAIN PAGE
+# MAIN PAGE – single tool, no tabs, no emojis
 # =====================================================================
 @ui.page('/')
 def main_page():
@@ -782,7 +726,7 @@ def main_page():
     sidebar = ui.left_drawer().classes('sidebar-container').style('width: 380px;')
     with sidebar:
         with ui.row().classes('w-full items-center justify-between mb-4 p-2'):
-            ui.label('📋 PROJECT METADATA').classes('text-white font-bold text-base tracking-wide')
+            ui.label('PROJECT METADATA').classes('text-white font-bold text-base tracking-wide')
             ui.button('✕', on_click=sidebar.toggle).classes(
                 'bg-transparent text-white text-xl hover:text-[#FF8C00] p-1 min-w-[36px] !shadow-none !rounded-full !bg-transparent'
             ).style('font-size: 20px; line-height: 1;')
@@ -843,10 +787,9 @@ def main_page():
     with ui.column().classes('w-full min-h-screen p-4'):
         # Title block
         with ui.column().classes('w-full bg-[#0d1a35] px-6 py-4 rounded-xl border border-[#FF8C00] shadow-lg mb-4'):
-            ui.label('SMART EGY-CIVIL AI AUDITOR').classes('main-title text-white')
-            ui.label('Concrete Cube Statistical Verifier – ECP 203 Compliant').classes('sub-title text-lg font-medium mt-1')
+            ui.label('AI Concrete Cube Calculation Sheet & Statistical Verifier').classes('main-title text-white')
+            ui.label('Precision-calibrated for Egyptian Code of Practice.').classes('sub-title mt-1')
             ui.label('Lead Technical Auditor: Eng. Mohamed Abd Al Aty').classes('text-base text-[#A9B6D0] font-semibold mt-1')
-            ui.label('Precision‑calibrated for Egyptian Code of Practice.').classes('text-sm text-[#A9B6D0] mt-1 italic')
 
         # Marquee
         ui.add_head_html('''
@@ -861,459 +804,437 @@ def main_page():
         </div>
         ''')
 
-        # ---- Tabs (only Calculator and Audit Trail) ----
-        with ui.tabs().classes('w-full text-white bg-[#0d1a35] rounded-lg') as tabs:
-            t_calc = ui.tab('Calculator').classes('text-white font-bold')
-            t_audit = ui.tab('📜 Audit Trail').classes('text-white font-bold')
+        # ---- Tool content (no tabs) ----
+        ui.label('Input Test Data').classes('text-xl font-bold text-white mb-4')
 
-        with ui.tab_panels(tabs, value=t_calc).classes('w-full bg-transparent mt-4'):
-            # ---- Calculator Tab ----
-            with ui.tab_panel(t_calc):
-                ui.label('Concrete Cube Calculation Sheet & Statistical Verifier').classes('text-2xl font-bold text-white mb-4')
+        with ui.row().classes('w-full gap-4 mb-4'):
+            with ui.column().classes('input-card flex-1'):
+                ui.label('7-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
+                c7_input = ui.input(value=state.get('c7', '21.0, 22.5, 20.5')).classes('w-full').props('helper="Comma-separated values"')
+            with ui.column().classes('input-card flex-1'):
+                ui.label('14-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
+                c14_input = ui.input(value=state.get('c14', '26.0, 27.2, 25.8')).classes('w-full').props('helper="Comma-separated values"')
+            with ui.column().classes('input-card flex-1'):
+                ui.label('28-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
+                c28_input = ui.input(value=state.get('c28', '32.5, 34.0, 31.0, 35.5, 29.0, 33.0')).classes('w-full').props('helper="Comma-separated values"')
 
-                with ui.row().classes('w-full gap-4 mb-4'):
-                    with ui.column().classes('input-card flex-1'):
-                        ui.label('7-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
-                        c7_input = ui.input(value=state.get('c7', '21.0, 22.5, 20.5')).classes('w-full').props('helper="Comma-separated values"')
-                    with ui.column().classes('input-card flex-1'):
-                        ui.label('14-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
-                        c14_input = ui.input(value=state.get('c14', '26.0, 27.2, 25.8')).classes('w-full').props('helper="Comma-separated values"')
-                    with ui.column().classes('input-card flex-1'):
-                        ui.label('28-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
-                        c28_input = ui.input(value=state.get('c28', '32.5, 34.0, 31.0, 35.5, 29.0, 33.0')).classes('w-full').props('helper="Comma-separated values"')
+        # Load Example & Save State (no emojis)
+        def load_example():
+            project_name_input.value = 'Highway Expansion Project'
+            pour_location_input.value = 'Highway Section Ch. 12+500'
+            fcu_input.value = 30.0
+            truck_input.value = 'TRK-104'
+            ticket_input.value = 'BT-99482'
+            cement_input.value = '350.0'
+            water_input.value = '150.0'
+            engineer_input.value = 'Eng. Mohamed Abd Al Aty'
+            c7_input.value = '21.0, 22.5, 20.5'
+            c14_input.value = '26.0, 27.2, 25.8'
+            c28_input.value = '32.5, 34.0, 31.0, 35.5, 29.0, 33.0'
+            ui.notify('Example data loaded!', type='positive')
+            save_state()
 
-                # ---- Load Example & Save State (plain text, no emoji) ----
-                def load_example():
-                    project_name_input.value = 'Highway Expansion Project'
-                    pour_location_input.value = 'Highway Section Ch. 12+500'
-                    fcu_input.value = 30.0
-                    truck_input.value = 'TRK-104'
-                    ticket_input.value = 'BT-99482'
-                    cement_input.value = '350.0'
-                    water_input.value = '150.0'
-                    engineer_input.value = 'Eng. Mohamed Abd Al Aty'
-                    c7_input.value = '21.0, 22.5, 20.5'
-                    c14_input.value = '26.0, 27.2, 25.8'
-                    c28_input.value = '32.5, 34.0, 31.0, 35.5, 29.0, 33.0'
-                    ui.notify('Example data loaded!', type='positive')
-                    save_state()
+        def save_state():
+            state = {
+                'project_name': project_name_input.value,
+                'pour_location': pour_location_input.value,
+                'fcu': fcu_input.value,
+                'truck': truck_input.value,
+                'ticket': ticket_input.value,
+                'cement': cement_input.value,
+                'water': water_input.value,
+                'engineer': engineer_input.value,
+                'c7': c7_input.value,
+                'c14': c14_input.value,
+                'c28': c28_input.value,
+                'code_basis': code_basis_select.value,
+            }
+            app.storage.user['app_state'] = state
+            ui.notify('State saved to browser storage.', type='positive')
 
-                def save_state():
-                    state = {
-                        'project_name': project_name_input.value,
-                        'pour_location': pour_location_input.value,
-                        'fcu': fcu_input.value,
-                        'truck': truck_input.value,
-                        'ticket': ticket_input.value,
-                        'cement': cement_input.value,
-                        'water': water_input.value,
-                        'engineer': engineer_input.value,
-                        'c7': c7_input.value,
-                        'c14': c14_input.value,
-                        'c28': c28_input.value,
-                        'code_basis': code_basis_select.value,
-                    }
-                    app.storage.user['app_state'] = state
-                    ui.notify('State saved to browser storage.', type='positive')
+        with ui.row().classes('w-full gap-4 mb-4'):
+            ui.button('Load Example', on_click=load_example).classes('primary-btn')
+            ui.button('Save State', on_click=save_state).classes('primary-btn')
 
-                with ui.row().classes('w-full gap-4 mb-4'):
-                    ui.button('Load Example', on_click=load_example).classes('primary-btn')
-                    ui.button('Save State', on_click=save_state).classes('primary-btn')
+        # Stage filter
+        stage_selector = ui.select(
+            label='Select Stage Display Filter',
+            options=['All Stages', '7-Day Stage', '14-Day Stage', '28-Day Stage'],
+            value='All Stages',
+        ).classes('w-full md:w-1/3 mb-4').props('helper="Choose which stage to display"')
 
-                # ---- Stage filter ----
-                stage_selector = ui.select(
-                    label='Select Stage Display Filter',
-                    options=['All Stages', '7-Day Stage', '14-Day Stage', '28-Day Stage'],
-                    value='All Stages',
-                ).classes('w-full md:w-1/3 mb-4').props('helper="Choose which stage to display"')
+        stats_area = ui.column().classes('w-full')
+        result_output_area = ui.column().classes('w-full')
+        chart_area = ui.column().classes('w-full')
+        export_buttons_area = ui.row().classes('w-full gap-4 flex-wrap mt-4')
+        calc_panel = ui.column().classes('w-full mt-4')
+        predictive_charts_area = ui.column().classes('w-full mt-4')
 
-                stats_area = ui.column().classes('w-full')
-                result_output_area = ui.column().classes('w-full')
-                chart_area = ui.column().classes('w-full')
-                export_buttons_area = ui.row().classes('w-full gap-4 flex-wrap mt-4')
-                calc_panel = ui.column().classes('w-full mt-4')
-                predictive_charts_area = ui.column().classes('w-full mt-4')
+        # ---- Helper functions (local) ----
+        def parse_vals(txt):
+            try:
+                return [float(x.strip()) for x in txt.split(',') if x.strip() != '']
+            except Exception:
+                return []
 
-                # ---- Helper functions (local) ----
-                def parse_vals(txt):
-                    try:
-                        return [float(x.strip()) for x in txt.split(',') if x.strip() != '']
-                    except Exception:
-                        return []
+        def compute_stats(values):
+            if not values:
+                return None
+            arr = np.array(values, dtype=float)
+            n = len(arr)
+            mean = float(arr.mean())
+            std = float(arr.std(ddof=1)) if n > 1 else 0.0
+            return {
+                'n': n,
+                'mean': mean,
+                'std': std,
+                'min': float(arr.min()),
+                'max': float(arr.max()),
+                'cov': (std / mean * 100.0) if mean > 0 else 0.0,
+                'sum': float(arr.sum()),
+                'sum_sq': float((arr**2).sum()),
+                'values': arr.tolist(),
+            }
 
-                def compute_stats(values):
-                    if not values:
-                        return None
-                    arr = np.array(values, dtype=float)
-                    n = len(arr)
-                    mean = float(arr.mean())
-                    std = float(arr.std(ddof=1)) if n > 1 else 0.0
-                    return {
-                        'n': n,
-                        'mean': mean,
-                        'std': std,
-                        'min': float(arr.min()),
-                        'max': float(arr.max()),
-                        'cov': (std / mean * 100.0) if mean > 0 else 0.0,
-                        'sum': float(arr.sum()),
-                        'sum_sq': float((arr**2).sum()),
-                        'values': arr.tolist(),
-                    }
+        def get_selected_stages(stage_filter):
+            all_stages = [
+                ('7-Day', c7_input, parse_vals(c7_input.value)),
+                ('14-Day', c14_input, parse_vals(c14_input.value)),
+                ('28-Day', c28_input, parse_vals(c28_input.value)),
+            ]
+            mapping = {'7-Day Stage': [0], '14-Day Stage': [1], '28-Day Stage': [2]}
+            if stage_filter in mapping:
+                idxs = mapping[stage_filter]
+                return [all_stages[i] for i in idxs]
+            return all_stages
 
-                def get_selected_stages(stage_filter):
-                    all_stages = [
-                        ('7-Day', c7_input, parse_vals(c7_input.value)),
-                        ('14-Day', c14_input, parse_vals(c14_input.value)),
-                        ('28-Day', c28_input, parse_vals(c28_input.value)),
-                    ]
-                    mapping = {'7-Day Stage': [0], '14-Day Stage': [1], '28-Day Stage': [2]}
-                    if stage_filter in mapping:
-                        idxs = mapping[stage_filter]
-                        return [all_stages[i] for i in idxs]
-                    return all_stages
+        # ---- Audit log (for history) ----
+        def log_action(action, details):
+            if 'audit_log' not in app.storage.user:
+                app.storage.user['audit_log'] = []
+            log = app.storage.user['audit_log']
+            log.append({
+                'timestamp': datetime.datetime.now().isoformat(),
+                'action': action,
+                'details': details,
+                'user': engineer_input.value or 'anonymous'
+            })
+            app.storage.user['audit_log'] = log
 
-                # ---- Audit log ----
-                def log_action(action, details):
-                    if 'audit_log' not in app.storage.user:
-                        app.storage.user['audit_log'] = []
-                    log = app.storage.user['audit_log']
-                    log.append({
-                        'timestamp': datetime.datetime.now().isoformat(),
-                        'action': action,
-                        'details': details,
-                        'user': engineer_input.value or 'anonymous'
-                    })
-                    app.storage.user['audit_log'] = log
+        # ---- Capability, outliers, confidence, forecast ----
+        def compute_capability(values, target, tolerance=5):
+            if not values:
+                return None
+            arr = np.array(values)
+            n = len(arr)
+            mean = arr.mean()
+            std = arr.std(ddof=1) if n > 1 else 0
+            if std == 0:
+                return None
+            usl = target + tolerance
+            lsl = target - tolerance
+            cpu = (usl - mean) / (3*std)
+            cpl = (mean - lsl) / (3*std)
+            cp = (usl - lsl) / (6*std)
+            cpk = min(cpu, cpl)
+            pp = (usl - lsl) / (6*arr.std(ddof=0)) if arr.std(ddof=0) > 0 else None
+            ppk = min((usl - mean)/(3*arr.std(ddof=0)), (mean - lsl)/(3*arr.std(ddof=0))) if arr.std(ddof=0) > 0 else None
+            return {'cp': cp, 'cpk': cpk, 'pp': pp, 'ppk': ppk, 'usl': usl, 'lsl': lsl}
 
-                # ---- Capability ----
-                def compute_capability(values, target, tolerance=5):
-                    if not values:
-                        return None
-                    arr = np.array(values)
-                    n = len(arr)
-                    mean = arr.mean()
-                    std = arr.std(ddof=1) if n > 1 else 0
-                    if std == 0:
-                        return None
-                    usl = target + tolerance
-                    lsl = target - tolerance
-                    cpu = (usl - mean) / (3*std)
-                    cpl = (mean - lsl) / (3*std)
-                    cp = (usl - lsl) / (6*std)
-                    cpk = min(cpu, cpl)
-                    pp = (usl - lsl) / (6*arr.std(ddof=0)) if arr.std(ddof=0) > 0 else None
-                    ppk = min((usl - mean)/(3*arr.std(ddof=0)), (mean - lsl)/(3*arr.std(ddof=0))) if arr.std(ddof=0) > 0 else None
-                    return {'cp': cp, 'cpk': cpk, 'pp': pp, 'ppk': ppk, 'usl': usl, 'lsl': lsl}
+        def detect_outliers(values, mean, std):
+            if not values or std == 0:
+                return []
+            arr = np.array(values)
+            return [(i, v) for i, v in enumerate(arr) if abs(v - mean) > 3*std]
 
-                # ---- Outlier ----
-                def detect_outliers(values, mean, std):
-                    if not values or std == 0:
-                        return []
-                    arr = np.array(values)
-                    return [(i, v) for i, v in enumerate(arr) if abs(v - mean) > 3*std]
+        def conf_interval(values, confidence=0.95):
+            if not values or len(values) < 2:
+                return None
+            arr = np.array(values)
+            mean = arr.mean()
+            std = arr.std(ddof=1)
+            n = len(arr)
+            t = scipy_stats.t.ppf((1+confidence)/2, n-1)
+            margin = t * std / np.sqrt(n)
+            return (mean - margin, mean + margin)
 
-                # ---- Confidence interval ----
-                def conf_interval(values, confidence=0.95):
-                    if not values or len(values) < 2:
-                        return None
-                    arr = np.array(values)
-                    mean = arr.mean()
-                    std = arr.std(ddof=1)
-                    n = len(arr)
-                    t = scipy_stats.t.ppf((1+confidence)/2, n-1)
-                    margin = t * std / np.sqrt(n)
-                    return (mean - margin, mean + margin)
+        def forecast(values, steps=3):
+            if len(values) < 2:
+                return None, None
+            x = np.arange(1, len(values)+1)
+            y = np.array(values)
+            slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(x, y)
+            future_x = np.array(range(len(values)+1, len(values)+steps+1))
+            pred_y = slope * future_x + intercept
+            return pred_y.tolist(), std_err
 
-                # ---- Forecast ----
-                def forecast(values, steps=3):
-                    if len(values) < 2:
-                        return None, None
-                    x = np.arange(1, len(values)+1)
-                    y = np.array(values)
-                    slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(x, y)
-                    future_x = np.array(range(len(values)+1, len(values)+steps+1))
-                    pred_y = slope * future_x + intercept
-                    return pred_y.tolist(), std_err
+        # ---- Build detailed calc markdown ----
+        def build_detailed_calculations_md(stage_stats, target_fcu):
+            md_lines = []
+            for label, values, st in stage_stats:
+                if not st:
+                    continue
+                md_lines.append(f"### {label} Stage")
+                md_lines.append("**Raw Data (N/mm²):** " + ", ".join(f"{v:.1f}" for v in values))
+                n = st['n']
+                sum_vals = st['sum']
+                sum_sq = st['sum_sq']
+                mean = st['mean']
+                std = st['std']
+                cov = st['cov']
+                md_lines.append("")
+                md_lines.append("**Calculations:**")
+                md_lines.append(f"- Number of specimens (n) = {n}")
+                md_lines.append(f"- Sum (Σx) = {sum_vals:.2f}")
+                md_lines.append(f"- Sum of squares (Σx²) = {sum_sq:.2f}")
+                md_lines.append(f"- Mean (x̄) = Σx / n = {sum_vals:.2f} / {n} = **{mean:.2f}** N/mm²")
+                md_lines.append(f"- Standard deviation (s) = sqrt((Σx² - (Σx)²/n) / (n-1)) = **{std:.2f}** N/mm²")
+                md_lines.append(f"- Coefficient of variation (COV) = (s / x̄) × 100 = **{cov:.1f}%**")
+                md_lines.append(f"- Minimum = {st['min']:.1f} N/mm²")
+                md_lines.append(f"- Maximum = {st['max']:.1f} N/mm²")
+                ci = conf_interval(values)
+                if ci:
+                    md_lines.append(f"- 95% Confidence Interval for the mean: [{ci[0]:.2f}, {ci[1]:.2f}]")
+                cap = compute_capability(values, target_fcu)
+                if cap:
+                    md_lines.append(f"- Process Capability: Cpk = {cap['cpk']:.2f}, Pp = {cap['pp']:.2f} (USL={cap['usl']:.1f}, LSL={cap['lsl']:.1f})")
+                out = detect_outliers(values, mean, std)
+                if out:
+                    md_lines.append(f"- Outliers detected (|x - mean| > 3σ): " + ", ".join(f"#{i+1}={v:.1f}" for i,v in out))
+                md_lines.append("")
+                md_lines.append("**Individual Deviations from Mean:**")
+                dev_table = "| Specimen | Strength | Deviation (x - x̄) |"
+                dev_table += "\n|----------|----------|-------------------|"
+                for idx, v in enumerate(values):
+                    dev = v - mean
+                    dev_table += f"\n| #{idx+1} | {v:.1f} | {dev:+.2f} |"
+                md_lines.append(dev_table)
+                md_lines.append("")
+            return "\n".join(md_lines)
 
-                # ---- Build detailed calc markdown ----
-                def build_detailed_calculations_md(stage_stats, target_fcu):
-                    md_lines = []
-                    for label, values, st in stage_stats:
-                        if not st:
-                            continue
-                        md_lines.append(f"### {label} Stage")
-                        md_lines.append("**Raw Data (N/mm²):** " + ", ".join(f"{v:.1f}" for v in values))
-                        n = st['n']
-                        sum_vals = st['sum']
-                        sum_sq = st['sum_sq']
-                        mean = st['mean']
-                        std = st['std']
-                        cov = st['cov']
-                        md_lines.append("")
-                        md_lines.append("**Calculations:**")
-                        md_lines.append(f"- Number of specimens (n) = {n}")
-                        md_lines.append(f"- Sum (Σx) = {sum_vals:.2f}")
-                        md_lines.append(f"- Sum of squares (Σx²) = {sum_sq:.2f}")
-                        md_lines.append(f"- Mean (x̄) = Σx / n = {sum_vals:.2f} / {n} = **{mean:.2f}** N/mm²")
-                        md_lines.append(f"- Standard deviation (s) = sqrt((Σx² - (Σx)²/n) / (n-1)) = **{std:.2f}** N/mm²")
-                        md_lines.append(f"- Coefficient of variation (COV) = (s / x̄) × 100 = **{cov:.1f}%**")
-                        md_lines.append(f"- Minimum = {st['min']:.1f} N/mm²")
-                        md_lines.append(f"- Maximum = {st['max']:.1f} N/mm²")
-                        # Confidence interval
-                        ci = conf_interval(values)
-                        if ci:
-                            md_lines.append(f"- 95% Confidence Interval for the mean: [{ci[0]:.2f}, {ci[1]:.2f}]")
-                        # Capability
-                        cap = compute_capability(values, target_fcu)
-                        if cap:
-                            md_lines.append(f"- Process Capability: Cpk = {cap['cpk']:.2f}, Pp = {cap['pp']:.2f} (USL={cap['usl']:.1f}, LSL={cap['lsl']:.1f})")
-                        # Outliers
-                        out = detect_outliers(values, mean, std)
-                        if out:
-                            md_lines.append(f"- ⚠️ Outliers detected (|x - mean| > 3σ): " + ", ".join(f"#{i+1}={v:.1f}" for i,v in out))
-                        md_lines.append("")
-                        md_lines.append("**Individual Deviations from Mean:**")
-                        dev_table = "| Specimen | Strength | Deviation (x - x̄) |"
-                        dev_table += "\n|----------|----------|-------------------|"
-                        for idx, v in enumerate(values):
-                            dev = v - mean
-                            dev_table += f"\n| #{idx+1} | {v:.1f} | {dev:+.2f} |"
-                        md_lines.append(dev_table)
-                        md_lines.append("")
-                    return "\n".join(md_lines)
+        # ---- Create predictive charts ----
+        def create_predictive_charts(stage_stats, target):
+            all_vals = []
+            all_labels = []
+            for label, values, st in stage_stats:
+                if st:
+                    all_vals.extend(values)
+                    all_labels.extend([label]*len(values))
+            if len(all_vals) < 2:
+                return None, None, None, None
 
-                # ---- Create predictive charts ----
-                def create_predictive_charts(stage_stats, target):
-                    # combine all values
-                    all_vals = []
-                    all_labels = []
-                    for label, values, st in stage_stats:
-                        if st:
-                            all_vals.extend(values)
-                            all_labels.extend([label]*len(values))
-                    if len(all_vals) < 2:
-                        return None, None, None, None
+            hist_fig = go.Figure()
+            hist_fig.add_trace(go.Histogram(
+                x=all_vals,
+                nbinsx=10,
+                marker_color='#FF8C00',
+                opacity=0.7,
+                name='Strengths'
+            ))
+            hist_fig.add_vline(x=target, line_dash="dash", line_color="#22C55E", annotation_text="Target")
+            hist_fig.update_layout(
+                title='Distribution of All Cube Strengths',
+                xaxis_title='Strength (N/mm²)',
+                yaxis_title='Frequency',
+                template='plotly_dark',
+                paper_bgcolor='#0d1a35',
+                plot_bgcolor='#0d1a35',
+                height=300
+            )
 
-                    # Histogram
-                    hist_fig = go.Figure()
-                    hist_fig.add_trace(go.Histogram(
-                        x=all_vals,
-                        nbinsx=10,
-                        marker_color='#FF8C00',
-                        opacity=0.7,
-                        name='Strengths'
-                    ))
-                    hist_fig.add_vline(x=target, line_dash="dash", line_color="#22C55E", annotation_text="Target")
-                    hist_fig.update_layout(
-                        title='Distribution of All Cube Strengths',
-                        xaxis_title='Strength (N/mm²)',
-                        yaxis_title='Frequency',
-                        template='plotly_dark',
-                        paper_bgcolor='#0d1a35',
-                        plot_bgcolor='#0d1a35',
-                        height=300
-                    )
+            x_seq = list(range(1, len(all_vals)+1))
+            time_fig = go.Figure()
+            time_fig.add_trace(go.Scatter(
+                x=x_seq,
+                y=all_vals,
+                mode='lines+markers',
+                marker=dict(color='#4FC3F7', size=8),
+                line=dict(color='#FF8C00', width=2),
+                name='Strengths'
+            ))
+            if len(x_seq) > 1:
+                slope, intercept, r2, _, _ = scipy_stats.linregress(x_seq, all_vals)
+                trend_y = [slope*x + intercept for x in x_seq]
+                time_fig.add_trace(go.Scatter(
+                    x=x_seq,
+                    y=trend_y,
+                    mode='lines',
+                    line=dict(color='#22C55E', width=2, dash='dash'),
+                    name=f'Trend (R²={r2**2:.3f})'
+                ))
+            time_fig.update_layout(
+                title='Strength Progression (Sequential)',
+                xaxis_title='Sample Index',
+                yaxis_title='Strength (N/mm²)',
+                template='plotly_dark',
+                paper_bgcolor='#0d1a35',
+                plot_bgcolor='#0d1a35',
+                height=300
+            )
 
-                    # Time series
-                    x_seq = list(range(1, len(all_vals)+1))
-                    time_fig = go.Figure()
-                    time_fig.add_trace(go.Scatter(
-                        x=x_seq,
-                        y=all_vals,
-                        mode='lines+markers',
-                        marker=dict(color='#4FC3F7', size=8),
-                        line=dict(color='#FF8C00', width=2),
-                        name='Strengths'
-                    ))
-                    if len(x_seq) > 1:
-                        slope, intercept, r2, _, _ = scipy_stats.linregress(x_seq, all_vals)
-                        trend_y = [slope*x + intercept for x in x_seq]
-                        time_fig.add_trace(go.Scatter(
-                            x=x_seq,
-                            y=trend_y,
-                            mode='lines',
-                            line=dict(color='#22C55E', width=2, dash='dash'),
-                            name=f'Trend (R²={r2**2:.3f})'
-                        ))
-                    time_fig.update_layout(
-                        title='Strength Progression (Sequential)',
-                        xaxis_title='Sample Index',
-                        yaxis_title='Strength (N/mm²)',
-                        template='plotly_dark',
-                        paper_bgcolor='#0d1a35',
-                        plot_bgcolor='#0d1a35',
-                        height=300
-                    )
+            overall_mean = np.mean(all_vals)
+            overall_std = np.std(all_vals) if len(all_vals)>1 else 0
+            ucl = overall_mean + 3 * overall_std
+            lcl = overall_mean - 3 * overall_std
+            control_fig = go.Figure()
+            control_fig.add_trace(go.Scatter(
+                x=x_seq,
+                y=all_vals,
+                mode='lines+markers',
+                marker=dict(color='#4FC3F7', size=8),
+                line=dict(color='#FF8C00', width=2),
+                name='Values'
+            ))
+            control_fig.add_hline(y=overall_mean, line_dash="solid", line_color="#22C55E", annotation_text="Mean")
+            control_fig.add_hline(y=ucl, line_dash="dash", line_color="#FF0000", annotation_text="UCL")
+            control_fig.add_hline(y=lcl, line_dash="dash", line_color="#FF0000", annotation_text="LCL")
+            control_fig.update_layout(
+                title='Control Chart (X-bar)',
+                xaxis_title='Sample Index',
+                yaxis_title='Strength (N/mm²)',
+                template='plotly_dark',
+                paper_bgcolor='#0d1a35',
+                plot_bgcolor='#0d1a35',
+                height=300
+            )
 
-                    # Control chart (X-bar with UCL/LCL)
-                    overall_mean = np.mean(all_vals)
-                    overall_std = np.std(all_vals) if len(all_vals)>1 else 0
-                    ucl = overall_mean + 3 * overall_std
-                    lcl = overall_mean - 3 * overall_std
-                    control_fig = go.Figure()
-                    control_fig.add_trace(go.Scatter(
-                        x=x_seq,
-                        y=all_vals,
-                        mode='lines+markers',
-                        marker=dict(color='#4FC3F7', size=8),
-                        line=dict(color='#FF8C00', width=2),
-                        name='Values'
-                    ))
-                    control_fig.add_hline(y=overall_mean, line_dash="solid", line_color="#22C55E", annotation_text="Mean")
-                    control_fig.add_hline(y=ucl, line_dash="dash", line_color="#FF0000", annotation_text="UCL")
-                    control_fig.add_hline(y=lcl, line_dash="dash", line_color="#FF0000", annotation_text="LCL")
-                    control_fig.update_layout(
-                        title='Control Chart (X-bar)',
-                        xaxis_title='Sample Index',
-                        yaxis_title='Strength (N/mm²)',
-                        template='plotly_dark',
-                        paper_bgcolor='#0d1a35',
-                        plot_bgcolor='#0d1a35',
-                        height=300
-                    )
+            if len(all_vals) > 1:
+                slope, intercept, _, _, _ = scipy_stats.linregress(x_seq, all_vals)
+                future_x = list(range(len(all_vals)+1, len(all_vals)+4))
+                future_y = [slope*x + intercept for x in future_x]
+                forecast_fig = go.Figure()
+                forecast_fig.add_trace(go.Scatter(
+                    x=x_seq,
+                    y=all_vals,
+                    mode='lines+markers',
+                    marker=dict(color='#4FC3F7', size=8),
+                    line=dict(color='#FF8C00', width=2),
+                    name='Historical'
+                ))
+                forecast_fig.add_trace(go.Scatter(
+                    x=future_x,
+                    y=future_y,
+                    mode='lines+markers+text',
+                    text=[f"{y:.1f}" for y in future_y],
+                    textposition="top center",
+                    marker=dict(color='#22C55E', size=10),
+                    line=dict(color='#22C55E', width=2, dash='dot'),
+                    name='Forecast'
+                ))
+                forecast_fig.update_layout(
+                    title='Predictive Forecast (Next 3 Tests)',
+                    xaxis_title='Sample Index',
+                    yaxis_title='Strength (N/mm²)',
+                    template='plotly_dark',
+                    paper_bgcolor='#0d1a35',
+                    plot_bgcolor='#0d1a35',
+                    height=300
+                )
+                return hist_fig, time_fig, control_fig, forecast_fig
+            else:
+                return hist_fig, time_fig, control_fig, None
 
-                    # Forecast
-                    if len(all_vals) > 1:
-                        slope, intercept, _, _, _ = scipy_stats.linregress(x_seq, all_vals)
-                        future_x = list(range(len(all_vals)+1, len(all_vals)+4))
-                        future_y = [slope*x + intercept for x in future_x]
-                        forecast_fig = go.Figure()
-                        forecast_fig.add_trace(go.Scatter(
-                            x=x_seq,
-                            y=all_vals,
-                            mode='lines+markers',
-                            marker=dict(color='#4FC3F7', size=8),
-                            line=dict(color='#FF8C00', width=2),
-                            name='Historical'
-                        ))
-                        forecast_fig.add_trace(go.Scatter(
-                            x=future_x,
-                            y=future_y,
-                            mode='lines+markers+text',
-                            text=[f"{y:.1f}" for y in future_y],
-                            textposition="top center",
-                            marker=dict(color='#22C55E', size=10),
-                            line=dict(color='#22C55E', width=2, dash='dot'),
-                            name='Forecast'
-                        ))
-                        forecast_fig.update_layout(
-                            title='Predictive Forecast (Next 3 Tests)',
-                            xaxis_title='Sample Index',
-                            yaxis_title='Strength (N/mm²)',
-                            template='plotly_dark',
-                            paper_bgcolor='#0d1a35',
-                            plot_bgcolor='#0d1a35',
-                            height=300
-                        )
-                        return hist_fig, time_fig, control_fig, forecast_fig
-                    else:
-                        return hist_fig, time_fig, control_fig, None
+        # ---- AI results holder ----
+        ai_cube_result_holder = {'text': ''}
+        stage_stats_holder = []
 
-                # ---- AI results holder ----
-                ai_cube_result_holder = {'text': ''}
-                stage_stats_holder = []
+        # ---- Template upload (optional) ----
+        template_bytes_holder = {'bytes': None, 'name': None}
+        template_status = ui.label('Template: Not uploaded').classes('text-xs text-amber-400 mb-1')
 
-                # ---- Template upload (optional) ----
-                template_bytes_holder = {'bytes': None, 'name': None}
-                template_status = ui.label('Template: Not uploaded').classes('text-xs text-amber-400 mb-1')
+        async def handle_template_upload(e):
+            try:
+                template_bytes_holder['bytes'] = await e.file.read()
+                template_bytes_holder['name'] = e.file.name
+                template_status.set_text(f'Template: {e.file.name}')
+                template_status.classes(replace='text-xs text-emerald-400 mb-1')
+                ui.notify('Template uploaded successfully!', type='positive')
+            except Exception as ex:
+                ui.notify(f'Error: {str(ex)}', type='negative')
 
-                async def handle_template_upload(e):
-                    try:
-                        template_bytes_holder['bytes'] = await e.file.read()
-                        template_bytes_holder['name'] = e.file.name
-                        template_status.set_text(f'Template: {e.file.name}')
-                        template_status.classes(replace='text-xs text-emerald-400 mb-1')
-                        ui.notify('Template uploaded successfully!', type='positive')
-                    except Exception as ex:
-                        ui.notify(f'Error: {str(ex)}', type='negative')
+        def fill_template(template_bytes, data_dict):
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
+                tmp.write(template_bytes)
+                tmp_path = tmp.name
+            doc = DocxTemplate(tmp_path)
+            doc.render(data_dict)
+            out_bytes = io.BytesIO()
+            doc.save(out_bytes)
+            out_bytes.seek(0)
+            os.unlink(tmp_path)
+            return out_bytes.getvalue()
 
-                def fill_template(template_bytes, data_dict):
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
-                        tmp.write(template_bytes)
-                        tmp_path = tmp.name
-                    doc = DocxTemplate(tmp_path)
-                    doc.render(data_dict)
-                    out_bytes = io.BytesIO()
-                    doc.save(out_bytes)
-                    out_bytes.seek(0)
-                    os.unlink(tmp_path)
-                    return out_bytes.getvalue()
+        with ui.row().classes('w-full gap-4 items-center mb-4'):
+            ui.upload(label='Upload Company Template (DOCX with placeholders)',
+                      auto_upload=True,
+                      on_upload=handle_template_upload).props('flat dark').classes('flex-1')
+            template_status
 
-                with ui.row().classes('w-full gap-4 items-center mb-4'):
-                    ui.upload(label='Upload Company Template (DOCX with placeholders)',
-                              auto_upload=True,
-                              on_upload=handle_template_upload).props('flat dark').classes('flex-1')
-                    template_status
+        # ---- Run function ----
+        async def run_verification():
+            result_output_area.clear()
+            export_buttons_area.clear()
+            chart_area.clear()
+            stats_area.clear()
+            calc_panel.clear()
+            predictive_charts_area.clear()
 
-                # ---- Run function ----
-                async def run_verification():
-                    result_output_area.clear()
-                    export_buttons_area.clear()
-                    chart_area.clear()
-                    stats_area.clear()
-                    calc_panel.clear()
-                    predictive_charts_area.clear()
+            if not client:
+                ui.notify('GEMINI_API_KEY missing in .env!', type='negative')
+                return
 
-                    if not client:
-                        ui.notify('GEMINI_API_KEY missing in .env!', type='negative')
-                        return
+            with result_output_area:
+                ui.spinner('ios', size='lg').classes('self-center text-[#4FC3F7]')
+                ui.label('Running statistical evaluation & code compliance verification...').classes('self-center text-sm')
 
-                    with result_output_area:
-                        ui.spinner('ios', size='lg').classes('self-center text-[#4FC3F7]')
-                        ui.label('Running statistical evaluation & code compliance verification...').classes('self-center text-sm')
+            try:
+                stage_filter = stage_selector.value
+                stages = get_selected_stages(stage_filter)
+                target_fcu = float(fcu_input.value) if fcu_input.value else 30.0
+                basis = code_basis_select.value
 
-                    try:
-                        stage_filter = stage_selector.value
-                        stages = get_selected_stages(stage_filter)
-                        target_fcu = float(fcu_input.value) if fcu_input.value else 30.0
-                        basis = code_basis_select.value
+                stage_stats = []
+                for label, _inp, values in stages:
+                    s = compute_stats(values)
+                    stage_stats.append((label, values, s))
+                stage_stats_holder = stage_stats
 
-                        stage_stats = []
-                        for label, _inp, values in stages:
-                            s = compute_stats(values)
-                            stage_stats.append((label, values, s))
-                        stage_stats_holder = stage_stats
+                stats_area.clear()
+                with stats_area:
+                    with ui.row().classes('w-full gap-4 flex-wrap mb-2'):
+                        for label, values, s in stage_stats:
+                            if not s:
+                                continue
+                            with ui.column().classes('stat-chip'):
+                                ui.label(f"{s['mean']:.2f}").classes('val')
+                                ui.label(f'{label} Mean (N/mm2)').classes('lbl')
+                            with ui.column().classes('stat-chip'):
+                                ui.label(f"{s['std']:.2f}").classes('val')
+                                ui.label(f'{label} Std Dev').classes('lbl')
+                            with ui.column().classes('stat-chip'):
+                                ui.label(f"{s['min']:.1f} / {s['max']:.1f}").classes('val')
+                                ui.label(f'{label} Min / Max').classes('lbl')
+                            cap = compute_capability(values, target_fcu)
+                            if cap:
+                                cpk = cap['cpk']
+                                color = '#22C55E' if cpk >= 1.33 else '#FF8C00' if cpk >= 1.0 else '#FF0000'
+                                with ui.column().classes('stat-chip'):
+                                    ui.label(f"{cpk:.2f}").classes('val').style(f'color: {color}')
+                                    ui.label(f'{label} Cpk').classes('lbl')
+                            ci = conf_interval(values)
+                            if ci:
+                                with ui.column().classes('stat-chip'):
+                                    ui.label(f"{ci[0]:.2f} – {ci[1]:.2f}").classes('val')
+                                    ui.label('95% CI').classes('lbl')
 
-                        # ---- Stats chips with capability ----
-                        stats_area.clear()
-                        with stats_area:
-                            with ui.row().classes('w-full gap-4 flex-wrap mb-2'):
-                                for label, values, s in stage_stats:
-                                    if not s:
-                                        continue
-                                    with ui.column().classes('stat-chip'):
-                                        ui.label(f"{s['mean']:.2f}").classes('val')
-                                        ui.label(f'{label} Mean (N/mm2)').classes('lbl')
-                                    with ui.column().classes('stat-chip'):
-                                        ui.label(f"{s['std']:.2f}").classes('val')
-                                        ui.label(f'{label} Std Dev').classes('lbl')
-                                    with ui.column().classes('stat-chip'):
-                                        ui.label(f"{s['min']:.1f} / {s['max']:.1f}").classes('val')
-                                        ui.label(f'{label} Min / Max').classes('lbl')
-                                    # Capability
-                                    cap = compute_capability(values, target_fcu)
-                                    if cap:
-                                        cpk = cap['cpk']
-                                        color = '#22C55E' if cpk >= 1.33 else '#FF8C00' if cpk >= 1.0 else '#FF0000'
-                                        with ui.column().classes('stat-chip'):
-                                            ui.label(f"{cpk:.2f}").classes('val').style(f'color: {color}')
-                                            ui.label(f'{label} Cpk').classes('lbl')
-                                    # Confidence interval
-                                    ci = conf_interval(values)
-                                    if ci:
-                                        with ui.column().classes('stat-chip'):
-                                            ui.label(f"{ci[0]:.2f} – {ci[1]:.2f}").classes('val')
-                                            ui.label('95% CI').classes('lbl')
+                stage_data_text = "\n".join(
+                    f"- {label} Crushing Values (N/mm2): {', '.join(str(v) for v in values) if values else 'No data provided'} "
+                    f"(n={s['n'] if s else 0}, mean={s['mean']:.2f} if s else 'n/a')"
+                    for label, values, s in stage_stats
+                )
 
-                        # ---- AI prompt ----
-                        stage_data_text = "\n".join(
-                            f"- {label} Crushing Values (N/mm2): {', '.join(str(v) for v in values) if values else 'No data provided'} "
-                            f"(n={s['n'] if s else 0}, mean={s['mean']:.2f} if s else 'n/a')"
-                            for label, values, s in stage_stats
-                        )
-
-                        prompt = f"""
+                prompt = f"""
 You are an elite Senior Concrete Quality Assurance and Structural Engineering Expert.
 Perform a complete, professional statistical evaluation and code-compliance verification
 for the concrete cube test results below. Only evaluate the stage(s) actually provided.
@@ -1337,445 +1258,442 @@ REQUIRED REPORT STRUCTURE:
 3. A clear final compliance verdict (PASS / FAIL) with the specific ECP 203 (or selected code) clause used to judge it.
 """
 
-                        res_text = await call_gemini(prompt)
-                        ai_cube_result_holder['text'] = res_text
+                res_text = await call_gemini(prompt)
+                ai_cube_result_holder['text'] = res_text
 
-                        result_output_area.clear()
-                        with result_output_area:
-                            with ui.column().classes('output-card w-full'):
-                                ui.label('Statistical Evaluation & Compliance Verdict').classes('text-xl font-bold text-white mb-2')
-                                ui.markdown(res_text).classes('markdown-body')
+                result_output_area.clear()
+                with result_output_area:
+                    with ui.column().classes('output-card w-full'):
+                        ui.label('Statistical Evaluation & Compliance Verdict').classes('text-xl font-bold text-white mb-2')
+                        ui.markdown(res_text).classes('markdown-body')
 
-                        # ---- Chart (means) ----
-                        with chart_area:
-                            labels = [label for label, _v, _s in stage_stats] + ['Target Grade']
-                            means = [(s['mean'] if s else 0) for _l, _v, s in stage_stats] + [target_fcu]
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(
-                                x=labels, y=means, mode='lines+markers+text',
-                                text=[f"{v:.1f}" for v in means], textposition="top center",
-                                line=dict(color='#4FC3F7', width=3), marker=dict(size=10, color='#FF8C00'),
-                            ))
-                            fig.add_hline(y=target_fcu, line_dash="dash", line_color="#22C55E",
-                                          annotation_text=f"Target f_cu ({target_fcu} N/mm2)", annotation_position="bottom right")
-                            fig.update_layout(
-                                title=f'Compressive Strength — {stage_filter}',
-                                template='plotly_dark', paper_bgcolor='#0d1a35', plot_bgcolor='#0d1a35',
-                                margin=dict(t=40, b=20, l=40, r=20), height=340,
+                with chart_area:
+                    labels = [label for label, _v, _s in stage_stats] + ['Target Grade']
+                    means = [(s['mean'] if s else 0) for _l, _v, s in stage_stats] + [target_fcu]
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=labels, y=means, mode='lines+markers+text',
+                        text=[f"{v:.1f}" for v in means], textposition="top center",
+                        line=dict(color='#4FC3F7', width=3), marker=dict(size=10, color='#FF8C00'),
+                    ))
+                    fig.add_hline(y=target_fcu, line_dash="dash", line_color="#22C55E",
+                                  annotation_text=f"Target f_cu ({target_fcu} N/mm2)", annotation_position="bottom right")
+                    fig.update_layout(
+                        title=f'Compressive Strength — {stage_filter}',
+                        template='plotly_dark', paper_bgcolor='#0d1a35', plot_bgcolor='#0d1a35',
+                        margin=dict(t=40, b=20, l=40, r=20), height=340,
+                    )
+                    ui.plotly(fig).classes('w-full mt-2')
+
+                calc_panel.clear()
+                with calc_panel:
+                    with ui.expansion('View Detailed Calculations (full math breakdown)', icon='calculate', value=True).classes('w-full bg-[#0d1a35] rounded-lg mt-4'):
+                        md = build_detailed_calculations_md(stage_stats, target_fcu)
+                        ui.markdown(md).classes('markdown-body')
+
+                predictive_charts_area.clear()
+                with predictive_charts_area:
+                    ui.label('Predictive Analysis & Advanced Charts').classes('text-xl font-bold text-white mb-2')
+                    hist_fig, time_fig, control_fig, forecast_fig = create_predictive_charts(stage_stats, target_fcu)
+                    if hist_fig:
+                        with ui.row().classes('w-full flex-wrap'):
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                ui.plotly(hist_fig).classes('w-full')
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                ui.plotly(time_fig).classes('w-full')
+                        with ui.row().classes('w-full flex-wrap'):
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                ui.plotly(control_fig).classes('w-full')
+                            with ui.column().classes('w-full md:w-1/2 p-2'):
+                                if forecast_fig:
+                                    ui.plotly(forecast_fig).classes('w-full')
+                                else:
+                                    ui.label('Not enough data for forecast (need at least 2 values).').classes('text-amber-400')
+                    else:
+                        ui.label('Not enough data for predictive charts (need at least 2 values).').classes('text-amber-400')
+
+                # Export buttons
+                with export_buttons_area:
+                    def download_normal_pdf():
+                        try:
+                            meta = current_meta('ECP-AI')
+                            styles = build_pdf_styles()
+                            stat_rows = [["Stage", "n", "Mean", "Std Dev", "Min", "Max", "COV %", "Cpk"]]
+                            for label, values, s in stage_stats:
+                                if s:
+                                    cap = compute_capability(values, target_fcu)
+                                    cpk_str = f"{cap['cpk']:.2f}" if cap else '-'
+                                    stat_rows.append([label, str(s['n']), f"{s['mean']:.2f}", f"{s['std']:.2f}",
+                                                       f"{s['min']:.1f}", f"{s['max']:.1f}", f"{s['cov']:.1f}", cpk_str])
+                            colw = USABLE_WIDTH / len(stat_rows[0])
+                            table_data = [[Paragraph(c, styles['tablehead'] if r==0 else styles['tablecell'])
+                                           for c in row] for r, row in enumerate(stat_rows)]
+                            stat_table = Table(table_data, colWidths=[colw]*len(stat_rows[0]))
+                            stat_table.setStyle(TableStyle([
+                                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B2A4A')),
+                                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#94A3B8')),
+                                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F1F5F9')]),
+                                ('TOPPADDING', (0,0), (-1,-1), 4),
+                                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                            ]))
+                            pdf_bytes = build_report_pdf(
+                                "CONCRETE CUBE CALCULATION & VERIFICATION REPORT",
+                                f"Governing Standard: {basis} | Filter: {stage_filter}",
+                                ai_cube_result_holder['text'], meta, logo_bytes_holder['bytes'],
+                                extra_flowables_before_body=[Paragraph("Statistical Summary", styles['h2']), stat_table],
                             )
-                            ui.plotly(fig).classes('w-full mt-2')
+                            ui.download(pdf_bytes, filename=f"Concrete_Report_{ticket_input.value}.pdf")
+                            ui.notify('PDF downloaded!', type='positive')
+                            log_action('Download PDF', f'ticket={ticket_input.value}')
+                        except Exception as ex:
+                            ui.notify(f'PDF Error: {str(ex)}', type='negative')
 
-                        # ---- Detailed calculations ----
-                        calc_panel.clear()
-                        with calc_panel:
-                            with ui.expansion('📊 View Detailed Calculations (full math breakdown)', icon='calculate', value=True).classes('w-full bg-[#0d1a35] rounded-lg mt-4'):
-                                md = build_detailed_calculations_md(stage_stats, target_fcu)
-                                ui.markdown(md).classes('markdown-body')
+                    def download_normal_word():
+                        try:
+                            doc = Document()
+                            doc.add_heading('Concrete Cube Verification Report', 0)
+                            doc.add_paragraph(f'Project: {project_name_input.value}')
+                            doc.add_paragraph(f'Location: {pour_location_input.value}')
+                            doc.add_paragraph(f'Engineer: {engineer_input.value}')
+                            doc.add_paragraph(f'Date: {datetime.date.today().strftime("%Y-%m-%d")}')
+                            doc.add_paragraph(f'Ticket ID: {ticket_input.value}')
+                            doc.add_paragraph(f'Code Basis: {basis}')
+                            doc.add_paragraph(f'Target f_cu: {fcu_input.value} N/mm2')
+                            doc.add_heading('Statistical Summary', level=1)
+                            table = doc.add_table(rows=1, cols=8)
+                            hdr = table.rows[0].cells
+                            headers = ['Stage','n','Mean','Std Dev','Min','Max','COV %','Cpk']
+                            for i,h in enumerate(headers):
+                                hdr[i].text = h
+                            for label, values, s in stage_stats:
+                                if s:
+                                    cap = compute_capability(values, target_fcu)
+                                    cpk_str = f"{cap['cpk']:.2f}" if cap else '-'
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = str(s['n'])
+                                    row[2].text = f"{s['mean']:.2f}"
+                                    row[3].text = f"{s['std']:.2f}"
+                                    row[4].text = f"{s['min']:.1f}"
+                                    row[5].text = f"{s['max']:.1f}"
+                                    row[6].text = f"{s['cov']:.1f}"
+                                    row[7].text = cpk_str
+                            doc.add_heading('Compliance Evaluation', level=1)
+                            doc.add_paragraph(ai_cube_result_holder['text'])
+                            out = io.BytesIO()
+                            doc.save(out)
+                            out.seek(0)
+                            ui.download(out.getvalue(), filename=f"Concrete_Report_{ticket_input.value}.docx")
+                            ui.notify('Word document downloaded!', type='positive')
+                            log_action('Download Word', f'ticket={ticket_input.value}')
+                        except Exception as ex:
+                            ui.notify(f'Word export error: {str(ex)}', type='negative')
 
-                        # ---- Predictive charts ----
-                        predictive_charts_area.clear()
-                        with predictive_charts_area:
-                            ui.label('Predictive Analysis & Advanced Charts').classes('text-xl font-bold text-white mb-2')
-                            hist_fig, time_fig, control_fig, forecast_fig = create_predictive_charts(stage_stats, target_fcu)
-                            if hist_fig:
-                                with ui.row().classes('w-full flex-wrap'):
-                                    with ui.column().classes('w-full md:w-1/2 p-2'):
-                                        ui.plotly(hist_fig).classes('w-full')
-                                    with ui.column().classes('w-full md:w-1/2 p-2'):
-                                        ui.plotly(time_fig).classes('w-full')
-                                with ui.row().classes('w-full flex-wrap'):
-                                    with ui.column().classes('w-full md:w-1/2 p-2'):
-                                        ui.plotly(control_fig).classes('w-full')
-                                    with ui.column().classes('w-full md:w-1/2 p-2'):
-                                        if forecast_fig:
-                                            ui.plotly(forecast_fig).classes('w-full')
-                                        else:
-                                            ui.label('Not enough data for forecast (need at least 2 values).').classes('text-amber-400')
-                            else:
-                                ui.label('Not enough data for predictive charts (need at least 2 values).').classes('text-amber-400')
+                    def download_filled_template():
+                        if template_bytes_holder['bytes'] is None:
+                            ui.notify('No template uploaded.', type='warning')
+                            return
+                        try:
+                            data = {}
+                            meta = current_meta('TEMPLATE')
+                            data['project_name'] = meta['project']
+                            data['location'] = meta['location']
+                            data['engineer'] = meta['engineer']
+                            data['date'] = meta['date']
+                            data['ticket_id'] = meta['ticket']
+                            data['target_fcu'] = fcu_input.value
+                            data['basis'] = code_basis_select.value
+                            for label, values, s in stage_stats:
+                                if s:
+                                    key = label.lower().replace('-', '_')
+                                    data[f'stage_{key}_mean'] = f"{s['mean']:.2f}"
+                                    data[f'stage_{key}_std'] = f"{s['std']:.2f}"
+                                    data[f'stage_{key}_min'] = f"{s['min']:.1f}"
+                                    data[f'stage_{key}_max'] = f"{s['max']:.1f}"
+                                    data[f'stage_{key}_n'] = s['n']
+                                    data[f'stage_{key}_cov'] = f"{s['cov']:.1f}"
+                                    data[f'stage_{key}_values'] = ', '.join(str(v) for v in values)
+                                    cap = compute_capability(values, float(fcu_input.value))
+                                    if cap:
+                                        data[f'stage_{key}_cpk'] = f"{cap['cpk']:.2f}"
+                            data['ai_verdict'] = ai_cube_result_holder['text']
+                            filled_bytes = fill_template(template_bytes_holder['bytes'], data)
+                            ui.download(filled_bytes, filename=f"Filled_Template_{ticket_input.value}.docx")
+                            ui.notify('Filled template downloaded!', type='positive')
+                            log_action('Download Filled Template', f'ticket={ticket_input.value}')
+                        except Exception as ex:
+                            ui.notify(f'Error filling template: {str(ex)}', type='negative')
 
-                        # ---- Export buttons ----
-                        with export_buttons_area:
-                            def download_normal_pdf():
-                                try:
-                                    meta = current_meta('ECP-AI')
-                                    styles = build_pdf_styles()
-                                    stat_rows = [["Stage", "n", "Mean", "Std Dev", "Min", "Max", "COV %", "Cpk"]]
-                                    for label, values, s in stage_stats:
-                                        if s:
-                                            cap = compute_capability(values, target_fcu)
-                                            cpk_str = f"{cap['cpk']:.2f}" if cap else '-'
-                                            stat_rows.append([label, str(s['n']), f"{s['mean']:.2f}", f"{s['std']:.2f}",
-                                                               f"{s['min']:.1f}", f"{s['max']:.1f}", f"{s['cov']:.1f}", cpk_str])
-                                    colw = USABLE_WIDTH / len(stat_rows[0])
-                                    table_data = [[Paragraph(c, styles['tablehead'] if r==0 else styles['tablecell'])
-                                                   for c in row] for r, row in enumerate(stat_rows)]
-                                    stat_table = Table(table_data, colWidths=[colw]*len(stat_rows[0]))
-                                    stat_table.setStyle(TableStyle([
-                                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B2A4A')),
-                                        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#94A3B8')),
-                                        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F1F5F9')]),
-                                        ('TOPPADDING', (0,0), (-1,-1), 4),
-                                        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-                                    ]))
-                                    pdf_bytes = build_report_pdf(
-                                        "CONCRETE CUBE CALCULATION & VERIFICATION REPORT",
-                                        f"Governing Standard: {basis} | Filter: {stage_filter}",
-                                        ai_cube_result_holder['text'], meta, logo_bytes_holder['bytes'],
-                                        extra_flowables_before_body=[Paragraph("Statistical Summary", styles['h2']), stat_table],
-                                    )
-                                    ui.download(pdf_bytes, filename=f"Concrete_Report_{ticket_input.value}.pdf")
-                                    ui.notify('PDF downloaded!', type='positive')
-                                    log_action('Download PDF', f'ticket={ticket_input.value}')
-                                except Exception as ex:
-                                    ui.notify(f'PDF Error: {str(ex)}', type='negative')
+                    def download_calc_pdf():
+                        try:
+                            meta = current_meta('CALC')
+                            styles = build_pdf_styles()
+                            calc_rows = [["Stage", "Specimen", "Strength", "Deviation"]]
+                            for label, values, s in stage_stats:
+                                if s:
+                                    mean = s['mean']
+                                    for idx, val in enumerate(values):
+                                        dev = val - mean
+                                        calc_rows.append([label, f"#{idx+1}", f"{val:.1f}", f"{dev:+.2f}"])
+                                    calc_rows.append([label, "Mean", f"{mean:.2f}", ""])
+                                    calc_rows.append([label, "Std Dev", f"{s['std']:.2f}", ""])
+                                    calc_rows.append([label, "Min", f"{s['min']:.1f}", ""])
+                                    calc_rows.append([label, "Max", f"{s['max']:.1f}", ""])
+                                    calc_rows.append([label, "COV %", f"{s['cov']:.1f}", ""])
+                                    calc_rows.append([label, "n", str(s['n']), ""])
+                                    calc_rows.append([label, "Σx", f"{s['sum']:.2f}", ""])
+                                    calc_rows.append([label, "Σx²", f"{s['sum_sq']:.2f}", ""])
+                            colw = USABLE_WIDTH / 4
+                            table_data = [[Paragraph(c, styles['tablehead'] if r==0 else styles['tablecell'])
+                                           for c in row] for r, row in enumerate(calc_rows)]
+                            t = Table(table_data, colWidths=[colw]*4)
+                            t.setStyle(TableStyle([
+                                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B2A4A')),
+                                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#94A3B8')),
+                                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F1F5F9')]),
+                                ('TOPPADDING', (0,0), (-1,-1), 4),
+                                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                            ]))
+                            formula_flowables = []
+                            for label, values, s in stage_stats:
+                                if s:
+                                    formula_flowables.append(Paragraph(f"{label} Stage Calculations", styles['h3']))
+                                    formula_flowables.append(Paragraph(f"n = {s['n']}, Σx = {s['sum']:.2f}, Σx² = {s['sum_sq']:.2f}", styles['body']))
+                                    formula_flowables.append(Paragraph(f"Mean = {s['sum']:.2f} / {s['n']} = {s['mean']:.2f}", styles['body']))
+                                    formula_flowables.append(Paragraph(f"Std Dev = sqrt(({s['sum_sq']:.2f} - ({s['sum']:.2f})²/{s['n']}) / ({s['n']-1})) = {s['std']:.2f}", styles['body']))
+                                    formula_flowables.append(Spacer(1,6))
+                            pdf_bytes = build_report_pdf(
+                                "DETAILED CONCRETE CUBE CALCULATIONS",
+                                f"Calculations for {meta['project']}",
+                                "", meta, logo_bytes_holder['bytes'],
+                                extra_flowables_before_body=[
+                                    Paragraph("Complete Calculation Breakdown", styles['h2']),
+                                    t,
+                                    Spacer(1,6),
+                                    Paragraph("Formulas & Intermediate Values", styles['h2']),
+                                    *formula_flowables,
+                                    Spacer(1,6),
+                                    Paragraph("Compliance Evaluation Summary", styles['h2']),
+                                    *markdown_to_pdf_flowables(ai_cube_result_holder['text'], styles),
+                                ]
+                            )
+                            ui.download(pdf_bytes, filename=f"Detailed_Calculations_{ticket_input.value}.pdf")
+                            ui.notify('Calculations PDF downloaded!', type='positive')
+                            log_action('Download Calculations PDF', f'ticket={ticket_input.value}')
+                        except Exception as ex:
+                            ui.notify(f'Calc PDF error: {str(ex)}', type='negative')
 
-                            def download_normal_word():
-                                try:
-                                    doc = Document()
-                                    doc.add_heading('Concrete Cube Verification Report', 0)
-                                    doc.add_paragraph(f'Project: {project_name_input.value}')
-                                    doc.add_paragraph(f'Location: {pour_location_input.value}')
-                                    doc.add_paragraph(f'Engineer: {engineer_input.value}')
-                                    doc.add_paragraph(f'Date: {datetime.date.today().strftime("%Y-%m-%d")}')
-                                    doc.add_paragraph(f'Ticket ID: {ticket_input.value}')
-                                    doc.add_paragraph(f'Code Basis: {basis}')
-                                    doc.add_paragraph(f'Target f_cu: {fcu_input.value} N/mm2')
-                                    doc.add_heading('Statistical Summary', level=1)
-                                    table = doc.add_table(rows=1, cols=8)
-                                    hdr = table.rows[0].cells
-                                    headers = ['Stage','n','Mean','Std Dev','Min','Max','COV %','Cpk']
-                                    for i,h in enumerate(headers):
-                                        hdr[i].text = h
-                                    for label, values, s in stage_stats:
-                                        if s:
-                                            cap = compute_capability(values, target_fcu)
-                                            cpk_str = f"{cap['cpk']:.2f}" if cap else '-'
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = str(s['n'])
-                                            row[2].text = f"{s['mean']:.2f}"
-                                            row[3].text = f"{s['std']:.2f}"
-                                            row[4].text = f"{s['min']:.1f}"
-                                            row[5].text = f"{s['max']:.1f}"
-                                            row[6].text = f"{s['cov']:.1f}"
-                                            row[7].text = cpk_str
-                                    doc.add_heading('Compliance Evaluation', level=1)
-                                    doc.add_paragraph(ai_cube_result_holder['text'])
-                                    out = io.BytesIO()
-                                    doc.save(out)
-                                    out.seek(0)
-                                    ui.download(out.getvalue(), filename=f"Concrete_Report_{ticket_input.value}.docx")
-                                    ui.notify('Word document downloaded!', type='positive')
-                                    log_action('Download Word', f'ticket={ticket_input.value}')
-                                except Exception as ex:
-                                    ui.notify(f'Word export error: {str(ex)}', type='negative')
+                    def download_calc_word():
+                        try:
+                            doc = Document()
+                            doc.add_heading('Detailed Concrete Cube Calculations', 0)
+                            doc.add_paragraph(f'Project: {project_name_input.value}')
+                            doc.add_paragraph(f'Ticket ID: {ticket_input.value}')
+                            doc.add_heading('Individual Specimen Data', level=1)
+                            table = doc.add_table(rows=1, cols=4)
+                            hdr = table.rows[0].cells
+                            hdr[0].text = 'Stage'
+                            hdr[1].text = 'Specimen'
+                            hdr[2].text = 'Strength (N/mm2)'
+                            hdr[3].text = 'Deviation'
+                            for label, values, s in stage_stats:
+                                if s:
+                                    mean = s['mean']
+                                    for idx, val in enumerate(values):
+                                        row = table.add_row().cells
+                                        row[0].text = label
+                                        row[1].text = f"#{idx+1}"
+                                        row[2].text = f"{val:.1f}"
+                                        row[3].text = f"{val - mean:+.2f}"
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Mean'
+                                    row[2].text = f"{mean:.2f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Std Dev'
+                                    row[2].text = f"{s['std']:.2f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Min'
+                                    row[2].text = f"{s['min']:.1f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Max'
+                                    row[2].text = f"{s['max']:.1f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'COV %'
+                                    row[2].text = f"{s['cov']:.1f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'n'
+                                    row[2].text = str(s['n'])
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Σx'
+                                    row[2].text = f"{s['sum']:.2f}"
+                                    row[3].text = ''
+                                    row = table.add_row().cells
+                                    row[0].text = label
+                                    row[1].text = 'Σx²'
+                                    row[2].text = f"{s['sum_sq']:.2f}"
+                                    row[3].text = ''
+                            doc.add_heading('Compliance Verdict', level=1)
+                            doc.add_paragraph(ai_cube_result_holder['text'])
+                            out = io.BytesIO()
+                            doc.save(out)
+                            out.seek(0)
+                            ui.download(out.getvalue(), filename=f"Detailed_Calculations_{ticket_input.value}.docx")
+                            ui.notify('Calculations Word downloaded!', type='positive')
+                            log_action('Download Calculations Word', f'ticket={ticket_input.value}')
+                        except Exception as ex:
+                            ui.notify(f'Calc Word error: {str(ex)}', type='negative')
 
-                            def download_filled_template():
-                                if template_bytes_holder['bytes'] is None:
-                                    ui.notify('No template uploaded.', type='warning')
-                                    return
-                                try:
-                                    data = {}
-                                    meta = current_meta('TEMPLATE')
-                                    data['project_name'] = meta['project']
-                                    data['location'] = meta['location']
-                                    data['engineer'] = meta['engineer']
-                                    data['date'] = meta['date']
-                                    data['ticket_id'] = meta['ticket']
-                                    data['target_fcu'] = fcu_input.value
-                                    data['basis'] = code_basis_select.value
-                                    for label, values, s in stage_stats:
-                                        if s:
-                                            key = label.lower().replace('-', '_')
-                                            data[f'stage_{key}_mean'] = f"{s['mean']:.2f}"
-                                            data[f'stage_{key}_std'] = f"{s['std']:.2f}"
-                                            data[f'stage_{key}_min'] = f"{s['min']:.1f}"
-                                            data[f'stage_{key}_max'] = f"{s['max']:.1f}"
-                                            data[f'stage_{key}_n'] = s['n']
-                                            data[f'stage_{key}_cov'] = f"{s['cov']:.1f}"
-                                            data[f'stage_{key}_values'] = ', '.join(str(v) for v in values)
-                                            cap = compute_capability(values, float(fcu_input.value))
-                                            if cap:
-                                                data[f'stage_{key}_cpk'] = f"{cap['cpk']:.2f}"
-                                    data['ai_verdict'] = ai_cube_result_holder['text']
-                                    filled_bytes = fill_template(template_bytes_holder['bytes'], data)
-                                    ui.download(filled_bytes, filename=f"Filled_Template_{ticket_input.value}.docx")
-                                    ui.notify('Filled template downloaded!', type='positive')
-                                    log_action('Download Filled Template', f'ticket={ticket_input.value}')
-                                except Exception as ex:
-                                    ui.notify(f'Error filling template: {str(ex)}', type='negative')
+                    with ui.row().classes('w-full gap-4 flex-wrap'):
+                        ui.button('Download Normal PDF', on_click=download_normal_pdf).classes('primary-btn')
+                        ui.button('Download Normal Word', on_click=download_normal_word).classes('primary-btn')
+                        if template_bytes_holder['bytes']:
+                            ui.button('Download Filled Template', on_click=download_filled_template).classes('primary-btn')
+                        ui.button('Download Calculations PDF', on_click=download_calc_pdf).classes('primary-btn')
+                        ui.button('Download Calculations Word', on_click=download_calc_word).classes('primary-btn')
 
-                            def download_calc_pdf():
-                                try:
-                                    meta = current_meta('CALC')
-                                    styles = build_pdf_styles()
-                                    calc_rows = [["Stage", "Specimen", "Strength", "Deviation"]]
-                                    for label, values, s in stage_stats:
-                                        if s:
-                                            mean = s['mean']
-                                            for idx, val in enumerate(values):
-                                                dev = val - mean
-                                                calc_rows.append([label, f"#{idx+1}", f"{val:.1f}", f"{dev:+.2f}"])
-                                            calc_rows.append([label, "Mean", f"{mean:.2f}", ""])
-                                            calc_rows.append([label, "Std Dev", f"{s['std']:.2f}", ""])
-                                            calc_rows.append([label, "Min", f"{s['min']:.1f}", ""])
-                                            calc_rows.append([label, "Max", f"{s['max']:.1f}", ""])
-                                            calc_rows.append([label, "COV %", f"{s['cov']:.1f}", ""])
-                                            calc_rows.append([label, "n", str(s['n']), ""])
-                                            calc_rows.append([label, "Σx", f"{s['sum']:.2f}", ""])
-                                            calc_rows.append([label, "Σx²", f"{s['sum_sq']:.2f}", ""])
-                                    colw = USABLE_WIDTH / 4
-                                    table_data = [[Paragraph(c, styles['tablehead'] if r==0 else styles['tablecell'])
-                                                   for c in row] for r, row in enumerate(calc_rows)]
-                                    t = Table(table_data, colWidths=[colw]*4)
-                                    t.setStyle(TableStyle([
-                                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1B2A4A')),
-                                        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#94A3B8')),
-                                        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F1F5F9')]),
-                                        ('TOPPADDING', (0,0), (-1,-1), 4),
-                                        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-                                    ]))
-                                    formula_flowables = []
-                                    for label, values, s in stage_stats:
-                                        if s:
-                                            formula_flowables.append(Paragraph(f"{label} Stage Calculations", styles['h3']))
-                                            formula_flowables.append(Paragraph(f"n = {s['n']}, Σx = {s['sum']:.2f}, Σx² = {s['sum_sq']:.2f}", styles['body']))
-                                            formula_flowables.append(Paragraph(f"Mean = {s['sum']:.2f} / {s['n']} = {s['mean']:.2f}", styles['body']))
-                                            formula_flowables.append(Paragraph(f"Std Dev = sqrt(({s['sum_sq']:.2f} - ({s['sum']:.2f})²/{s['n']}) / ({s['n']-1})) = {s['std']:.2f}", styles['body']))
-                                            formula_flowables.append(Spacer(1,6))
-                                    pdf_bytes = build_report_pdf(
-                                        "DETAILED CONCRETE CUBE CALCULATIONS",
-                                        f"Calculations for {meta['project']}",
-                                        "", meta, logo_bytes_holder['bytes'],
-                                        extra_flowables_before_body=[
-                                            Paragraph("Complete Calculation Breakdown", styles['h2']),
-                                            t,
-                                            Spacer(1,6),
-                                            Paragraph("Formulas & Intermediate Values", styles['h2']),
-                                            *formula_flowables,
-                                            Spacer(1,6),
-                                            Paragraph("Compliance Evaluation Summary", styles['h2']),
-                                            *markdown_to_pdf_flowables(ai_cube_result_holder['text'], styles),
-                                        ]
-                                    )
-                                    ui.download(pdf_bytes, filename=f"Detailed_Calculations_{ticket_input.value}.pdf")
-                                    ui.notify('Calculations PDF downloaded!', type='positive')
-                                    log_action('Download Calculations PDF', f'ticket={ticket_input.value}')
-                                except Exception as ex:
-                                    ui.notify(f'Calc PDF error: {str(ex)}', type='negative')
+                # ---- Chatbots ----
+                chat_toggle_row = ui.row().classes('w-full gap-4 mt-4')
+                with chat_toggle_row:
+                    chat_result_visible = {'show': False}
+                    chat_code_visible = {'show': False}
+                    def toggle_result_chat():
+                        chat_result_visible['show'] = not chat_result_visible['show']
+                        chat_result_panel.set_visibility(chat_result_visible['show'])
+                    def toggle_code_chat():
+                        chat_code_visible['show'] = not chat_code_visible['show']
+                        chat_code_panel.set_visibility(chat_code_visible['show'])
+                    ui.button('Ask about Results', on_click=toggle_result_chat).classes('primary-btn')
+                    ui.button('Ask about Egyptian Code', on_click=toggle_code_chat).classes('primary-btn')
 
-                            def download_calc_word():
-                                try:
-                                    doc = Document()
-                                    doc.add_heading('Detailed Concrete Cube Calculations', 0)
-                                    doc.add_paragraph(f'Project: {project_name_input.value}')
-                                    doc.add_paragraph(f'Ticket ID: {ticket_input.value}')
-                                    doc.add_heading('Individual Specimen Data', level=1)
-                                    table = doc.add_table(rows=1, cols=4)
-                                    hdr = table.rows[0].cells
-                                    hdr[0].text = 'Stage'
-                                    hdr[1].text = 'Specimen'
-                                    hdr[2].text = 'Strength (N/mm2)'
-                                    hdr[3].text = 'Deviation'
-                                    for label, values, s in stage_stats:
-                                        if s:
-                                            mean = s['mean']
-                                            for idx, val in enumerate(values):
-                                                row = table.add_row().cells
-                                                row[0].text = label
-                                                row[1].text = f"#{idx+1}"
-                                                row[2].text = f"{val:.1f}"
-                                                row[3].text = f"{val - mean:+.2f}"
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'Mean'
-                                            row[2].text = f"{mean:.2f}"
-                                            row[3].text = ''
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'Std Dev'
-                                            row[2].text = f"{s['std']:.2f}"
-                                            row[3].text = ''
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'Min'
-                                            row[2].text = f"{s['min']:.1f}"
-                                            row[3].text = ''
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'Max'
-                                            row[2].text = f"{s['max']:.1f}"
-                                            row[3].text = ''
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'COV %'
-                                            row[2].text = f"{s['cov']:.1f}"
-                                            row[3].text = ''
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'n'
-                                            row[2].text = str(s['n'])
-                                            row[3].text = ''
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'Σx'
-                                            row[2].text = f"{s['sum']:.2f}"
-                                            row[3].text = ''
-                                            row = table.add_row().cells
-                                            row[0].text = label
-                                            row[1].text = 'Σx²'
-                                            row[2].text = f"{s['sum_sq']:.2f}"
-                                            row[3].text = ''
-                                    doc.add_heading('Compliance Verdict', level=1)
-                                    doc.add_paragraph(ai_cube_result_holder['text'])
-                                    out = io.BytesIO()
-                                    doc.save(out)
-                                    out.seek(0)
-                                    ui.download(out.getvalue(), filename=f"Detailed_Calculations_{ticket_input.value}.docx")
-                                    ui.notify('Calculations Word downloaded!', type='positive')
-                                    log_action('Download Calculations Word', f'ticket={ticket_input.value}')
-                                except Exception as ex:
-                                    ui.notify(f'Calc Word error: {str(ex)}', type='negative')
-
-                            # Buttons
-                            with ui.row().classes('w-full gap-4 flex-wrap'):
-                                ui.button('📄 Download Normal PDF', on_click=download_normal_pdf).classes('primary-btn')
-                                ui.button('📝 Download Normal Word', on_click=download_normal_word).classes('primary-btn')
-                                if template_bytes_holder['bytes']:
-                                    ui.button('📎 Download Filled Template', on_click=download_filled_template).classes('primary-btn')
-                                ui.button('📊 Download Calculations PDF', on_click=download_calc_pdf).classes('primary-btn')
-                                ui.button('📊 Download Calculations Word', on_click=download_calc_word).classes('primary-btn')
-
-                        # ---- Chatbots ----
-                        chat_toggle_row = ui.row().classes('w-full gap-4 mt-4')
-                        with chat_toggle_row:
-                            chat_result_visible = {'show': False}
-                            chat_code_visible = {'show': False}
-                            def toggle_result_chat():
-                                chat_result_visible['show'] = not chat_result_visible['show']
-                                chat_result_panel.set_visibility(chat_result_visible['show'])
-                            def toggle_code_chat():
-                                chat_code_visible['show'] = not chat_code_visible['show']
-                                chat_code_panel.set_visibility(chat_code_visible['show'])
-                            ui.button('💬 Ask about Results', on_click=toggle_result_chat).classes('primary-btn')
-                            ui.button('📚 Ask about Egyptian Code', on_click=toggle_code_chat).classes('primary-btn')
-
-                        # Result Chat
-                        chat_result_panel = ui.column().classes('output-card w-full mt-4')
-                        chat_result_panel.set_visibility(False)
-                        with chat_result_panel:
-                            with ui.column().classes('input-card w-full'):
-                                ui.label('Chat about these cube results').classes('text-lg font-bold text-white')
-                                result_chat_container = ui.column().classes('w-full h-[300px] overflow-y-auto')
-                                result_chat_messages = [{"role": "assistant", "content": "Ask me anything about the cube test results above."}]
-                                def render_result_chat():
-                                    result_chat_container.clear()
-                                    with result_chat_container:
-                                        for msg in result_chat_messages:
-                                            is_ai = msg['role'] == 'assistant'
-                                            with ui.column().classes('chat-message'):
-                                                role_label = 'Assistant' if is_ai else 'You'
-                                                label_class = 'assistant' if is_ai else 'user'
-                                                ui.label(role_label).classes(f'role-label {label_class}')
-                                                ui.markdown(msg['content']).classes('content markdown-body')
-                                render_result_chat()
-                                result_chat_input = ui.input(placeholder='Ask about these results...').classes('w-full mb-2')
-                                result_chat_input.on('keydown.enter', lambda: send_result_chat())
-                                async def send_result_chat():
-                                    q = result_chat_input.value
-                                    if not q or not q.strip():
-                                        return
-                                    result_chat_messages.append({"role": "user", "content": q})
-                                    result_chat_input.value = ''
-                                    render_result_chat()
-                                    context = f"""
+                # Result Chat
+                chat_result_panel = ui.column().classes('output-card w-full mt-4')
+                chat_result_panel.set_visibility(False)
+                with chat_result_panel:
+                    with ui.column().classes('input-card w-full'):
+                        ui.label('Chat about these cube results').classes('text-lg font-bold text-white')
+                        result_chat_container = ui.column().classes('w-full h-[300px] overflow-y-auto')
+                        result_chat_messages = [{"role": "assistant", "content": "Ask me anything about the cube test results above."}]
+                        def render_result_chat():
+                            result_chat_container.clear()
+                            with result_chat_container:
+                                for msg in result_chat_messages:
+                                    is_ai = msg['role'] == 'assistant'
+                                    with ui.column().classes('chat-message'):
+                                        role_label = 'Assistant' if is_ai else 'You'
+                                        label_class = 'assistant' if is_ai else 'user'
+                                        ui.label(role_label).classes(f'role-label {label_class}')
+                                        ui.markdown(msg['content']).classes('content markdown-body')
+                        render_result_chat()
+                        result_chat_input = ui.input(placeholder='Ask about these results...').classes('w-full mb-2')
+                        result_chat_input.on('keydown.enter', lambda: send_result_chat())
+                        async def send_result_chat():
+                            q = result_chat_input.value
+                            if not q or not q.strip():
+                                return
+                            result_chat_messages.append({"role": "user", "content": q})
+                            result_chat_input.value = ''
+                            render_result_chat()
+                            context = f"""
 Project: {project_name_input.value}
 Location: {pour_location_input.value}
 Target f_cu: {fcu_input.value} N/mm2
 Code Basis: {code_basis_select.value}
 Stages:
 """
-                                    for label, values, s in stage_stats:
-                                        if s:
-                                            context += f"- {label}: n={s['n']}, mean={s['mean']:.2f}, std={s['std']:.2f}, min={s['min']:.1f}, max={s['max']:.1f}, COV={s['cov']:.1f}%\n"
-                                    context += f"\nCompliance Verdict:\n{ai_cube_result_holder['text']}"
-                                    system_prompt = f"You are an expert concrete engineer. Answer the user's question based on the following cube test results. Provide clear, professional advice. Results:\n{context}"
-                                    try:
-                                        resp = await call_gemini(q, system_instruction=system_prompt)
-                                        result_chat_messages.append({"role": "assistant", "content": resp})
-                                    except Exception as e:
-                                        result_chat_messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
-                                    render_result_chat()
-                                ui.button('Send', on_click=send_result_chat).classes('primary-btn')
+                            for label, values, s in stage_stats:
+                                if s:
+                                    context += f"- {label}: n={s['n']}, mean={s['mean']:.2f}, std={s['std']:.2f}, min={s['min']:.1f}, max={s['max']:.1f}, COV={s['cov']:.1f}%\n"
+                            context += f"\nCompliance Verdict:\n{ai_cube_result_holder['text']}"
+                            system_prompt = f"You are an expert concrete engineer. Answer the user's question based on the following cube test results. Provide clear, professional advice. Results:\n{context}"
+                            try:
+                                resp = await call_gemini(q, system_instruction=system_prompt)
+                                result_chat_messages.append({"role": "assistant", "content": resp})
+                            except Exception as e:
+                                result_chat_messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
+                            render_result_chat()
+                        ui.button('Send', on_click=send_result_chat).classes('primary-btn')
 
-                        # Code Chat
-                        chat_code_panel = ui.column().classes('output-card w-full mt-4')
-                        chat_code_panel.set_visibility(False)
-                        with chat_code_panel:
-                            with ui.column().classes('input-card w-full'):
-                                ui.label('Chat about Egyptian Codes (ECP 203, 202, 104)').classes('text-lg font-bold text-white')
-                                code_chat_container = ui.column().classes('w-full h-[300px] overflow-y-auto')
-                                code_chat_messages = [{"role": "assistant", "content": "Ask me about Egyptian code requirements for concrete, soil, or pavements."}]
-                                def render_code_chat():
-                                    code_chat_container.clear()
-                                    with code_chat_container:
-                                        for msg in code_chat_messages:
-                                            is_ai = msg['role'] == 'assistant'
-                                            with ui.column().classes('chat-message'):
-                                                role_label = 'Assistant' if is_ai else 'You'
-                                                label_class = 'assistant' if is_ai else 'user'
-                                                ui.label(role_label).classes(f'role-label {label_class}')
-                                                ui.markdown(msg['content']).classes('content markdown-body')
-                                render_code_chat()
-                                code_chat_input = ui.input(placeholder='Ask about Egyptian codes...').classes('w-full mb-2')
-                                code_chat_input.on('keydown.enter', lambda: send_code_chat())
-                                async def send_code_chat():
-                                    q = code_chat_input.value
-                                    if not q or not q.strip():
-                                        return
-                                    code_chat_messages.append({"role": "user", "content": q})
-                                    code_chat_input.value = ''
-                                    render_code_chat()
-                                    system_prompt = f"""
+                # Code Chat
+                chat_code_panel = ui.column().classes('output-card w-full mt-4')
+                chat_code_panel.set_visibility(False)
+                with chat_code_panel:
+                    with ui.column().classes('input-card w-full'):
+                        ui.label('Chat about Egyptian Codes (ECP 203, 202, 104)').classes('text-lg font-bold text-white')
+                        code_chat_container = ui.column().classes('w-full h-[300px] overflow-y-auto')
+                        code_chat_messages = [{"role": "assistant", "content": "Ask me about Egyptian code requirements for concrete, soil, or pavements."}]
+                        def render_code_chat():
+                            code_chat_container.clear()
+                            with code_chat_container:
+                                for msg in code_chat_messages:
+                                    is_ai = msg['role'] == 'assistant'
+                                    with ui.column().classes('chat-message'):
+                                        role_label = 'Assistant' if is_ai else 'You'
+                                        label_class = 'assistant' if is_ai else 'user'
+                                        ui.label(role_label).classes(f'role-label {label_class}')
+                                        ui.markdown(msg['content']).classes('content markdown-body')
+                        render_code_chat()
+                        code_chat_input = ui.input(placeholder='Ask about Egyptian codes...').classes('w-full mb-2')
+                        code_chat_input.on('keydown.enter', lambda: send_code_chat())
+                        async def send_code_chat():
+                            q = code_chat_input.value
+                            if not q or not q.strip():
+                                return
+                            code_chat_messages.append({"role": "user", "content": q})
+                            code_chat_input.value = ''
+                            render_code_chat()
+                            system_prompt = f"""
 You are an expert in Egyptian construction codes (ECP 203, ECP 202, ECP 104).
 Answer the user's question accurately, referencing specific clauses where possible.
 Governing standard: {code_basis_select.value}
 {get_code_directive(code_basis_select.value)}
 {NO_LATEX_RULE}
 """
-                                    try:
-                                        resp = await call_gemini(q, system_instruction=system_prompt)
-                                        code_chat_messages.append({"role": "assistant", "content": resp})
-                                    except Exception as e:
-                                        code_chat_messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
-                                    render_code_chat()
-                                ui.button('Send', on_click=send_code_chat).classes('primary-btn')
+                            try:
+                                resp = await call_gemini(q, system_instruction=system_prompt)
+                                code_chat_messages.append({"role": "assistant", "content": resp})
+                            except Exception as e:
+                                code_chat_messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
+                            render_code_chat()
+                        ui.button('Send', on_click=send_code_chat).classes('primary-btn')
 
-                    except Exception as ex:
-                        result_output_area.clear()
-                        with result_output_area:
-                            ui.notify(f'Calculation Error: {str(ex)}', type='negative')
-                            ui.markdown(f'**Error:** {str(ex)}').classes('text-red-400')
-
-                # ---- Run button ----
-                ui.button('Run Statistical Calculation & Verification', on_click=run_verification).classes('primary-btn q-my-md')
+            except Exception as ex:
+                result_output_area.clear()
                 with result_output_area:
-                    ui.markdown('*Click "Run Statistical Calculation & Verification" to generate the report and charts.*').classes('text-sm text-[#A9B6D0]')
+                    ui.notify(f'Calculation Error: {str(ex)}', type='negative')
+                    ui.markdown(f'**Error:** {str(ex)}').classes('text-red-400')
 
-            # ---- Audit Trail Tab ----
-            with ui.tab_panel(t_audit):
-                ui.label('📜 Audit Trail').classes('text-2xl font-bold text-white mb-4')
-                if 'audit_log' in app.storage.user:
-                    log = app.storage.user['audit_log']
-                    if log:
-                        with ui.column().classes('w-full'):
-                            for entry in reversed(log[-50:]):
-                                ui.markdown(f"**{entry['timestamp']}** – {entry['user']}: {entry['action']} ({entry['details']})").classes('text-sm text-[#A9B6D0] border-b border-[#1f3355] py-1')
-                    else:
-                        ui.label('No audit logs yet.').classes('text-[#A9B6D0]')
-                else:
-                    ui.label('No audit logs yet.').classes('text-[#A9B6D0]')
+        # ---- Run button ----
+        ui.button('Run Statistical Calculation & Verification', on_click=run_verification).classes('primary-btn q-my-md')
+        with result_output_area:
+            ui.markdown('*Click "Run Statistical Calculation & Verification" to generate the report and charts.*').classes('text-sm text-[#A9B6D0]')
+
+        # ---- Audit Trail History (at the bottom) ----
+        ui.separator().classes('my-6')
+        ui.label('Audit Trail').classes('text-xl font-bold text-white mb-2')
+        audit_container = ui.column().classes('w-full')
+        if 'audit_log' in app.storage.user:
+            log = app.storage.user['audit_log']
+            if log:
+                with audit_container:
+                    for entry in reversed(log[-20:]):
+                        ui.markdown(f"**{entry['timestamp']}** – {entry['user']}: {entry['action']} ({entry['details']})").classes('text-sm text-[#A9B6D0] border-b border-[#1f3355] py-1')
+            else:
+                ui.label('No audit logs yet.').classes('text-[#A9B6D0]')
+        else:
+            ui.label('No audit logs yet.').classes('text-[#A9B6D0]')
 
         # ---- Footer ----
         ui.html('''
