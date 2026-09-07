@@ -47,7 +47,7 @@ MARGIN = 32
 USABLE_WIDTH = PAGE_WIDTH - (2 * MARGIN)
 
 # =====================================================================
-# I18N
+# I18N (same as before)
 # =====================================================================
 TEXTS = {
     'en': {
@@ -163,50 +163,179 @@ TEXTS = {
 }
 
 current_lang = 'en'
-current_theme = 'dark'
+current_theme = 'dark'  # default dark navy
 
 def _(key):
     return TEXTS[current_lang].get(key, key)
 
 # =====================================================================
-# STYLING
+# STYLING – Default DARK NAVY theme
 # =====================================================================
 def apply_theme():
     if current_theme == 'dark':
-        ui.query('body').style('background: radial-gradient(circle at 10% 20%, #0a1a3a, #031338) !important; color: #E9EDF5;')
+        # Original dark navy background
+        ui.query('body').style('''
+            background: radial-gradient(circle at 10% 20%, #0a1a3a, #031338) !important;
+            color: #E9EDF5 !important;
+        ''')
+        # Also update any other elements if needed – but most are styled via CSS classes.
     else:
-        ui.query('body').style('background: #f0f2f5 !important; color: #1a1a1a;')
+        # Light mode – keep it clean
+        ui.query('body').style('''
+            background: #f0f2f5 !important;
+            color: #1a1a1a !important;
+        ''')
 
 app.native.window_args = {"resizable": True}
+
+# Full CSS – original dark navy, but with light theme overrides if needed.
 ui.add_head_html('''
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
     ::-webkit-scrollbar { width: 8px !important; background: #031338 !important; }
     ::-webkit-scrollbar-thumb { background: #FF8C00 !important; border-radius: 10px; }
-    html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow-x: hidden; font-family: 'Inter', sans-serif; }
-    .sidebar-container { background: #0b1a3a !important; border-right: 2px solid rgba(255,140,0,0.4); box-shadow: 8px 0 30px rgba(0,0,0,0.6); }
-    .output-card { background: transparent !important; border: none !important; padding: 0 !important; }
-    .input-card { background: rgba(13,26,53,0.6); backdrop-filter: blur(8px); border: 1px solid rgba(255,140,0,0.2); border-radius: 16px; padding: 18px 22px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-    .primary-btn { background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important; color: #FFFFFF !important; border: 1px solid #555 !important; font-weight: 600 !important; border-radius: 14px !important; padding: 10px 28px !important; transition: 0.25s; }
-    .primary-btn:hover { background: linear-gradient(135deg, #2d2d2d 0%, #444444 100%) !important; transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.7); border-color: #FF8C00; }
-    .stat-chip { background: rgba(13,26,53,0.6); backdrop-filter: blur(8px); border: 1px solid #1f3355; border-radius: 12px; padding: 14px 20px; text-align: center; min-width: 140px; }
+
+    html, body {
+        margin: 0; padding: 0;
+        width: 100vw; height: 100vh;
+        overflow-x: hidden;
+        font-family: 'Inter', sans-serif;
+        background: radial-gradient(circle at 10% 20%, #0a1a3a, #031338) !important;
+        color: #E9EDF5 !important;
+    }
+
+    /* Sidebar – dark navy */
+    .sidebar-container {
+        background: #0b1a3a !important;
+        border-right: 2px solid rgba(255, 140, 0, 0.4) !important;
+        box-shadow: 8px 0 30px rgba(0,0,0,0.6) !important;
+    }
+
+    .output-card {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+    }
+
+    .input-card {
+        background: rgba(13, 26, 53, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 140, 0, 0.2);
+        border-radius: 16px;
+        padding: 18px 22px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        margin-bottom: 20px;
+        width: 100% !important;
+        max-width: none !important;
+        box-sizing: border-box;
+    }
+
+    .primary-btn, .q-btn {
+        background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
+        color: #FFFFFF !important;
+        border: 1px solid #555 !important;
+        font-weight: 600 !important;
+        border-radius: 14px !important;
+        padding: 10px 28px !important;
+        transition: all 0.25s ease !important;
+        min-height: 44px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+    }
+    .primary-btn:hover, .q-btn:hover {
+        background: linear-gradient(135deg, #2d2d2d 0%, #444444 100%) !important;
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.7) !important;
+        border-color: #FF8C00 !important;
+    }
+
+    .stat-chip {
+        background: rgba(13, 26, 53, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid #1f3355;
+        border-radius: 12px;
+        padding: 14px 20px;
+        text-align: center;
+        min-width: 140px;
+        transition: all 0.3s ease;
+    }
     .stat-chip .val { font-size: 24px; font-weight: 800; color: #FF8C00; }
     .stat-chip .lbl { font-size: 11px; color: #A9B6D0; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
-    .markdown-body { font-size: 14px; line-height: 1.7; color: #E9EDF5; background: transparent !important; padding: 0 !important; }
-    .markdown-body table { border-collapse: collapse; width: 100%; margin: 16px 0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-    .markdown-body th { background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important; color: #FF8C00 !important; font-weight: 700; padding: 10px 14px; border: 1px solid #1f3355; }
-    .markdown-body td { padding: 10px 14px; border: 1px solid #1f3355; }
-    .app-footer { width: 100%; background: rgba(13,26,53,0.7); backdrop-filter: blur(8px); border-top: 2px solid rgba(255,140,0,0.5); padding: 20px 24px; margin-top: 50px; text-align: center; color: #A9B6D0; font-size: 13px; border-radius: 16px 16px 0 0; }
+
+    .markdown-body {
+        font-size: 14px;
+        line-height: 1.7;
+        color: #E9EDF5;
+        background: transparent !important;
+        padding: 0 !important;
+    }
+    .markdown-body table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 16px 0;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .markdown-body th {
+        background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
+        color: #FF8C00 !important;
+        font-weight: 700;
+        padding: 10px 14px;
+        border: 1px solid #1f3355;
+    }
+    .markdown-body td {
+        padding: 10px 14px;
+        border: 1px solid #1f3355;
+    }
+
+    .app-footer {
+        width: 100%;
+        background: rgba(13, 26, 53, 0.7);
+        backdrop-filter: blur(8px);
+        border-top: 2px solid rgba(255, 140, 0, 0.5);
+        padding: 20px 24px;
+        margin-top: 50px;
+        text-align: center;
+        color: #A9B6D0;
+        font-size: 13px;
+        border-radius: 16px 16px 0 0;
+        box-sizing: border-box;
+    }
+    .app-footer a { color: #4FC3F7; text-decoration: none; }
+    .app-footer a:hover { color: #FF8C00; text-decoration: underline; }
+
     .main-title { font-size: 3.8rem !important; font-weight: 900 !important; letter-spacing: -0.02em; }
     .sub-title { color: #FFFFFF !important; font-weight: 500; }
-    @media (max-width: 768px) { .main-title { font-size: 2.2rem !important; } .sub-title { font-size: 1rem !important; } .stat-chip { min-width: 100px; padding: 10px 14px; } .input-card { padding: 12px 14px; } }
+
+    @media (max-width: 768px) {
+        .main-title { font-size: 2.2rem !important; }
+        .sub-title { font-size: 1rem !important; }
+        .stat-chip { min-width: 100px; padding: 10px 14px; }
+        .input-card { padding: 12px 14px; }
+        .primary-btn, .q-btn { padding: 8px 16px !important; font-size: 13px !important; min-height: 36px !important; }
+        .app-footer { font-size: 11px !important; padding: 14px 12px !important; }
+    }
+
+    /* Light theme overrides – applied via JS class toggle */
+    .light-mode {
+        background: #f0f2f5 !important;
+        color: #1a1a1a !important;
+    }
+    .light-mode .sidebar-container { background: #ffffff !important; border-color: #ccc; }
+    .light-mode .input-card { background: rgba(255,255,255,0.8); border-color: #ddd; }
+    .light-mode .stat-chip { background: rgba(255,255,255,0.7); border-color: #ddd; }
+    .light-mode .stat-chip .lbl { color: #555; }
+    .light-mode .markdown-body { color: #1a1a1a; }
+    .light-mode .app-footer { background: rgba(255,255,255,0.8); color: #333; border-color: #ccc; }
+    .light-mode .main-title { color: #0b1a3a; }
+    .light-mode .sub-title { color: #0b1a3a !important; }
 </style>
 ''', shared=True)
 
 # =====================================================================
 # HELPER FUNCTIONS (Full)
 # =====================================================================
-
 _LATEX_SIMPLE = {
     r'\times': ' x ', r'\cdot': ' . ', r'\div': ' / ',
     r'\geq': ' >= ', r'\ge': ' >= ', r'\leq': ' <= ', r'\le': ' <= ',
@@ -443,7 +572,7 @@ def build_report_pdf(doc_title, subtitle, body_markdown, meta, logo_bytes, extra
     return buffer.getvalue()
 
 # =====================================================================
-# CODE COMPLIANCE
+# CODE COMPLIANCE (unchanged)
 # =====================================================================
 CODE_BASIS_OPTIONS = [
     "Egyptian Codes: ECP 203 / ECP 202 / ECP 104 (Default Core Basis)",
@@ -502,9 +631,9 @@ async def call_gemini(contents, system_instruction=None, temperature=0.1, timeou
 @ui.page('/')
 def main_page():
     ui.query('body').style('width: 100vw; height: 100vh; overflow-x: hidden;')
-    apply_theme()
+    apply_theme()  # sets dark navy by default
 
-    # ---- Load saved state (app.storage.user is always a dict) ----
+    # ---- Load saved state ----
     state = app.storage.user.get('app_state', {})
 
     # ---- Sidebar ----
@@ -570,7 +699,7 @@ def main_page():
 
     # ---- Main content ----
     with ui.column().classes('w-full min-h-screen p-4'):
-        # Title block
+        # Title block (dark navy compatible)
         with ui.column().classes('w-full bg-[#0d1a35] px-6 py-4 rounded-xl border border-[#FF8C00] shadow-lg mb-4'):
             ui.label(_('app_title')).classes('main-title text-white')
             ui.label(_('app_sub')).classes('sub-title text-lg font-medium mt-1')
@@ -657,6 +786,7 @@ def main_page():
                     value='All Stages',
                 ).classes('w-full md:w-1/3 mb-4').props('helper="Choose which stage to display"')
 
+                # ---- Placeholder areas ----
                 stats_area = ui.column().classes('w-full')
                 result_output_area = ui.column().classes('w-full')
                 chart_area = ui.column().classes('w-full')
@@ -1496,10 +1626,8 @@ Governing standard: {code_basis_select.value}
             # ---- Dashboard Tab ----
             with ui.tab_panel(t_dash):
                 ui.label('📈 Dashboard').classes('text-2xl font-bold text-white mb-4')
-                # Simple metrics from last run if available
                 if 'last_results' in app.storage.user:
                     ui.label('Latest results summary:').classes('text-white')
-                    # display metrics
                 else:
                     ui.label('Run a calculation first to see dashboard metrics.').classes('text-[#A9B6D0]')
 
@@ -1541,9 +1669,14 @@ Governing standard: {code_basis_select.value}
                 def switch_theme(val):
                     global current_theme
                     current_theme = 'dark' if val == 'Dark' else 'light'
+                    # Re-apply theme (will use CSS classes)
                     apply_theme()
+                    # Toggle a class on body for light mode overrides
+                    if current_theme == 'light':
+                        ui.query('body').classes('light-mode')
+                    else:
+                        ui.query('body').classes(remove='light-mode')
                     ui.notify(f'Theme switched to {val}', type='positive')
-                    ui.open('/')
 
                 ui.button('🎯 Start Interactive Tour', on_click=lambda: ui.notify('Tour started! (placeholder)', type='info')).classes('primary-btn mt-4')
                 ui.button('❓ Contextual Help', on_click=lambda: ui.notify('Help panel will be displayed here.', type='info')).classes('primary-btn mt-2')
