@@ -47,7 +47,7 @@ MARGIN = 32
 USABLE_WIDTH = PAGE_WIDTH - (2 * MARGIN)
 
 # =====================================================================
-# STYLING – Dark Navy with Black/White/Gray, no bright blue
+# STYLING – Dark Navy with Black/White/Gray, fully responsive
 # =====================================================================
 app.native.window_args = {"resizable": True}
 
@@ -68,12 +68,13 @@ ui.add_head_html('''
         overflow-y: auto;
     }
 
-    /* Force all containers to respect viewport width */
+    /* Desktop: center content with max-width */
     .container-full {
         width: 100% !important;
-        max-width: 100vw !important;
+        max-width: 1400px !important;
+        margin: 0 auto !important;
+        padding: 0 24px !important;
         box-sizing: border-box !important;
-        padding: 0 12px !important;
         overflow-x: auto !important;
     }
 
@@ -402,21 +403,7 @@ ui.add_head_html('''
         max-width: 100% !important;
     }
 
-    /* Fix for mobile: add padding-left and allow horizontal scroll */
-    .q-page-container, .q-layout, .q-page {
-        width: 100% !important;
-        max-width: 100vw !important;
-        overflow-x: auto !important;
-        padding-left: 0 !important;
-        padding-right: 0 !important;
-    }
-
-    /* Ensure all content is within viewport */
-    .q-page {
-        padding: 0 6px !important;
-    }
-
-    /* Responsive tweaks */
+    /* Mobile-specific overrides */
     @media (max-width: 768px) {
         .main-title {
             font-size: 2.2rem !important;
@@ -459,18 +446,17 @@ ui.add_head_html('''
         .q-field__native, .q-field__input {
             font-size: 14px !important;
         }
-        /* Add left margin to content on mobile */
-        .q-page {
-            padding-left: 12px !important;
-            padding-right: 12px !important;
-        }
+        /* Mobile: reduce padding and allow horizontal scroll */
         .container-full {
-            padding-left: 6px !important;
-            padding-right: 6px !important;
+            padding: 0 12px !important;
         }
-        /* Make sidebar more compact */
+        /* Sidebar width on mobile */
         .sidebar-container {
             width: 85vw !important;
+        }
+        /* Ensure no overflow on mobile */
+        .q-page {
+            overflow-x: auto !important;
         }
     }
 </style>
