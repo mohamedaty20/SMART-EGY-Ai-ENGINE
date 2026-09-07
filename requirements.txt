@@ -10,3 +10,4 @@ reportlab
 Pillow
 python-docx
 docxtpl
+docx
