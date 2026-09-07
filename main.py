@@ -504,10 +504,15 @@ def main_page():
     ui.query('body').style('width: 100vw; height: 100vh; overflow-x: hidden;')
     apply_theme()
 
-    # ---- Load saved state from app.storage ----
+    # ---- Ensure storage exists ----
+    if 'user' not in app.storage:
+        app.storage.user = {}
+
+    # ---- Load saved state ----
     if 'app_state' in app.storage.user:
         state = app.storage.user['app_state']
-        # We'll set inputs later after they are defined
+    else:
+        state = {}
 
     # ---- Sidebar ----
     sidebar = ui.left_drawer().classes('sidebar-container').style('width: 380px;')
@@ -518,28 +523,28 @@ def main_page():
                 'bg-transparent text-white text-xl hover:text-[#FF8C00] p-1 min-w-[36px] !shadow-none !rounded-full !bg-transparent'
             ).style('font-size: 20px; line-height: 1;')
 
-        project_name_input = ui.input(label=_('project_name'), value='Highway Expansion Project').classes('w-full mb-3').props('helper="Enter the project name"')
-        pour_location_input = ui.input(label=_('location'), value='Highway Section Ch. 12+500').classes('w-full mb-4').props('helper="Chainage or element location"')
+        project_name_input = ui.input(label=_('project_name'), value=state.get('project_name', 'Highway Expansion Project')).classes('w-full mb-3').props('helper="Enter the project name"')
+        pour_location_input = ui.input(label=_('location'), value=state.get('pour_location', 'Highway Section Ch. 12+500')).classes('w-full mb-4').props('helper="Chainage or element location"')
 
         ui.label(_('code_basis')).classes('text-white font-bold text-sm mb-1')
         ui.markdown(_('code_hint')).classes('text-xs text-[#A9B6D0] mb-2')
         code_basis_select = ui.select(
             label='',
             options=CODE_BASIS_OPTIONS,
-            value=CODE_BASIS_OPTIONS[0],
+            value=state.get('code_basis', CODE_BASIS_OPTIONS[0]),
         ).classes('w-full mb-4').props('helper="Select the governing design code"')
 
-        fcu_input = ui.number(label=_('fcu'), value=30.0, step=5.0).classes('w-full mb-4').props('helper="Characteristic compressive strength at 28 days"')
+        fcu_input = ui.number(label=_('fcu'), value=state.get('fcu', 30.0), step=5.0).classes('w-full mb-4').props('helper="Characteristic compressive strength at 28 days"')
 
         ui.label(_('batch_plant')).classes('text-white font-bold text-sm mb-2')
-        truck_input = ui.input(label=_('truck'), value='TRK-104').classes('w-full mb-2').props('helper="Mixer truck identification"')
-        ticket_input = ui.input(label=_('ticket'), value='BT-99482').classes('w-full mb-4').props('helper="Batch ticket number"')
+        truck_input = ui.input(label=_('truck'), value=state.get('truck', 'TRK-104')).classes('w-full mb-2').props('helper="Mixer truck identification"')
+        ticket_input = ui.input(label=_('ticket'), value=state.get('ticket', 'BT-99482')).classes('w-full mb-4').props('helper="Batch ticket number"')
 
         ui.label(_('mix_design')).classes('text-white font-bold text-sm mb-2')
-        cement_input = ui.input(label=_('cement'), value='350.0').classes('w-full mb-2').props('helper="Cement content in kg/m3"')
-        water_input = ui.input(label=_('water'), value='150.0').classes('w-full mb-4').props('helper="Free water content in kg/m3"')
+        cement_input = ui.input(label=_('cement'), value=state.get('cement', '350.0')).classes('w-full mb-2').props('helper="Cement content in kg/m3"')
+        water_input = ui.input(label=_('water'), value=state.get('water', '150.0')).classes('w-full mb-4').props('helper="Free water content in kg/m3"')
 
-        engineer_input = ui.input(label=_('engineer'), value='Eng. Mohamed Abd Al Aty').classes('w-full mb-2').props('helper="Name of the responsible engineer"')
+        engineer_input = ui.input(label=_('engineer'), value=state.get('engineer', 'Eng. Mohamed Abd Al Aty')).classes('w-full mb-2').props('helper="Name of the responsible engineer"')
 
         logo_status = ui.label(_('logo')).classes('text-xs text-amber-400 mb-1')
         logo_bytes_holder = {'bytes': None}
@@ -559,19 +564,6 @@ def main_page():
     ui.button('☰', on_click=sidebar.toggle).classes(
         'fixed top-4 left-4 z-50 bg-[#10203f] text-white border border-[#FF8C00] p-3 rounded-full shadow-lg hover:bg-[#1a2a4a]'
     ).style('font-size: 20px; min-width: 48px; min-height: 48px;')
-
-    # ---- Restore saved state ----
-    if 'app_state' in app.storage.user:
-        state = app.storage.user['app_state']
-        project_name_input.value = state.get('project_name', '')
-        pour_location_input.value = state.get('pour_location', '')
-        fcu_input.value = state.get('fcu', 30.0)
-        truck_input.value = state.get('truck', '')
-        ticket_input.value = state.get('ticket', '')
-        cement_input.value = state.get('cement', '')
-        water_input.value = state.get('water', '')
-        engineer_input.value = state.get('engineer', '')
-        # c7, c14, c28 inputs not yet defined – will be set later
 
     def current_meta(uid_prefix):
         return {
@@ -617,20 +609,13 @@ def main_page():
                 with ui.row().classes('w-full gap-4 mb-4'):
                     with ui.column().classes('input-card flex-1'):
                         ui.label(_('7day')).classes('font-bold text-white text-sm')
-                        c7_input = ui.input(value='21.0, 22.5, 20.5').classes('w-full').props('helper="Comma-separated values"')
+                        c7_input = ui.input(value=state.get('c7', '21.0, 22.5, 20.5')).classes('w-full').props('helper="Comma-separated values"')
                     with ui.column().classes('input-card flex-1'):
                         ui.label(_('14day')).classes('font-bold text-white text-sm')
-                        c14_input = ui.input(value='26.0, 27.2, 25.8').classes('w-full').props('helper="Comma-separated values"')
+                        c14_input = ui.input(value=state.get('c14', '26.0, 27.2, 25.8')).classes('w-full').props('helper="Comma-separated values"')
                     with ui.column().classes('input-card flex-1'):
                         ui.label(_('28day')).classes('font-bold text-white text-sm')
-                        c28_input = ui.input(value='32.5, 34.0, 31.0, 35.5, 29.0, 33.0').classes('w-full').props('helper="Comma-separated values"')
-
-                # ---- Restore c7/c14/c28 from storage ----
-                if 'app_state' in app.storage.user:
-                    state = app.storage.user['app_state']
-                    c7_input.value = state.get('c7', '')
-                    c14_input.value = state.get('c14', '')
-                    c28_input.value = state.get('c28', '')
+                        c28_input = ui.input(value=state.get('c28', '32.5, 34.0, 31.0, 35.5, 29.0, 33.0')).classes('w-full').props('helper="Comma-separated values"')
 
                 # ---- Load Example & Save State ----
                 def load_example():
@@ -661,6 +646,7 @@ def main_page():
                         'c7': c7_input.value,
                         'c14': c14_input.value,
                         'c28': c28_input.value,
+                        'code_basis': code_basis_select.value,
                         'lang': current_lang,
                         'theme': current_theme,
                     }
@@ -787,7 +773,7 @@ def main_page():
                     return pred_y.tolist(), std_err
 
                 # ---- Build detailed calc markdown ----
-                def build_detailed_calculations_md(stage_stats):
+                def build_detailed_calculations_md(stage_stats, target_fcu):
                     md_lines = []
                     for label, values, s in stage_stats:
                         if not s:
@@ -964,6 +950,39 @@ def main_page():
                 ai_cube_result_holder = {'text': ''}
                 stage_stats_holder = []
 
+                # ---- Template upload (optional) ----
+                template_bytes_holder = {'bytes': None, 'name': None}
+                template_status = ui.label('Template: Not uploaded').classes('text-xs text-amber-400 mb-1')
+
+                async def handle_template_upload(e):
+                    try:
+                        template_bytes_holder['bytes'] = await e.file.read()
+                        template_bytes_holder['name'] = e.file.name
+                        template_status.set_text(f'Template: {e.file.name}')
+                        template_status.classes(replace='text-xs text-emerald-400 mb-1')
+                        ui.notify('Template uploaded successfully!', type='positive')
+                    except Exception as ex:
+                        ui.notify(f'Error: {str(ex)}', type='negative')
+
+                def fill_template(template_bytes, data_dict):
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
+                        tmp.write(template_bytes)
+                        tmp_path = tmp.name
+                    doc = DocxTemplate(tmp_path)
+                    doc.render(data_dict)
+                    out_bytes = io.BytesIO()
+                    doc.save(out_bytes)
+                    out_bytes.seek(0)
+                    os.unlink(tmp_path)
+                    return out_bytes.getvalue()
+
+                with ui.row().classes('w-full gap-4 items-center mb-4'):
+                    ui.upload(label='Upload Company Template (DOCX with placeholders)',
+                              auto_upload=True,
+                              on_upload=handle_template_upload).props('flat dark').classes('flex-1')
+                    template_status
+
                 # ---- Run function ----
                 async def run_verification():
                     result_output_area.clear()
@@ -1087,7 +1106,7 @@ REQUIRED REPORT STRUCTURE:
                         calc_panel.clear()
                         with calc_panel:
                             with ui.expansion(_('detailed_calc'), icon='calculate', value=True).classes('w-full bg-[#0d1a35] rounded-lg mt-4'):
-                                md = build_detailed_calculations_md(stage_stats)
+                                md = build_detailed_calculations_md(stage_stats, target_fcu)
                                 ui.markdown(md).classes('markdown-body')
 
                         # ---- Predictive charts ----
@@ -1117,7 +1136,6 @@ REQUIRED REPORT STRUCTURE:
                             def download_normal_pdf():
                                 try:
                                     meta = current_meta('ECP-AI')
-                                    # Build stats table
                                     styles = build_pdf_styles()
                                     stat_rows = [["Stage", "n", "Mean", "Std Dev", "Min", "Max", "COV %", "Cpk"]]
                                     for label, values, s in stage_stats:
@@ -1485,11 +1503,10 @@ Governing standard: {code_basis_select.value}
             # ---- Dashboard Tab ----
             with ui.tab_panel(t_dash):
                 ui.label('📈 Dashboard').classes('text-2xl font-bold text-white mb-4')
-                # Show summary cards if we have data
-                if 'audit_log' in app.storage.user and len(app.storage.user['audit_log']) > 0:
-                    ui.markdown('*Latest results summary (from last run):*').classes('text-white')
-                    # We can load last run stats from storage if we saved them
-                    ui.label('Dashboard will display real-time metrics after each run.').classes('text-[#A9B6D0]')
+                # Simple metrics from last run if available
+                if 'last_results' in app.storage.user:
+                    ui.label('Latest results summary:').classes('text-white')
+                    # display metrics
                 else:
                     ui.label('Run a calculation first to see dashboard metrics.').classes('text-[#A9B6D0]')
 
@@ -1552,6 +1569,7 @@ Governing standard: {code_basis_select.value}
 
 
 if __name__ == '__main__':
+    # Add storage_secret to enable persistent storage
     ui.run(
         host='0.0.0.0',
         port=int(os.environ.get('PORT', 8080)),
@@ -1559,4 +1577,5 @@ if __name__ == '__main__':
         favicon='🏗️',
         reload=False,
         reconnect_timeout=30.0,
+        storage_secret=os.environ.get('STORAGE_SECRET', 'change-this-secret-key-in-production'),
     )
