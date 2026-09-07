@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import qrcode
 from docxtpl import DocxTemplate
 from docx import Document
-from scipy import stats
+from scipy import stats as scipy_stats  # renamed to avoid shadowing
 from plotly.subplots import make_subplots
 
 # Dotenv & FastAPI / NiceGUI
@@ -47,148 +47,10 @@ MARGIN = 32
 USABLE_WIDTH = PAGE_WIDTH - (2 * MARGIN)
 
 # =====================================================================
-# I18N (same as before)
+# STYLING – Original Dark Navy Theme (no settings, no language toggles)
 # =====================================================================
-TEXTS = {
-    'en': {
-        'app_title': 'SMART EGY-CIVIL AI AUDITOR',
-        'app_sub': 'Concrete Cube Statistical Verifier – ECP 203 Compliant',
-        'lead_auditor': 'Lead Technical Auditor: Eng. Mohamed Abd Al Aty',
-        'tagline': 'Precision‑calibrated for Egyptian Code of Practice.',
-        'project_metadata': '📋 PROJECT METADATA',
-        'project_name': 'Project Name',
-        'location': 'Structural Element / Chainage',
-        'code_basis': 'Governing Design Code Basis',
-        'code_hint': 'By default every AI output in this app is generated strictly per **ECP 203 / ECP 202 / ECP 104**. Change this to switch the primary basis.',
-        'fcu': 'Specified 28-Day Grade f_cu (N/mm2)',
-        'batch_plant': 'Batch Plant & Site Logs',
-        'truck': 'Mixer Truck No.',
-        'ticket': 'Batch Ticket ID',
-        'mix_design': 'Mix Design Parameters',
-        'cement': 'Cement Content (kg/m3)',
-        'water': 'Free Water Content (kg/m3)',
-        'engineer': 'Engineer Name',
-        'logo': 'Logo: Not uploaded',
-        'logo_upload': 'Upload Company Logo',
-        'run_button': 'Run Statistical Calculation & Verification',
-        'run_hint': 'Click "Run Statistical Calculation & Verification" to generate the report and charts.',
-        '7day': '7-Day Cubes (comma separated, N/mm2)',
-        '14day': '14-Day Cubes (comma separated, N/mm2)',
-        '28day': '28-Day Cubes (comma separated, N/mm2)',
-        'stage_filter': 'Select Stage Display Filter',
-        'all_stages': 'All Stages',
-        '7day_stage': '7-Day Stage',
-        '14day_stage': '14-Day Stage',
-        '28day_stage': '28-Day Stage',
-        'detailed_calc': '📊 View Detailed Calculations (full math breakdown)',
-        'download_pdf': '📄 Download Normal PDF',
-        'download_word': '📝 Download Normal Word',
-        'download_template': '📎 Download Filled Template',
-        'download_calc_pdf': '📊 Download Calculations PDF',
-        'download_calc_word': '📊 Download Calculations Word',
-        'ask_results': '💬 Ask about Results',
-        'ask_code': '📚 Ask about Egyptian Code',
-        'dashboard': '📈 Dashboard',
-        'batch_compare': '📊 Batch Comparison',
-        'audit_trail': '📜 Audit Trail',
-        'settings': '⚙️ Settings',
-        'dark_mode': 'Dark Mode',
-        'light_mode': 'Light Mode',
-        'help_tour': '🎯 Start Tour',
-        'contextual_help': '❓ Help',
-        'load_example': '📥 Load Example',
-        'save_state': '💾 Save State',
-        'language': 'Language',
-        'english': 'English',
-        'arabic': 'العربية',
-        'example_loaded': 'Example data loaded!',
-        'state_saved': 'State saved to browser storage.',
-        'not_enough_data': 'Not enough data for predictive charts (need at least 2 values).',
-    },
-    'ar': {
-        'app_title': 'المدقق الذكي – الهندسة المدنية المصرية',
-        'app_sub': 'مدقق المكعبات الخرسانية – متوافق مع الكود المصري ECP 203',
-        'lead_auditor': 'المدقق الفني الرئيسي: مهندس محمد عبد العاطي',
-        'tagline': 'معايرة دقيقة لكود الممارسة المصري.',
-        'project_metadata': '📋 بيانات المشروع',
-        'project_name': 'اسم المشروع',
-        'location': 'العنصر الإنشائي / المقطع',
-        'code_basis': 'أساس الكود التصميمي',
-        'code_hint': 'افتراضيًا، يتم إنشاء كل مخرجات الذكاء الاصطناعي وفقًا لـ **ECP 203 / ECP 202 / ECP 104**. غيِّر هذا لتبديل الأساس الرئيسي.',
-        'fcu': 'مقاومة الضغط المميزة f_cu (نيوتن/مم²)',
-        'batch_plant': 'بيانات الخلاطة والموقع',
-        'truck': 'رقم شاحنة الخلط',
-        'ticket': 'رقم تذكرة الخلطة',
-        'mix_design': 'بارامترات تصميم الخلطة',
-        'cement': 'محتوى الأسمنت (كجم/م³)',
-        'water': 'محتوى الماء الحر (كجم/م³)',
-        'engineer': 'اسم المهندس',
-        'logo': 'الشعار: لم يتم الرفع',
-        'logo_upload': 'رفع شعار الشركة',
-        'run_button': 'تشغيل التحليل الإحصائي والتحقق من المطابقة',
-        'run_hint': 'انقر "تشغيل التحليل الإحصائي..." لإنشاء التقرير والرسوم البيانية.',
-        '7day': 'مكعبات 7 أيام (مفصولة بفواصل، نيوتن/مم²)',
-        '14day': 'مكعبات 14 يومًا (مفصولة بفواصل، نيوتن/مم²)',
-        '28day': 'مكعبات 28 يومًا (مفصولة بفواصل، نيوتن/مم²)',
-        'stage_filter': 'اختيار مرحلة العرض',
-        'all_stages': 'كل المراحل',
-        '7day_stage': 'مرحلة 7 أيام',
-        '14day_stage': 'مرحلة 14 يومًا',
-        '28day_stage': 'مرحلة 28 يومًا',
-        'detailed_calc': '📊 عرض الحسابات التفصيلية (تفصيل كامل)',
-        'download_pdf': '📄 تحميل PDF عادي',
-        'download_word': '📝 تحميل Word عادي',
-        'download_template': '📎 تحميل النموذج المملوء',
-        'download_calc_pdf': '📊 تحميل حسابات PDF',
-        'download_calc_word': '📊 تحميل حسابات Word',
-        'ask_results': '💬 اسأل عن النتائج',
-        'ask_code': '📚 اسأل عن الكود المصري',
-        'dashboard': '📈 لوحة المعلومات',
-        'batch_compare': '📊 مقارنة الدفعات',
-        'audit_trail': '📜 سجل التدقيق',
-        'settings': '⚙️ الإعدادات',
-        'dark_mode': 'الوضع الداكن',
-        'light_mode': 'الوضع الفاتح',
-        'help_tour': '🎯 بدء الجولة',
-        'contextual_help': '❓ مساعدة',
-        'load_example': '📥 تحميل مثال',
-        'save_state': '💾 حفظ الحالة',
-        'language': 'اللغة',
-        'english': 'English',
-        'arabic': 'العربية',
-        'example_loaded': 'تم تحميل بيانات المثال!',
-        'state_saved': 'تم حفظ الحالة في المتصفح.',
-        'not_enough_data': 'بيانات غير كافية للرسوم التنبؤية (يلزم قيمتان على الأقل).',
-    }
-}
-
-current_lang = 'en'
-current_theme = 'dark'  # default dark navy
-
-def _(key):
-    return TEXTS[current_lang].get(key, key)
-
-# =====================================================================
-# STYLING – Default DARK NAVY theme
-# =====================================================================
-def apply_theme():
-    if current_theme == 'dark':
-        # Original dark navy background
-        ui.query('body').style('''
-            background: radial-gradient(circle at 10% 20%, #0a1a3a, #031338) !important;
-            color: #E9EDF5 !important;
-        ''')
-        # Also update any other elements if needed – but most are styled via CSS classes.
-    else:
-        # Light mode – keep it clean
-        ui.query('body').style('''
-            background: #f0f2f5 !important;
-            color: #1a1a1a !important;
-        ''')
-
 app.native.window_args = {"resizable": True}
 
-# Full CSS – original dark navy, but with light theme overrides if needed.
 ui.add_head_html('''
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -197,12 +59,12 @@ ui.add_head_html('''
     ::-webkit-scrollbar-thumb { background: #FF8C00 !important; border-radius: 10px; }
 
     html, body {
+        background: radial-gradient(circle at 10% 20%, #0a1a3a, #031338) !important;
+        color: #E9EDF5 !important;
+        font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
         margin: 0; padding: 0;
         width: 100vw; height: 100vh;
         overflow-x: hidden;
-        font-family: 'Inter', sans-serif;
-        background: radial-gradient(circle at 10% 20%, #0a1a3a, #031338) !important;
-        color: #E9EDF5 !important;
     }
 
     /* Sidebar – dark navy */
@@ -211,13 +73,32 @@ ui.add_head_html('''
         border-right: 2px solid rgba(255, 140, 0, 0.4) !important;
         box-shadow: 8px 0 30px rgba(0,0,0,0.6) !important;
     }
+    .sidebar-container .q-field__control {
+        background-color: rgba(13, 26, 53, 0.8) !important;
+        border: 1px solid #2c3f6b !important;
+        border-radius: 10px !important;
+    }
+    .sidebar-container .q-field__native,
+    .sidebar-container .q-field__input,
+    .sidebar-container .q-field__label {
+        color: #E9EDF5 !important;
+    }
+    .sidebar-container .q-select .q-field__control {
+        background-color: rgba(13, 26, 53, 0.8) !important;
+    }
 
+    /* Output – no containers */
     .output-card {
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
+        box-shadow: none !important;
+        width: 100% !important;
+        max-width: none !important;
+        box-sizing: border-box;
     }
 
+    /* Input cards – glass effect */
     .input-card {
         background: rgba(13, 26, 53, 0.6);
         backdrop-filter: blur(8px);
@@ -231,6 +112,7 @@ ui.add_head_html('''
         box-sizing: border-box;
     }
 
+    /* Buttons – sleek, dark */
     .primary-btn, .q-btn {
         background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
         color: #FFFFFF !important;
@@ -238,9 +120,11 @@ ui.add_head_html('''
         font-weight: 600 !important;
         border-radius: 14px !important;
         padding: 10px 28px !important;
+        letter-spacing: .4px;
+        text-transform: none !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
         transition: all 0.25s ease !important;
         min-height: 44px !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
     }
     .primary-btn:hover, .q-btn:hover {
         background: linear-gradient(135deg, #2d2d2d 0%, #444444 100%) !important;
@@ -248,47 +132,64 @@ ui.add_head_html('''
         box-shadow: 0 8px 25px rgba(0,0,0,0.7) !important;
         border-color: #FF8C00 !important;
     }
-
-    .stat-chip {
-        background: rgba(13, 26, 53, 0.6);
-        backdrop-filter: blur(8px);
-        border: 1px solid #1f3355;
-        border-radius: 12px;
-        padding: 14px 20px;
-        text-align: center;
-        min-width: 140px;
-        transition: all 0.3s ease;
+    .primary-btn:active, .q-btn:active {
+        transform: translateY(0px) !important;
     }
-    .stat-chip .val { font-size: 24px; font-weight: 800; color: #FF8C00; }
-    .stat-chip .lbl { font-size: 11px; color: #A9B6D0; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
 
-    .markdown-body {
-        font-size: 14px;
-        line-height: 1.7;
-        color: #E9EDF5;
+    /* Upload – dark */
+    .q-uploader {
+        background: rgba(13, 26, 53, 0.6) !important;
+        backdrop-filter: blur(8px) !important;
+        border-radius: 14px !important;
+        border: 2px dashed rgba(255, 140, 0, 0.5) !important;
+        color: #FFFFFF !important;
+        padding: 8px !important;
+    }
+    .q-uploader .q-uploader__header {
         background: transparent !important;
-        padding: 0 !important;
+        color: #FFFFFF !important;
     }
-    .markdown-body table {
-        border-collapse: collapse;
-        width: 100%;
-        margin: 16px 0;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    .q-uploader .q-uploader__header-content {
+        color: #FFFFFF !important;
     }
-    .markdown-body th {
-        background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
-        color: #FF8C00 !important;
-        font-weight: 700;
-        padding: 10px 14px;
-        border: 1px solid #1f3355;
-    }
-    .markdown-body td {
-        padding: 10px 14px;
-        border: 1px solid #1f3355;
+    .q-uploader .q-uploader__file {
+        background: rgba(13, 26, 53, 0.8) !important;
+        color: #FFFFFF !important;
+        border-radius: 10px !important;
     }
 
+    /* Input fields */
+    input, select, textarea, .q-field__control {
+        background-color: rgba(13, 26, 53, 0.7) !important;
+        color: #FFFFFF !important;
+        border: 1px solid #2c3f6b !important;
+        border-radius: 10px !important;
+    }
+    .q-field__native, .q-field__input, .q-field__label {
+        color: #E9EDF5 !important;
+    }
+    .q-field--highlighted .q-field__label {
+        color: #FF8C00 !important;
+    }
+
+    /* Dropdowns */
+    .q-menu, .q-popover, .q-virtual-scroll__content {
+        background: rgba(13, 26, 53, 0.95) !important;
+        backdrop-filter: blur(8px) !important;
+        border: 1px solid #2c3f6b !important;
+        border-radius: 10px !important;
+    }
+    .q-item {
+        color: #FFFFFF !important;
+        background: transparent !important;
+        border-radius: 8px !important;
+    }
+    .q-item:hover {
+        background: rgba(255, 140, 0, 0.15) !important;
+        color: #FF8C00 !important;
+    }
+
+    /* Footer */
     .app-footer {
         width: 100%;
         background: rgba(13, 26, 53, 0.7);
@@ -299,43 +200,252 @@ ui.add_head_html('''
         text-align: center;
         color: #A9B6D0;
         font-size: 13px;
-        border-radius: 16px 16px 0 0;
         box-sizing: border-box;
+        border-radius: 16px 16px 0 0;
     }
-    .app-footer a { color: #4FC3F7; text-decoration: none; }
-    .app-footer a:hover { color: #FF8C00; text-decoration: underline; }
+    .app-footer a {
+        color: #4FC3F7;
+        text-decoration: none;
+        transition: color 0.3s ease;
+    }
+    .app-footer a:hover {
+        color: #FF8C00;
+        text-decoration: underline;
+    }
 
-    .main-title { font-size: 3.8rem !important; font-weight: 900 !important; letter-spacing: -0.02em; }
-    .sub-title { color: #FFFFFF !important; font-weight: 500; }
+    /* Markdown */
+    .markdown-body {
+        font-size: 14px;
+        line-height: 1.7;
+        color: #E9EDF5;
+        background: transparent !important;
+        padding: 0 !important;
+    }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3,
+    .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 700 !important;
+        color: #FF8C00 !important;
+        margin: 20px 0 10px 0 !important;
+        line-height: 1.35 !important;
+    }
+    .markdown-body h1 { font-size: 22px !important; border-bottom: 2px solid #FF8C00; padding-bottom: 8px; }
+    .markdown-body h2 { font-size: 19px !important; }
+    .markdown-body h3 { font-size: 17px !important; color: #4FC3F7 !important; }
+    .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 15px !important; color: #4FC3F7 !important; }
+    .markdown-body p { margin: 10px 0 !important; }
+    .markdown-body strong { color: #FFFFFF; }
+    .markdown-body ul, .markdown-body ol { padding-left: 25px !important; margin: 10px 0 !important; }
+    .markdown-body li { margin: 5px 0 !important; }
+    .markdown-body hr { border-color: #1f3355; margin: 16px 0; }
+    .markdown-body code {
+        background: rgba(3, 19, 56, 0.8);
+        border: 1px solid #1f3355;
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 12.5px;
+        color: #4FC3F7;
+    }
+    .markdown-body table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+        margin: 16px 0 !important;
+        font-size: 13px !important;
+        table-layout: auto !important;
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+    }
+    .markdown-body th, .markdown-body td {
+        border: 1px solid #1f3355 !important;
+        padding: 10px 14px !important;
+        text-align: left !important;
+        word-wrap: break-word !important;
+        white-space: normal !important;
+    }
+    .markdown-body th {
+        background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
+        color: #FF8C00 !important;
+        font-weight: 700 !important;
+    }
+    .markdown-body tr:nth-child(even) td {
+        background-color: rgba(10, 26, 58, 0.5);
+    }
+    .markdown-body tr:hover td {
+        background-color: rgba(255, 140, 0, 0.08);
+    }
 
+    /* Stat chips */
+    .stat-chip {
+        background: rgba(13, 26, 53, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid #1f3355;
+        border-radius: 12px;
+        padding: 14px 20px;
+        text-align: center;
+        min-width: 140px;
+        transition: all 0.3s ease;
+    }
+    .stat-chip:hover {
+        border-color: #FF8C00;
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(255,140,0,0.15);
+    }
+    .stat-chip .val {
+        font-size: 24px;
+        font-weight: 800;
+        color: #FF8C00;
+    }
+    .stat-chip .lbl {
+        font-size: 11px;
+        color: #A9B6D0;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        margin-top: 4px;
+    }
+
+    /* Tabs */
+    .q-tabs {
+        border-radius: 14px !important;
+        overflow: hidden !important;
+        background: rgba(13, 26, 53, 0.6) !important;
+        backdrop-filter: blur(8px) !important;
+        padding: 4px !important;
+    }
+    .q-tabs__content {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        scrollbar-width: thin;
+        scrollbar-color: #FF8C00 transparent;
+    }
+    .q-tabs__content::-webkit-scrollbar {
+        height: 4px;
+    }
+    .q-tabs__content::-webkit-scrollbar-thumb {
+        background: #FF8C00;
+        border-radius: 2px;
+    }
+    .q-tabs__content::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .q-tab {
+        color: #A9B6D0 !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        border-radius: 10px !important;
+        margin: 2px !important;
+        padding: 8px 16px !important;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .q-tab:hover {
+        color: #FFFFFF !important;
+        background: rgba(255, 140, 0, 0.1) !important;
+    }
+    .q-tab--active {
+        color: #FF8C00 !important;
+        background: rgba(255, 140, 0, 0.15) !important;
+    }
+    .q-tab__indicator {
+        background: #FF8C00 !important;
+        height: 3px !important;
+        border-radius: 2px !important;
+    }
+
+    /* Chat messages */
+    .chat-message {
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .chat-message:last-child {
+        border-bottom: none;
+    }
+    .chat-message .role-label {
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 2px;
+    }
+    .chat-message .role-label.assistant {
+        color: #FF8C00;
+    }
+    .chat-message .role-label.user {
+        color: #4FC3F7;
+    }
+    .chat-message .content {
+        padding-left: 8px;
+    }
+
+    /* Main titles */
+    .main-title {
+        font-size: 3.8rem !important;
+        font-weight: 900 !important;
+        letter-spacing: -0.02em;
+    }
+    .sub-title {
+        color: #FFFFFF !important;
+        font-weight: 500;
+    }
+
+    /* Responsive */
     @media (max-width: 768px) {
-        .main-title { font-size: 2.2rem !important; }
-        .sub-title { font-size: 1rem !important; }
-        .stat-chip { min-width: 100px; padding: 10px 14px; }
-        .input-card { padding: 12px 14px; }
-        .primary-btn, .q-btn { padding: 8px 16px !important; font-size: 13px !important; min-height: 36px !important; }
-        .app-footer { font-size: 11px !important; padding: 14px 12px !important; }
+        .main-title {
+            font-size: 2.2rem !important;
+        }
+        .sub-title {
+            font-size: 1rem !important;
+        }
+        .stat-chip {
+            min-width: 100px !important;
+            padding: 10px 14px !important;
+        }
+        .stat-chip .val {
+            font-size: 18px !important;
+        }
+        .input-card {
+            padding: 12px 14px !important;
+        }
+        .primary-btn, .q-btn {
+            padding: 8px 16px !important;
+            font-size: 13px !important;
+            min-height: 36px !important;
+            border-radius: 10px !important;
+        }
+        .app-footer {
+            font-size: 11px !important;
+            padding: 14px 12px !important;
+        }
+        .q-tabs__content {
+            flex-wrap: nowrap !important;
+        }
+        .q-tab {
+            font-size: 12px !important;
+            padding: 6px 10px !important;
+        }
+        .q-uploader {
+            font-size: 12px !important;
+        }
+        .markdown-body {
+            overflow-x: auto;
+        }
+        .markdown-body table {
+            display: block;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+        .markdown-body table td, .markdown-body table th {
+            white-space: normal !important;
+        }
+        .markdown-body {
+            overflow-x: auto;
+        }
     }
-
-    /* Light theme overrides – applied via JS class toggle */
-    .light-mode {
-        background: #f0f2f5 !important;
-        color: #1a1a1a !important;
-    }
-    .light-mode .sidebar-container { background: #ffffff !important; border-color: #ccc; }
-    .light-mode .input-card { background: rgba(255,255,255,0.8); border-color: #ddd; }
-    .light-mode .stat-chip { background: rgba(255,255,255,0.7); border-color: #ddd; }
-    .light-mode .stat-chip .lbl { color: #555; }
-    .light-mode .markdown-body { color: #1a1a1a; }
-    .light-mode .app-footer { background: rgba(255,255,255,0.8); color: #333; border-color: #ccc; }
-    .light-mode .main-title { color: #0b1a3a; }
-    .light-mode .sub-title { color: #0b1a3a !important; }
 </style>
 ''', shared=True)
 
 # =====================================================================
 # HELPER FUNCTIONS (Full)
 # =====================================================================
+
 _LATEX_SIMPLE = {
     r'\times': ' x ', r'\cdot': ' . ', r'\div': ' / ',
     r'\geq': ' >= ', r'\ge': ' >= ', r'\leq': ' <= ', r'\le': ' <= ',
@@ -631,7 +741,6 @@ async def call_gemini(contents, system_instruction=None, temperature=0.1, timeou
 @ui.page('/')
 def main_page():
     ui.query('body').style('width: 100vw; height: 100vh; overflow-x: hidden;')
-    apply_theme()  # sets dark navy by default
 
     # ---- Load saved state ----
     state = app.storage.user.get('app_state', {})
@@ -640,35 +749,35 @@ def main_page():
     sidebar = ui.left_drawer().classes('sidebar-container').style('width: 380px;')
     with sidebar:
         with ui.row().classes('w-full items-center justify-between mb-4 p-2'):
-            ui.label(_('project_metadata')).classes('text-white font-bold text-base tracking-wide')
+            ui.label('📋 PROJECT METADATA').classes('text-white font-bold text-base tracking-wide')
             ui.button('✕', on_click=sidebar.toggle).classes(
                 'bg-transparent text-white text-xl hover:text-[#FF8C00] p-1 min-w-[36px] !shadow-none !rounded-full !bg-transparent'
             ).style('font-size: 20px; line-height: 1;')
 
-        project_name_input = ui.input(label=_('project_name'), value=state.get('project_name', 'Highway Expansion Project')).classes('w-full mb-3').props('helper="Enter the project name"')
-        pour_location_input = ui.input(label=_('location'), value=state.get('pour_location', 'Highway Section Ch. 12+500')).classes('w-full mb-4').props('helper="Chainage or element location"')
+        project_name_input = ui.input(label='Project Name', value=state.get('project_name', 'Highway Expansion Project')).classes('w-full mb-3').props('helper="Enter the project name"')
+        pour_location_input = ui.input(label='Structural Element / Chainage', value=state.get('pour_location', 'Highway Section Ch. 12+500')).classes('w-full mb-4').props('helper="Chainage or element location"')
 
-        ui.label(_('code_basis')).classes('text-white font-bold text-sm mb-1')
-        ui.markdown(_('code_hint')).classes('text-xs text-[#A9B6D0] mb-2')
+        ui.label('Governing Design Code Basis').classes('text-white font-bold text-sm mb-1')
+        ui.markdown('By default every AI output in this app is generated strictly per **ECP 203 / ECP 202 / ECP 104**. Change this to switch the primary basis.').classes('text-xs text-[#A9B6D0] mb-2')
         code_basis_select = ui.select(
             label='',
             options=CODE_BASIS_OPTIONS,
             value=state.get('code_basis', CODE_BASIS_OPTIONS[0]),
         ).classes('w-full mb-4').props('helper="Select the governing design code"')
 
-        fcu_input = ui.number(label=_('fcu'), value=state.get('fcu', 30.0), step=5.0).classes('w-full mb-4').props('helper="Characteristic compressive strength at 28 days"')
+        fcu_input = ui.number(label='Specified 28-Day Grade f_cu (N/mm2)', value=state.get('fcu', 30.0), step=5.0).classes('w-full mb-4').props('helper="Characteristic compressive strength at 28 days"')
 
-        ui.label(_('batch_plant')).classes('text-white font-bold text-sm mb-2')
-        truck_input = ui.input(label=_('truck'), value=state.get('truck', 'TRK-104')).classes('w-full mb-2').props('helper="Mixer truck identification"')
-        ticket_input = ui.input(label=_('ticket'), value=state.get('ticket', 'BT-99482')).classes('w-full mb-4').props('helper="Batch ticket number"')
+        ui.label('Batch Plant & Site Logs').classes('text-white font-bold text-sm mb-2')
+        truck_input = ui.input(label='Mixer Truck No.', value=state.get('truck', 'TRK-104')).classes('w-full mb-2').props('helper="Mixer truck identification"')
+        ticket_input = ui.input(label='Batch Ticket ID', value=state.get('ticket', 'BT-99482')).classes('w-full mb-4').props('helper="Batch ticket number"')
 
-        ui.label(_('mix_design')).classes('text-white font-bold text-sm mb-2')
-        cement_input = ui.input(label=_('cement'), value=state.get('cement', '350.0')).classes('w-full mb-2').props('helper="Cement content in kg/m3"')
-        water_input = ui.input(label=_('water'), value=state.get('water', '150.0')).classes('w-full mb-4').props('helper="Free water content in kg/m3"')
+        ui.label('Mix Design Parameters').classes('text-white font-bold text-sm mb-2')
+        cement_input = ui.input(label='Cement Content (kg/m3)', value=state.get('cement', '350.0')).classes('w-full mb-2').props('helper="Cement content in kg/m3"')
+        water_input = ui.input(label='Free Water Content (kg/m3)', value=state.get('water', '150.0')).classes('w-full mb-4').props('helper="Free water content in kg/m3"')
 
-        engineer_input = ui.input(label=_('engineer'), value=state.get('engineer', 'Eng. Mohamed Abd Al Aty')).classes('w-full mb-2').props('helper="Name of the responsible engineer"')
+        engineer_input = ui.input(label='Engineer Name', value=state.get('engineer', 'Eng. Mohamed Abd Al Aty')).classes('w-full mb-2').props('helper="Name of the responsible engineer"')
 
-        logo_status = ui.label(_('logo')).classes('text-xs text-amber-400 mb-1')
+        logo_status = ui.label('Logo: Not uploaded').classes('text-xs text-amber-400 mb-1')
         logo_bytes_holder = {'bytes': None}
 
         async def handle_logo_upload(e):
@@ -680,7 +789,7 @@ def main_page():
             except Exception as ex:
                 ui.notify(f'Error reading logo: {str(ex)}', type='negative')
 
-        ui.upload(label=_('logo_upload'), auto_upload=True, on_upload=handle_logo_upload).props('flat dark').classes('w-full mb-2').props('helper="Upload company logo for reports"')
+        ui.upload(label='Upload Company Logo', auto_upload=True, on_upload=handle_logo_upload).props('flat dark').classes('w-full mb-2').props('helper="Upload company logo for reports"')
 
     # ---- Open sidebar button ----
     ui.button('☰', on_click=sidebar.toggle).classes(
@@ -699,18 +808,22 @@ def main_page():
 
     # ---- Main content ----
     with ui.column().classes('w-full min-h-screen p-4'):
-        # Title block (dark navy compatible)
+        # Title block
         with ui.column().classes('w-full bg-[#0d1a35] px-6 py-4 rounded-xl border border-[#FF8C00] shadow-lg mb-4'):
-            ui.label(_('app_title')).classes('main-title text-white')
-            ui.label(_('app_sub')).classes('sub-title text-lg font-medium mt-1')
-            ui.label(_('lead_auditor')).classes('text-base text-[#A9B6D0] font-semibold mt-1')
-            ui.label(_('tagline')).classes('text-sm text-[#A9B6D0] mt-1 italic')
+            ui.label('SMART EGY-CIVIL AI AUDITOR').classes('main-title text-white')
+            ui.label('Concrete Cube Statistical Verifier – ECP 203 Compliant').classes('sub-title text-lg font-medium mt-1')
+            ui.label('Lead Technical Auditor: Eng. Mohamed Abd Al Aty').classes('text-base text-[#A9B6D0] font-semibold mt-1')
+            ui.label('Precision‑calibrated for Egyptian Code of Practice.').classes('text-sm text-[#A9B6D0] mt-1 italic')
 
         # Marquee
+        ui.add_head_html('''
+        <style>@keyframes marquee { 0% { transform: translate(0, 0); } 100% { transform: translate(-100%, 0); } }</style>
+        ''')
         ui.html('''
         <div style="width: 100%; overflow: hidden; white-space: nowrap; background-color: rgba(13,26,53,0.6); backdrop-filter: blur(8px); color: #FFFFFF; padding: 10px 0; font-weight: 600; font-size: 13px; margin-bottom: 15px; border-radius: 8px; border: 1px solid rgba(255,140,0,0.3);">
           <div style="display: inline-block; padding-left: 100%; animation: marquee 28s linear infinite;">
             <span style="color: #FF8C00;">[CORE ACTIVE]</span> ECP 203 &middot; ECP 202 &middot; ECP 104 &middot; ASTM &middot; AASHTO &middot; BS EN &middot; ISO
+            &nbsp;&nbsp;|&nbsp;&nbsp; Advanced Geotechnical & Concrete Calculation Sheet &nbsp;&nbsp;|&nbsp;&nbsp; Active Site Inspection Portal
           </div>
         </div>
         ''')
@@ -718,10 +831,9 @@ def main_page():
         # ---- Tabs ----
         with ui.tabs().classes('w-full text-white bg-[#0d1a35] rounded-lg') as tabs:
             t_calc = ui.tab('Calculator').classes('text-white font-bold')
-            t_dash = ui.tab(_('dashboard')).classes('text-white font-bold')
-            t_batch = ui.tab(_('batch_compare')).classes('text-white font-bold')
-            t_audit = ui.tab(_('audit_trail')).classes('text-white font-bold')
-            t_settings = ui.tab(_('settings')).classes('text-white font-bold')
+            t_dash = ui.tab('📈 Dashboard').classes('text-white font-bold')
+            t_batch = ui.tab('📊 Batch Comparison').classes('text-white font-bold')
+            t_audit = ui.tab('📜 Audit Trail').classes('text-white font-bold')
 
         with ui.tab_panels(tabs, value=t_calc).classes('w-full bg-transparent mt-4'):
             # ---- Calculator Tab ----
@@ -730,13 +842,13 @@ def main_page():
 
                 with ui.row().classes('w-full gap-4 mb-4'):
                     with ui.column().classes('input-card flex-1'):
-                        ui.label(_('7day')).classes('font-bold text-white text-sm')
+                        ui.label('7-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
                         c7_input = ui.input(value=state.get('c7', '21.0, 22.5, 20.5')).classes('w-full').props('helper="Comma-separated values"')
                     with ui.column().classes('input-card flex-1'):
-                        ui.label(_('14day')).classes('font-bold text-white text-sm')
+                        ui.label('14-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
                         c14_input = ui.input(value=state.get('c14', '26.0, 27.2, 25.8')).classes('w-full').props('helper="Comma-separated values"')
                     with ui.column().classes('input-card flex-1'):
-                        ui.label(_('28day')).classes('font-bold text-white text-sm')
+                        ui.label('28-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
                         c28_input = ui.input(value=state.get('c28', '32.5, 34.0, 31.0, 35.5, 29.0, 33.0')).classes('w-full').props('helper="Comma-separated values"')
 
                 # ---- Load Example & Save State ----
@@ -752,7 +864,7 @@ def main_page():
                     c7_input.value = '21.0, 22.5, 20.5'
                     c14_input.value = '26.0, 27.2, 25.8'
                     c28_input.value = '32.5, 34.0, 31.0, 35.5, 29.0, 33.0'
-                    ui.notify(_('example_loaded'), type='positive')
+                    ui.notify('Example data loaded!', type='positive')
                     save_state()
 
                 def save_state():
@@ -769,24 +881,21 @@ def main_page():
                         'c14': c14_input.value,
                         'c28': c28_input.value,
                         'code_basis': code_basis_select.value,
-                        'lang': current_lang,
-                        'theme': current_theme,
                     }
                     app.storage.user['app_state'] = state
-                    ui.notify(_('state_saved'), type='positive')
+                    ui.notify('State saved to browser storage.', type='positive')
 
                 with ui.row().classes('w-full gap-4 mb-4'):
-                    ui.button(_('load_example'), on_click=load_example).classes('primary-btn')
-                    ui.button(_('save_state'), on_click=save_state).classes('primary-btn')
+                    ui.button('📥 Load Example', on_click=load_example).classes('primary-btn')
+                    ui.button('💾 Save State', on_click=save_state).classes('primary-btn')
 
                 # ---- Stage filter ----
                 stage_selector = ui.select(
-                    label=_('stage_filter'),
+                    label='Select Stage Display Filter',
                     options=['All Stages', '7-Day Stage', '14-Day Stage', '28-Day Stage'],
                     value='All Stages',
                 ).classes('w-full md:w-1/3 mb-4').props('helper="Choose which stage to display"')
 
-                # ---- Placeholder areas ----
                 stats_area = ui.column().classes('w-full')
                 result_output_area = ui.column().classes('w-full')
                 chart_area = ui.column().classes('w-full')
@@ -880,7 +989,7 @@ def main_page():
                     mean = arr.mean()
                     std = arr.std(ddof=1)
                     n = len(arr)
-                    t = stats.t.ppf((1+confidence)/2, n-1)
+                    t = scipy_stats.t.ppf((1+confidence)/2, n-1)
                     margin = t * std / np.sqrt(n)
                     return (mean - margin, mean + margin)
 
@@ -890,7 +999,7 @@ def main_page():
                         return None, None
                     x = np.arange(1, len(values)+1)
                     y = np.array(values)
-                    slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                    slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(x, y)
                     future_x = np.array(range(len(values)+1, len(values)+steps+1))
                     pred_y = slope * future_x + intercept
                     return pred_y.tolist(), std_err
@@ -898,17 +1007,17 @@ def main_page():
                 # ---- Build detailed calc markdown ----
                 def build_detailed_calculations_md(stage_stats, target_fcu):
                     md_lines = []
-                    for label, values, s in stage_stats:
-                        if not s:
+                    for label, values, st in stage_stats:  # renamed to avoid shadowing
+                        if not st:
                             continue
                         md_lines.append(f"### {label} Stage")
                         md_lines.append("**Raw Data (N/mm²):** " + ", ".join(f"{v:.1f}" for v in values))
-                        n = s['n']
-                        sum_vals = s['sum']
-                        sum_sq = s['sum_sq']
-                        mean = s['mean']
-                        std = s['std']
-                        cov = s['cov']
+                        n = st['n']
+                        sum_vals = st['sum']
+                        sum_sq = st['sum_sq']
+                        mean = st['mean']
+                        std = st['std']
+                        cov = st['cov']
                         md_lines.append("")
                         md_lines.append("**Calculations:**")
                         md_lines.append(f"- Number of specimens (n) = {n}")
@@ -917,8 +1026,8 @@ def main_page():
                         md_lines.append(f"- Mean (x̄) = Σx / n = {sum_vals:.2f} / {n} = **{mean:.2f}** N/mm²")
                         md_lines.append(f"- Standard deviation (s) = sqrt((Σx² - (Σx)²/n) / (n-1)) = **{std:.2f}** N/mm²")
                         md_lines.append(f"- Coefficient of variation (COV) = (s / x̄) × 100 = **{cov:.1f}%**")
-                        md_lines.append(f"- Minimum = {s['min']:.1f} N/mm²")
-                        md_lines.append(f"- Maximum = {s['max']:.1f} N/mm²")
+                        md_lines.append(f"- Minimum = {st['min']:.1f} N/mm²")
+                        md_lines.append(f"- Maximum = {st['max']:.1f} N/mm²")
                         # Confidence interval
                         ci = conf_interval(values)
                         if ci:
@@ -947,8 +1056,8 @@ def main_page():
                     # combine all values
                     all_vals = []
                     all_labels = []
-                    for label, values, stats in stage_stats:
-                        if stats:
+                    for label, values, st in stage_stats:
+                        if st:
                             all_vals.extend(values)
                             all_labels.extend([label]*len(values))
                     if len(all_vals) < 2:
@@ -986,7 +1095,7 @@ def main_page():
                         name='Strengths'
                     ))
                     if len(x_seq) > 1:
-                        slope, intercept, r2, _, _ = stats.linregress(x_seq, all_vals)
+                        slope, intercept, r2, _, _ = scipy_stats.linregress(x_seq, all_vals)
                         trend_y = [slope*x + intercept for x in x_seq]
                         time_fig.add_trace(go.Scatter(
                             x=x_seq,
@@ -1034,7 +1143,7 @@ def main_page():
 
                     # Forecast
                     if len(all_vals) > 1:
-                        slope, intercept, _, _, _ = stats.linregress(x_seq, all_vals)
+                        slope, intercept, _, _, _ = scipy_stats.linregress(x_seq, all_vals)
                         future_x = list(range(len(all_vals)+1, len(all_vals)+4))
                         future_y = [slope*x + intercept for x in future_x]
                         forecast_fig = go.Figure()
@@ -1228,7 +1337,7 @@ REQUIRED REPORT STRUCTURE:
                         # ---- Detailed calculations ----
                         calc_panel.clear()
                         with calc_panel:
-                            with ui.expansion(_('detailed_calc'), icon='calculate', value=True).classes('w-full bg-[#0d1a35] rounded-lg mt-4'):
+                            with ui.expansion('📊 View Detailed Calculations (full math breakdown)', icon='calculate', value=True).classes('w-full bg-[#0d1a35] rounded-lg mt-4'):
                                 md = build_detailed_calculations_md(stage_stats, target_fcu)
                                 ui.markdown(md).classes('markdown-body')
 
@@ -1250,9 +1359,9 @@ REQUIRED REPORT STRUCTURE:
                                         if forecast_fig:
                                             ui.plotly(forecast_fig).classes('w-full')
                                         else:
-                                            ui.label(_('not_enough_data')).classes('text-amber-400')
+                                            ui.label('Not enough data for forecast (need at least 2 values).').classes('text-amber-400')
                             else:
-                                ui.label(_('not_enough_data')).classes('text-amber-400')
+                                ui.label('Not enough data for predictive charts (need at least 2 values).').classes('text-amber-400')
 
                         # ---- Export buttons ----
                         with export_buttons_area:
@@ -1500,12 +1609,12 @@ REQUIRED REPORT STRUCTURE:
 
                             # Buttons
                             with ui.row().classes('w-full gap-4 flex-wrap'):
-                                ui.button(_('download_pdf'), on_click=download_normal_pdf).classes('primary-btn')
-                                ui.button(_('download_word'), on_click=download_normal_word).classes('primary-btn')
+                                ui.button('📄 Download Normal PDF', on_click=download_normal_pdf).classes('primary-btn')
+                                ui.button('📝 Download Normal Word', on_click=download_normal_word).classes('primary-btn')
                                 if template_bytes_holder['bytes']:
-                                    ui.button(_('download_template'), on_click=download_filled_template).classes('primary-btn')
-                                ui.button(_('download_calc_pdf'), on_click=download_calc_pdf).classes('primary-btn')
-                                ui.button(_('download_calc_word'), on_click=download_calc_word).classes('primary-btn')
+                                    ui.button('📎 Download Filled Template', on_click=download_filled_template).classes('primary-btn')
+                                ui.button('📊 Download Calculations PDF', on_click=download_calc_pdf).classes('primary-btn')
+                                ui.button('📊 Download Calculations Word', on_click=download_calc_word).classes('primary-btn')
 
                         # ---- Chatbots ----
                         chat_toggle_row = ui.row().classes('w-full gap-4 mt-4')
@@ -1518,8 +1627,8 @@ REQUIRED REPORT STRUCTURE:
                             def toggle_code_chat():
                                 chat_code_visible['show'] = not chat_code_visible['show']
                                 chat_code_panel.set_visibility(chat_code_visible['show'])
-                            ui.button(_('ask_results'), on_click=toggle_result_chat).classes('primary-btn')
-                            ui.button(_('ask_code'), on_click=toggle_code_chat).classes('primary-btn')
+                            ui.button('💬 Ask about Results', on_click=toggle_result_chat).classes('primary-btn')
+                            ui.button('📚 Ask about Egyptian Code', on_click=toggle_code_chat).classes('primary-btn')
 
                         # Result Chat
                         chat_result_panel = ui.column().classes('output-card w-full mt-4')
@@ -1619,9 +1728,9 @@ Governing standard: {code_basis_select.value}
                             ui.markdown(f'**Error:** {str(ex)}').classes('text-red-400')
 
                 # ---- Run button ----
-                ui.button(_('run_button'), on_click=run_verification).classes('primary-btn q-my-md')
+                ui.button('Run Statistical Calculation & Verification', on_click=run_verification).classes('primary-btn q-my-md')
                 with result_output_area:
-                    ui.markdown('*' + _('run_hint') + '*').classes('text-sm text-[#A9B6D0]')
+                    ui.markdown('*Click "Run Statistical Calculation & Verification" to generate the report and charts.*').classes('text-sm text-[#A9B6D0]')
 
             # ---- Dashboard Tab ----
             with ui.tab_panel(t_dash):
@@ -1649,37 +1758,6 @@ Governing standard: {code_basis_select.value}
                         ui.label('No audit logs yet.').classes('text-[#A9B6D0]')
                 else:
                     ui.label('No audit logs yet.').classes('text-[#A9B6D0]')
-
-            # ---- Settings Tab ----
-            with ui.tab_panel(t_settings):
-                ui.label('⚙️ Settings').classes('text-2xl font-bold text-white mb-4')
-                # Language
-                ui.label('Language / اللغة').classes('text-white font-bold')
-                lang_radio = ui.radio(['English', 'العربية'], value='English' if current_lang=='en' else 'العربية').classes('text-white').on('change', lambda e: switch_lang(e.value))
-                # Theme
-                ui.label('Theme').classes('text-white font-bold mt-4')
-                theme_radio = ui.radio(['Dark', 'Light'], value='Dark' if current_theme=='dark' else 'Light').classes('text-white').on('change', lambda e: switch_theme(e.value))
-
-                def switch_lang(val):
-                    global current_lang
-                    current_lang = 'en' if val == 'English' else 'ar'
-                    ui.notify(f'Language switched to {val}', type='positive')
-                    ui.open('/')
-
-                def switch_theme(val):
-                    global current_theme
-                    current_theme = 'dark' if val == 'Dark' else 'light'
-                    # Re-apply theme (will use CSS classes)
-                    apply_theme()
-                    # Toggle a class on body for light mode overrides
-                    if current_theme == 'light':
-                        ui.query('body').classes('light-mode')
-                    else:
-                        ui.query('body').classes(remove='light-mode')
-                    ui.notify(f'Theme switched to {val}', type='positive')
-
-                ui.button('🎯 Start Interactive Tour', on_click=lambda: ui.notify('Tour started! (placeholder)', type='info')).classes('primary-btn mt-4')
-                ui.button('❓ Contextual Help', on_click=lambda: ui.notify('Help panel will be displayed here.', type='info')).classes('primary-btn mt-2')
 
         # ---- Footer ----
         ui.html('''
