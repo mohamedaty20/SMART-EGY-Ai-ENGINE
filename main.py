@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import qrcode
 from docxtpl import DocxTemplate
 from docx import Document
-from scipy import stats as scipy_stats  # renamed to avoid shadowing
+from scipy import stats as scipy_stats
 from plotly.subplots import make_subplots
 
 # Dotenv & FastAPI / NiceGUI
@@ -47,7 +47,7 @@ MARGIN = 32
 USABLE_WIDTH = PAGE_WIDTH - (2 * MARGIN)
 
 # =====================================================================
-# STYLING – Original Dark Navy Theme (no settings, no language toggles)
+# STYLING – Dark Navy with Premium Glows & Hovers
 # =====================================================================
 app.native.window_args = {"resizable": True}
 
@@ -67,16 +67,25 @@ ui.add_head_html('''
         overflow-x: hidden;
     }
 
-    /* Sidebar – dark navy */
+    /* ---- SIDEBAR – dark navy with glow on hover ---- */
     .sidebar-container {
         background: #0b1a3a !important;
         border-right: 2px solid rgba(255, 140, 0, 0.4) !important;
         box-shadow: 8px 0 30px rgba(0,0,0,0.6) !important;
+        transition: box-shadow 0.3s ease;
+    }
+    .sidebar-container:hover {
+        box-shadow: 8px 0 40px rgba(255, 140, 0, 0.15) !important;
     }
     .sidebar-container .q-field__control {
         background-color: rgba(13, 26, 53, 0.8) !important;
         border: 1px solid #2c3f6b !important;
         border-radius: 10px !important;
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .sidebar-container .q-field__control:hover {
+        border-color: #FF8C00 !important;
+        box-shadow: 0 0 15px rgba(255, 140, 0, 0.15) !important;
     }
     .sidebar-container .q-field__native,
     .sidebar-container .q-field__input,
@@ -87,32 +96,7 @@ ui.add_head_html('''
         background-color: rgba(13, 26, 53, 0.8) !important;
     }
 
-    /* Output – no containers */
-    .output-card {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        box-shadow: none !important;
-        width: 100% !important;
-        max-width: none !important;
-        box-sizing: border-box;
-    }
-
-    /* Input cards – glass effect */
-    .input-card {
-        background: rgba(13, 26, 53, 0.6);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 140, 0, 0.2);
-        border-radius: 16px;
-        padding: 18px 22px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-        margin-bottom: 20px;
-        width: 100% !important;
-        max-width: none !important;
-        box-sizing: border-box;
-    }
-
-    /* Buttons – sleek, dark */
+    /* ---- BUTTONS – black with white text, glow on hover ---- */
     .primary-btn, .q-btn {
         background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
         color: #FFFFFF !important;
@@ -123,20 +107,20 @@ ui.add_head_html('''
         letter-spacing: .4px;
         text-transform: none !important;
         box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
-        transition: all 0.25s ease !important;
+        transition: all 0.3s ease !important;
         min-height: 44px !important;
     }
     .primary-btn:hover, .q-btn:hover {
         background: linear-gradient(135deg, #2d2d2d 0%, #444444 100%) !important;
         transform: translateY(-3px) !important;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.7) !important;
+        box-shadow: 0 8px 30px rgba(255, 140, 0, 0.35) !important;
         border-color: #FF8C00 !important;
     }
     .primary-btn:active, .q-btn:active {
         transform: translateY(0px) !important;
     }
 
-    /* Upload – dark */
+    /* ---- UPLOAD – dark with glow ---- */
     .q-uploader {
         background: rgba(13, 26, 53, 0.6) !important;
         backdrop-filter: blur(8px) !important;
@@ -144,6 +128,11 @@ ui.add_head_html('''
         border: 2px dashed rgba(255, 140, 0, 0.5) !important;
         color: #FFFFFF !important;
         padding: 8px !important;
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .q-uploader:hover {
+        border-color: #FF8C00 !important;
+        box-shadow: 0 0 25px rgba(255, 140, 0, 0.2) !important;
     }
     .q-uploader .q-uploader__header {
         background: transparent !important;
@@ -158,12 +147,17 @@ ui.add_head_html('''
         border-radius: 10px !important;
     }
 
-    /* Input fields */
+    /* ---- INPUT FIELDS – glow on focus ---- */
     input, select, textarea, .q-field__control {
         background-color: rgba(13, 26, 53, 0.7) !important;
         color: #FFFFFF !important;
         border: 1px solid #2c3f6b !important;
         border-radius: 10px !important;
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    input:focus, select:focus, textarea:focus, .q-field--highlighted .q-field__control {
+        border-color: #FF8C00 !important;
+        box-shadow: 0 0 20px rgba(255, 140, 0, 0.15) !important;
     }
     .q-field__native, .q-field__input, .q-field__label {
         color: #E9EDF5 !important;
@@ -172,7 +166,7 @@ ui.add_head_html('''
         color: #FF8C00 !important;
     }
 
-    /* Dropdowns */
+    /* ---- DROPDOWNS ---- */
     .q-menu, .q-popover, .q-virtual-scroll__content {
         background: rgba(13, 26, 53, 0.95) !important;
         backdrop-filter: blur(8px) !important;
@@ -183,13 +177,142 @@ ui.add_head_html('''
         color: #FFFFFF !important;
         background: transparent !important;
         border-radius: 8px !important;
+        transition: all 0.2s ease;
     }
     .q-item:hover {
         background: rgba(255, 140, 0, 0.15) !important;
         color: #FF8C00 !important;
+        box-shadow: 0 0 15px rgba(255, 140, 0, 0.1) !important;
     }
 
-    /* Footer */
+    /* ---- CARDS – glass with glow on hover ---- */
+    .input-card {
+        background: rgba(13, 26, 53, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 140, 0, 0.2);
+        border-radius: 16px;
+        padding: 18px 22px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        margin-bottom: 20px;
+        width: 100% !important;
+        max-width: none !important;
+        box-sizing: border-box;
+        transition: all 0.3s ease;
+    }
+    .input-card:hover {
+        border-color: #FF8C00 !important;
+        box-shadow: 0 8px 40px rgba(255, 140, 0, 0.15) !important;
+        transform: translateY(-2px);
+    }
+
+    /* ---- STAT CHIPS – glowing on hover ---- */
+    .stat-chip {
+        background: rgba(13, 26, 53, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid #1f3355;
+        border-radius: 12px;
+        padding: 14px 20px;
+        text-align: center;
+        min-width: 140px;
+        transition: all 0.3s ease;
+    }
+    .stat-chip:hover {
+        border-color: #FF8C00 !important;
+        transform: translateY(-4px);
+        box-shadow: 0 10px 30px rgba(255, 140, 0, 0.2) !important;
+    }
+    .stat-chip .val {
+        font-size: 24px;
+        font-weight: 800;
+        color: #FF8C00;
+    }
+    .stat-chip .lbl {
+        font-size: 11px;
+        color: #A9B6D0;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        margin-top: 4px;
+    }
+
+    /* ---- TABS – with glow on active/hover ---- */
+    .q-tabs {
+        border-radius: 14px !important;
+        overflow: hidden !important;
+        background: rgba(13, 26, 53, 0.6) !important;
+        backdrop-filter: blur(8px) !important;
+        padding: 4px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+    }
+    .q-tabs__content {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        scrollbar-width: thin;
+        scrollbar-color: #FF8C00 transparent;
+    }
+    .q-tabs__content::-webkit-scrollbar {
+        height: 4px;
+    }
+    .q-tabs__content::-webkit-scrollbar-thumb {
+        background: #FF8C00;
+        border-radius: 2px;
+    }
+    .q-tabs__content::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .q-tab {
+        color: #A9B6D0 !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        border-radius: 10px !important;
+        margin: 2px !important;
+        padding: 8px 16px !important;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .q-tab:hover {
+        color: #FFFFFF !important;
+        background: rgba(255, 140, 0, 0.1) !important;
+        box-shadow: 0 0 20px rgba(255, 140, 0, 0.1) !important;
+    }
+    .q-tab--active {
+        color: #FF8C00 !important;
+        background: rgba(255, 140, 0, 0.15) !important;
+        box-shadow: 0 0 25px rgba(255, 140, 0, 0.15) !important;
+    }
+    .q-tab__indicator {
+        background: #FF8C00 !important;
+        height: 3px !important;
+        border-radius: 2px !important;
+    }
+
+    /* ---- CHAT MESSAGES ---- */
+    .chat-message {
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        transition: background 0.2s ease;
+    }
+    .chat-message:hover {
+        background: rgba(255, 140, 0, 0.03);
+    }
+    .chat-message:last-child {
+        border-bottom: none;
+    }
+    .chat-message .role-label {
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 2px;
+    }
+    .chat-message .role-label.assistant {
+        color: #FF8C00;
+    }
+    .chat-message .role-label.user {
+        color: #4FC3F7;
+    }
+    .chat-message .content {
+        padding-left: 8px;
+    }
+
+    /* ---- FOOTER ---- */
     .app-footer {
         width: 100%;
         background: rgba(13, 26, 53, 0.7);
@@ -202,6 +325,10 @@ ui.add_head_html('''
         font-size: 13px;
         box-sizing: border-box;
         border-radius: 16px 16px 0 0;
+        transition: border-color 0.3s ease;
+    }
+    .app-footer:hover {
+        border-top-color: #FF8C00;
     }
     .app-footer a {
         color: #4FC3F7;
@@ -211,9 +338,10 @@ ui.add_head_html('''
     .app-footer a:hover {
         color: #FF8C00;
         text-decoration: underline;
+        text-shadow: 0 0 8px rgba(255, 140, 0, 0.3);
     }
 
-    /* Markdown */
+    /* ---- MARKDOWN ---- */
     .markdown-body {
         font-size: 14px;
         line-height: 1.7;
@@ -255,6 +383,10 @@ ui.add_head_html('''
         border-radius: 12px !important;
         overflow: hidden !important;
         box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+        transition: box-shadow 0.3s ease;
+    }
+    .markdown-body table:hover {
+        box-shadow: 0 6px 30px rgba(255, 140, 0, 0.15) !important;
     }
     .markdown-body th, .markdown-body td {
         border: 1px solid #1f3355 !important;
@@ -275,118 +407,19 @@ ui.add_head_html('''
         background-color: rgba(255, 140, 0, 0.08);
     }
 
-    /* Stat chips */
-    .stat-chip {
-        background: rgba(13, 26, 53, 0.6);
-        backdrop-filter: blur(8px);
-        border: 1px solid #1f3355;
-        border-radius: 12px;
-        padding: 14px 20px;
-        text-align: center;
-        min-width: 140px;
-        transition: all 0.3s ease;
-    }
-    .stat-chip:hover {
-        border-color: #FF8C00;
-        transform: translateY(-3px);
-        box-shadow: 0 6px 20px rgba(255,140,0,0.15);
-    }
-    .stat-chip .val {
-        font-size: 24px;
-        font-weight: 800;
-        color: #FF8C00;
-    }
-    .stat-chip .lbl {
-        font-size: 11px;
-        color: #A9B6D0;
-        text-transform: uppercase;
-        letter-spacing: .05em;
-        margin-top: 4px;
-    }
-
-    /* Tabs */
-    .q-tabs {
-        border-radius: 14px !important;
-        overflow: hidden !important;
-        background: rgba(13, 26, 53, 0.6) !important;
-        backdrop-filter: blur(8px) !important;
-        padding: 4px !important;
-    }
-    .q-tabs__content {
-        overflow-x: auto !important;
-        flex-wrap: nowrap !important;
-        scrollbar-width: thin;
-        scrollbar-color: #FF8C00 transparent;
-    }
-    .q-tabs__content::-webkit-scrollbar {
-        height: 4px;
-    }
-    .q-tabs__content::-webkit-scrollbar-thumb {
-        background: #FF8C00;
-        border-radius: 2px;
-    }
-    .q-tabs__content::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    .q-tab {
-        color: #A9B6D0 !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-        border-radius: 10px !important;
-        margin: 2px !important;
-        padding: 8px 16px !important;
-        white-space: nowrap;
-        flex-shrink: 0;
-    }
-    .q-tab:hover {
-        color: #FFFFFF !important;
-        background: rgba(255, 140, 0, 0.1) !important;
-    }
-    .q-tab--active {
-        color: #FF8C00 !important;
-        background: rgba(255, 140, 0, 0.15) !important;
-    }
-    .q-tab__indicator {
-        background: #FF8C00 !important;
-        height: 3px !important;
-        border-radius: 2px !important;
-    }
-
-    /* Chat messages */
-    .chat-message {
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
-    .chat-message:last-child {
-        border-bottom: none;
-    }
-    .chat-message .role-label {
-        font-size: 12px;
-        font-weight: 700;
-        margin-bottom: 2px;
-    }
-    .chat-message .role-label.assistant {
-        color: #FF8C00;
-    }
-    .chat-message .role-label.user {
-        color: #4FC3F7;
-    }
-    .chat-message .content {
-        padding-left: 8px;
-    }
-
-    /* Main titles */
+    /* ---- MAIN TITLES ---- */
     .main-title {
         font-size: 3.8rem !important;
         font-weight: 900 !important;
         letter-spacing: -0.02em;
+        text-shadow: 0 0 30px rgba(255, 140, 0, 0.1);
     }
     .sub-title {
         color: #FFFFFF !important;
         font-weight: 500;
     }
 
-    /* Responsive */
+    /* ---- RESPONSIVE ---- */
     @media (max-width: 768px) {
         .main-title {
             font-size: 2.2rem !important;
@@ -828,11 +861,9 @@ def main_page():
         </div>
         ''')
 
-        # ---- Tabs ----
+        # ---- Tabs (only Calculator and Audit Trail) ----
         with ui.tabs().classes('w-full text-white bg-[#0d1a35] rounded-lg') as tabs:
             t_calc = ui.tab('Calculator').classes('text-white font-bold')
-            t_dash = ui.tab('📈 Dashboard').classes('text-white font-bold')
-            t_batch = ui.tab('📊 Batch Comparison').classes('text-white font-bold')
             t_audit = ui.tab('📜 Audit Trail').classes('text-white font-bold')
 
         with ui.tab_panels(tabs, value=t_calc).classes('w-full bg-transparent mt-4'):
@@ -851,7 +882,7 @@ def main_page():
                         ui.label('28-Day Cubes (comma separated, N/mm2)').classes('font-bold text-white text-sm')
                         c28_input = ui.input(value=state.get('c28', '32.5, 34.0, 31.0, 35.5, 29.0, 33.0')).classes('w-full').props('helper="Comma-separated values"')
 
-                # ---- Load Example & Save State ----
+                # ---- Load Example & Save State (plain text, no emoji) ----
                 def load_example():
                     project_name_input.value = 'Highway Expansion Project'
                     pour_location_input.value = 'Highway Section Ch. 12+500'
@@ -886,8 +917,8 @@ def main_page():
                     ui.notify('State saved to browser storage.', type='positive')
 
                 with ui.row().classes('w-full gap-4 mb-4'):
-                    ui.button('📥 Load Example', on_click=load_example).classes('primary-btn')
-                    ui.button('💾 Save State', on_click=save_state).classes('primary-btn')
+                    ui.button('Load Example', on_click=load_example).classes('primary-btn')
+                    ui.button('Save State', on_click=save_state).classes('primary-btn')
 
                 # ---- Stage filter ----
                 stage_selector = ui.select(
@@ -1007,7 +1038,7 @@ def main_page():
                 # ---- Build detailed calc markdown ----
                 def build_detailed_calculations_md(stage_stats, target_fcu):
                     md_lines = []
-                    for label, values, st in stage_stats:  # renamed to avoid shadowing
+                    for label, values, st in stage_stats:
                         if not st:
                             continue
                         md_lines.append(f"### {label} Stage")
@@ -1731,19 +1762,6 @@ Governing standard: {code_basis_select.value}
                 ui.button('Run Statistical Calculation & Verification', on_click=run_verification).classes('primary-btn q-my-md')
                 with result_output_area:
                     ui.markdown('*Click "Run Statistical Calculation & Verification" to generate the report and charts.*').classes('text-sm text-[#A9B6D0]')
-
-            # ---- Dashboard Tab ----
-            with ui.tab_panel(t_dash):
-                ui.label('📈 Dashboard').classes('text-2xl font-bold text-white mb-4')
-                if 'last_results' in app.storage.user:
-                    ui.label('Latest results summary:').classes('text-white')
-                else:
-                    ui.label('Run a calculation first to see dashboard metrics.').classes('text-[#A9B6D0]')
-
-            # ---- Batch Comparison Tab ----
-            with ui.tab_panel(t_batch):
-                ui.label('📊 Batch Comparison').classes('text-2xl font-bold text-white mb-4')
-                ui.markdown('Compare multiple batch tickets. This feature is under development.').classes('text-[#A9B6D0]')
 
             # ---- Audit Trail Tab ----
             with ui.tab_panel(t_audit):
