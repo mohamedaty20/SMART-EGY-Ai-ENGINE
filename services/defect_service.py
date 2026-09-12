@@ -1,5 +1,7 @@
 """
-services/defect_service.py — Complete fixed file.
+services/defect_service.py — Complete file.
+AI logic + PDF generation for the Defect Notice tool.
+No UI. No database. Pure functions.
 """
 
 import io
@@ -21,13 +23,9 @@ def generate_uid(prefix="NTC"):
 
 
 # =====================================================================
-# IMAGE COMPRESSION — makes Gemini calls 5-10x faster
+# IMAGE COMPRESSION
 # =====================================================================
 def _shrink_image(photo_bytes, max_side=1024):
-    """
-    Resize a photo so its longest side is max_side pixels.
-    Returns JPEG bytes. Cuts upload time to Gemini dramatically.
-    """
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(photo_bytes))
@@ -36,8 +34,7 @@ def _shrink_image(photo_bytes, max_side=1024):
         w, h = img.size
         if max(w, h) > max_side:
             ratio = max_side / float(max(w, h))
-            img = img.resize((int(w * ratio), int(h * ratio)),
-                             Image.LANCZOS)
+            img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=80, optimize=True)
         out.seek(0)
@@ -67,36 +64,8 @@ def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
 
 
 # =====================================================================
-# MS CLAUSE EXTRACTION
+# JSON HELPERS
 # =====================================================================
-_CLAUSE_PROMPT_TEMPLATE = """You are reading a construction Method Statement (MS).
-
-Task: extract the CLAUSE STRUCTURE from the text below.
-
-Return ONE JSON object with this exact shape:
-{{
-  "clauses": [
-    {{"id": "3.1", "title": "Bar Spacing", "text": "as per approved shop drawings"}},
-    {{"id": "3.2", "title": "Cover",       "text": "minimum 40mm for columns, 25mm for slabs"}}
-  ]
-}}
-
-RULES:
-- Return EVERY numbered clause you can find, no matter the numbering style.
-- The "id" field is the clause number ONLY, as a string.
-- The "title" is a short name (1-5 words).
-- The "text" field is the clause body, trimmed to at most 200 characters.
-- Ignore the MS title page, revision history, and signature blocks.
-- MAX 60 clauses. Prioritize the ones with measurable requirements.
-- Output ONLY the JSON object. No prose. No markdown fences.
-
-Method Statement text starts below.
---------
-{ms_text}
---------
-"""
-
-
 def _strip_fences(txt):
     t = (txt or "").strip()
     t = re.sub(r'^```json\s*', '', t)
@@ -120,6 +89,37 @@ def _parse_json_object(raw):
         return None
 
 
+# =====================================================================
+# MS CLAUSE EXTRACTION
+# =====================================================================
+_CLAUSE_PROMPT_TEMPLATE = """You are reading a construction Method Statement (MS).
+
+Task: extract the CLAUSE STRUCTURE from the text below.
+
+Return ONE JSON object with this exact shape:
+{
+  "clauses": [
+    {"id": "3.1", "title": "Bar Spacing", "text": "as per approved shop drawings"},
+    {"id": "3.2", "title": "Cover", "text": "minimum 40mm for columns, 25mm for slabs"}
+  ]
+}
+
+RULES:
+- Return EVERY numbered clause you can find, no matter the numbering style.
+- The "id" field is the clause number ONLY, as a string.
+- The "title" is a short name (1-5 words).
+- The "text" field is the clause body, trimmed to at most 200 characters.
+- Ignore the MS title page, revision history, and signature blocks.
+- MAX 60 clauses. Prioritize the ones with measurable requirements.
+- Output ONLY the JSON object. No prose. No markdown fences.
+
+Method Statement text starts below.
+--------
+__MS_TEXT__
+--------
+"""
+
+
 async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
     print("[defect] MS extraction started, pdf_bytes=" +
           str(len(pdf_bytes) // 1024) + " KB")
@@ -128,46 +128,33 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
         text = await asyncio.to_thread(extract_pdf_text, pdf_bytes)
     except Exception as e:
         print("[defect] pdf parse failed: " + repr(e))
-        return {
-            "clauses": [],
-            "raw_text_length": 0,
-            "error": "PDF parse failed: " + repr(e),
-        }
+        return {"clauses": [], "raw_text_length": 0,
+                "error": "PDF parse failed: " + repr(e)}
 
     print("[defect] extracted " + str(len(text)) + " chars from PDF")
 
     if not text or len(text) < 100:
-        return {
-            "clauses": [],
-            "raw_text_length": len(text),
-            "error": "PDF has no readable text (may be scanned image).",
-        }
+        return {"clauses": [], "raw_text_length": len(text),
+                "error": "PDF has no readable text (may be scanned image)."}
 
     text = text[:15000]
     print("[defect] sending " + str(len(text)) + " chars to Gemini")
 
-    # Use replace() not format() — braces in JSON examples break format()
-    prompt = _CLAUSE_PROMPT_TEMPLATE.replace("{ms_text}", text)
+    prompt = _CLAUSE_PROMPT_TEMPLATE.replace("__MS_TEXT__", text)
 
     try:
         raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=40)
     except Exception as e:
         print("[defect] AI call failed: " + repr(e))
-        return {
-            "clauses": [],
-            "raw_text_length": len(text),
-            "error": "AI call failed: " + repr(e),
-        }
+        return {"clauses": [], "raw_text_length": len(text),
+                "error": "AI call failed: " + repr(e)}
 
     print("[defect] AI responded, " + str(len(raw or "")) + " chars")
 
     data = _parse_json_object(raw)
     if not data:
-        return {
-            "clauses": [],
-            "raw_text_length": len(text),
-            "error": "AI returned unparseable output.",
-        }
+        return {"clauses": [], "raw_text_length": len(text),
+                "error": "AI returned unparseable output."}
 
     clauses = []
     for c in data.get("clauses", []):
@@ -179,11 +166,7 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
         clauses.append({"id": cid, "title": title, "text": body})
 
     print("[defect] extracted " + str(len(clauses)) + " clauses from MS")
-    return {
-        "clauses": clauses,
-        "raw_text_length": len(text),
-        "error": None,
-    }
+    return {"clauses": clauses, "raw_text_length": len(text), "error": None}
 
 
 # =====================================================================
@@ -241,7 +224,7 @@ def get_ecp_excerpts(element_type):
 
 
 # =====================================================================
-# DEFECT ANALYSIS — uses REPLACE not FORMAT (braces in JSON)
+# DEFECT ANALYSIS — uses REPLACE not FORMAT
 # =====================================================================
 _DEFECT_PROMPT = """You are a senior QC engineer inspecting a construction site photo.
 
@@ -259,18 +242,18 @@ ECP CODE EXCERPTS AVAILABLE (cite by code string only):
 __ECP__
 
 Return ONE JSON object with this exact shape:
-{{
+{
   "defects": [
-    {{
+    {
       "name": "Honeycomb on column face",
       "location_hint": "column base",
       "severity": "Medium",
       "ms_violations": ["3.5"],
       "code_violations": ["ECP 203 §6.3.1"],
       "repair_action": "Chip back to sound concrete, apply bonding agent, patch with non-shrink mortar."
-    }}
+    }
   ]
-}}
+}
 
 RULES:
 - MAX 6 defects.
@@ -317,16 +300,11 @@ async def analyze_defect_photo(photo_bytes,
     from google.genai import types
 
     ecp_excerpts = get_ecp_excerpts(element_type)
+    prompt = _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts)
 
-    prompt = _build_defect_prompt(note, element_type,
-                                   ms_clauses, ecp_excerpts)
-
-    # --- Compress photo before sending to Gemini ---
-    print("[defect] original image: " +
-          str(len(photo_bytes) // 1024) + " KB")
+    print("[defect] original image: " + str(len(photo_bytes) // 1024) + " KB")
     shrunk = _shrink_image(photo_bytes, max_side=1024)
-    print("[defect] shrunk image: " +
-          str(len(shrunk) // 1024) + " KB")
+    print("[defect] shrunk image: " + str(len(shrunk) // 1024) + " KB")
 
     try:
         img_part = types.Part.from_bytes(data=shrunk, mime_type="image/jpeg")
@@ -376,6 +354,18 @@ async def analyze_defect_photo(photo_bytes,
 
 
 # =====================================================================
+# QR HELPER (safe import)
+# =====================================================================
+def _make_qr_buffer(text):
+    try:
+        from services.pdf_service import generate_qr_code
+        return generate_qr_code(text)
+    except Exception as e:
+        print("[defect] QR generation failed: " + repr(e))
+        return None
+
+
+# =====================================================================
 # NOTICE PDF
 # =====================================================================
 def build_notice_pdf(project,
@@ -419,14 +409,13 @@ def build_notice_pdf(project,
 
     story = []
 
+    logo_img = ""
     if logo_bytes:
         try:
             logo_img = ReportLabImage(io.BytesIO(logo_bytes),
                                        width=30 * mm, height=15 * mm)
         except Exception:
             logo_img = ""
-    else:
-        logo_img = ""
 
     header_text = [
         Paragraph("NOTICE TO SUBCONTRACTOR", title_style),
@@ -534,26 +523,311 @@ def build_notice_pdf(project,
     story.append(t_sig)
     story.append(Spacer(1, 14))
 
-    try:
-        from services.pdf_service import generate_qr_code
-        qr_buf = generate_qr_code(
-            "UID: " + notice_uid + " | Defect Notice | " +
-            project.get("name", "")
-        )
-        qr_img = ReportLabImage(qr_buf, width=20 * mm, height=20 * mm)
-        t_qr = Table([[qr_img,
-                       Paragraph("<b>UID:</b> " + notice_uid + "<br/>" +
-                                 "This notice can be verified by scanning " +
-                                 "the QR code.", meta_style)]],
-                      colWidths=[25 * mm, 155 * mm])
-        t_qr.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ]))
-        story.append(t_qr)
-    except Exception as e:
-        print("[defect] QR embed failed: " + repr(e))
+    qr_buf = _make_qr_buffer(
+        "UID: " + notice_uid + " | Defect Notice | " +
+        project.get("name", "")
+    )
+    if qr_buf:
+        try:
+            qr_img = ReportLabImage(qr_buf, width=20 * mm, height=20 * mm)
+            t_qr = Table([[qr_img,
+                           Paragraph("<b>UID:</b> " + notice_uid + "<br/>" +
+                                     "Verify by scanning the QR code.",
+                                     meta_style)]],
+                          colWidths=[25 * mm, 155 * mm])
+            t_qr.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            story.append(t_qr)
+        except Exception as e:
+            print("[defect] QR embed failed: " + repr(e))
+            story.append(Paragraph("UID: " + notice_uid, meta_style))
+    else:
         story.append(Paragraph("UID: " + notice_uid, meta_style))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+# =====================================================================
+# REGISTER PDF (quick export of the register table)
+# =====================================================================
+def build_register_pdf(project, rows, logo_bytes=None):
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        Image as ReportLabImage, HRFlowable,
+    )
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=14 * mm, rightMargin=14 * mm,
+        topMargin=14 * mm, bottomMargin=14 * mm,
+    )
+
+    NAVY = colors.HexColor("#1B2A4A")
+    ORANGE = colors.HexColor("#B45309")
+    GREY = colors.HexColor("#334155")
+
+    title_style = ParagraphStyle("Title", fontName="Helvetica-Bold",
+                                  fontSize=15, textColor=NAVY, spaceAfter=4)
+    sub_style = ParagraphStyle("Sub", fontName="Helvetica-Bold",
+                                fontSize=9, textColor=ORANGE, spaceAfter=8)
+    cell_style = ParagraphStyle("Cell", fontName="Helvetica", fontSize=8.5,
+                                 textColor=GREY, leading=11)
+    head_style = ParagraphStyle("Head", fontName="Helvetica-Bold",
+                                 fontSize=8.5, textColor=colors.white,
+                                 leading=11)
+
+    story = []
+    story.append(Paragraph("DEFECT REGISTER", title_style))
+    story.append(Paragraph(project.get("name", ""), sub_style))
+    story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
+                             spaceAfter=10))
+
+    head = ["UID", "Zone", "Defect", "Subcontractor", "Status", "Created"]
+    data = [[Paragraph(h, head_style) for h in head]]
+    for r in rows:
+        name = ""
+        try:
+            sel = r.get("selected") or []
+            name = sel[0].get("name", "") if sel else ""
+            if len(sel) > 1:
+                name += " (+" + str(len(sel) - 1) + ")"
+        except Exception:
+            name = ""
+        data.append([
+            Paragraph(str(r.get("uid", "")), cell_style),
+            Paragraph(str(r.get("zone", "")), cell_style),
+            Paragraph(name or "(no defects)", cell_style),
+            Paragraph(str(r.get("subcontractor", "")), cell_style),
+            Paragraph(str(r.get("status", "")).upper(), cell_style),
+            Paragraph(str(r.get("created_at", ""))[:10], cell_style),
+        ])
+
+    t = Table(data, colWidths=[36 * mm, 16 * mm, 80 * mm, 55 * mm, 25 * mm, 25 * mm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1),
+         [colors.white, colors.HexColor("#F1F5F9")]),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(
+        "Generated " + datetime.date.today().strftime("%Y-%m-%d") +
+        " — " + str(len(rows)) + " record(s).", cell_style))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+# =====================================================================
+# CLOSURE REPORT PDF (handover)
+# =====================================================================
+def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
+    """
+    Handover closure report. Shows all defects with QC vs Consultant
+    sign-off. Uses the same rows format as db.list_defects().
+    """
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        Image as ReportLabImage, HRFlowable, PageBreak,
+    )
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+
+    if report_uid is None:
+        report_uid = generate_uid("CLR")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+    )
+
+    NAVY = colors.HexColor("#1B2A4A")
+    ORANGE = colors.HexColor("#B45309")
+    GREY = colors.HexColor("#334155")
+    GREEN = colors.HexColor("#047857")
+    RED = colors.HexColor("#B91C1C")
+
+    title_style = ParagraphStyle("Title", fontName="Helvetica-Bold",
+                                  fontSize=16, textColor=NAVY, spaceAfter=4)
+    sub_style = ParagraphStyle("Sub", fontName="Helvetica-Bold",
+                                fontSize=10, textColor=ORANGE, spaceAfter=8)
+    meta_style = ParagraphStyle("Meta", fontName="Helvetica", fontSize=9,
+                                 textColor=GREY, leading=13)
+    body_style = ParagraphStyle("Body", fontName="Helvetica", fontSize=9.5,
+                                 textColor=colors.black, leading=13)
+    label_style = ParagraphStyle("Label", fontName="Helvetica-Bold",
+                                  fontSize=9, textColor=NAVY)
+    item_head_style = ParagraphStyle("ItemHead", fontName="Helvetica-Bold",
+                                      fontSize=10, textColor=NAVY,
+                                      spaceAfter=3)
+
+    open_rows = [r for r in rows if r.get("status") != "closed"]
+    closed_rows = [r for r in rows if r.get("status") == "closed"]
+
+    story = []
+
+    logo_img = ""
+    if logo_bytes:
+        try:
+            logo_img = ReportLabImage(io.BytesIO(logo_bytes),
+                                       width=30 * mm, height=15 * mm)
+        except Exception:
+            logo_img = ""
+
+    header_text = [
+        Paragraph("DEFECT CLOSURE REPORT", title_style),
+        Paragraph("Report No: " + report_uid, sub_style),
+    ]
+    if logo_img:
+        t_head = Table([[logo_img, header_text]],
+                       colWidths=[35 * mm, 145 * mm])
+    else:
+        t_head = Table([[header_text]], colWidths=[180 * mm])
+    t_head.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_head)
+    story.append(Spacer(1, 4))
+    story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
+                             spaceAfter=10))
+
+    meta_rows = [
+        [Paragraph("<b>Project:</b>", label_style),
+         Paragraph(project.get("name", ""), meta_style),
+         Paragraph("<b>Date:</b>", label_style),
+         Paragraph(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
+        [Paragraph("<b>Contractor:</b>", label_style),
+         Paragraph(project.get("contractor", ""), meta_style),
+         Paragraph("<b>Consultant:</b>", label_style),
+         Paragraph(project.get("consultant", ""), meta_style)],
+    ]
+    t_meta = Table(meta_rows,
+                   colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
+    t_meta.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_meta)
+    story.append(Spacer(1, 10))
+
+    summary = [
+        ["Total defects", str(len(rows))],
+        ["Closed", str(len(closed_rows))],
+        ["Still open", str(len(open_rows))],
+    ]
+    t_sum = Table(summary, colWidths=[50 * mm, 30 * mm])
+    t_sum.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
+        ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t_sum)
+    story.append(Spacer(1, 16))
+
+    if not rows:
+        story.append(Paragraph("No defects recorded.", body_style))
+    else:
+        for idx, r in enumerate(rows, start=1):
+            status = str(r.get("status", "")).upper()
+            color = GREEN if status == "CLOSED" else RED
+            head = (str(idx) + ". " + str(r.get("uid", "")) +
+                    "  ·  Zone " + str(r.get("zone", "")) +
+                    "  ·  " + str(r.get("subcontractor", "")))
+            story.append(Paragraph(head, item_head_style))
+
+            st_style = ParagraphStyle("St", parent=meta_style, textColor=color,
+                                       fontName="Helvetica-Bold")
+            story.append(Paragraph("Status: " + status, st_style))
+            story.append(Paragraph(
+                "Raised as: " + str(r.get("raise_type", "qc_internal")),
+                meta_style))
+            story.append(Paragraph(
+                "Created: " + str(r.get("created_at", ""))[:19],
+                meta_style))
+            if r.get("closed_at"):
+                story.append(Paragraph(
+                    "Closed: " + str(r["closed_at"])[:19], meta_style))
+
+            sel = r.get("selected") or []
+            for j, s in enumerate(sel, 1):
+                line = ("  " + str(j) + ". " + str(s.get("name", "")))
+                story.append(Paragraph(line, body_style))
+                cit_bits = []
+                if s.get("ms_violations"):
+                    cit_bits.append("MS: " + ", ".join(s["ms_violations"]))
+                if s.get("code_violations"):
+                    cit_bits.append("Code: " +
+                                    ", ".join(s["code_violations"]))
+                if cit_bits:
+                    story.append(Paragraph("     <i>" + "  |  ".join(cit_bits) +
+                                            "</i>", meta_style))
+
+            story.append(Spacer(1, 10))
+
+    story.append(Spacer(1, 20))
+
+    sig_data = [
+        [Paragraph("<b>QC Engineer:</b>", label_style),
+         Paragraph("<b>Consultant:</b>", label_style)],
+        [Paragraph("_" * 30, body_style),
+         Paragraph("_" * 30, body_style)],
+        [Paragraph(project.get("engineer_name", ""), meta_style),
+         Paragraph("Name / Date / Signature", meta_style)],
+    ]
+    t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
+    t_sig.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_sig)
+    story.append(Spacer(1, 10))
+
+    qr_buf = _make_qr_buffer(
+        "UID: " + report_uid + " | Closure Report | " +
+        project.get("name", "")
+    )
+    if qr_buf:
+        try:
+            qr_img = ReportLabImage(qr_buf, width=20 * mm, height=20 * mm)
+            story.append(Table([[qr_img,
+                                 Paragraph("<b>UID:</b> " + report_uid,
+                                           meta_style)]],
+                                colWidths=[25 * mm, 155 * mm],
+                                style=TableStyle([
+                                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                                ])))
+        except Exception as e:
+            print("[defect] closure QR failed: " + repr(e))
 
     doc.build(story)
     buf.seek(0)
