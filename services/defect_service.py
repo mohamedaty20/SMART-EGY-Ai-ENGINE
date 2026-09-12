@@ -1,19 +1,6 @@
 """
-services/defect_service.py
-
+services/defect_service.py — Complete file.
 AI logic + PDF generation for the Defect Notice tool.
-
-Pure functions. No UI. No database. No file I/O.
-
-Public API:
-    extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn)
-    analyze_defect_photo(photo_bytes, mime_type, note,
-                         ms_clauses, element_type,
-                         call_gemini_json_fn)
-    build_notice_pdf(project, defects, notice_uid,
-                     subcontractor, deadline_days, raise_type, logo_bytes)
-    generate_uid(prefix='NTC')
-    get_ecp_excerpts(element_type)
 """
 
 import io
@@ -27,18 +14,16 @@ import datetime
 # UID
 # =====================================================================
 def generate_uid(prefix="NTC"):
-    """Return a short, unique notice/defect ID like NTC-A3F9-2026-0142."""
     short = uuid.uuid4().hex[:4].upper()
     year = datetime.date.today().year
     seq = uuid.uuid4().int % 10000
-    return f"{prefix}-{short}-{year}-{seq:04d}"
+    return prefix + "-" + short + "-" + str(year) + "-" + str(seq).zfill(4)
 
 
 # =====================================================================
-# PDF TEXT EXTRACTION (for MS upload)
+# PDF TEXT EXTRACTION
 # =====================================================================
 def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
-    """Extract text from the first N pages of a PDF. Returns str."""
     try:
         import pypdf
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
@@ -50,7 +35,7 @@ def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
                 pass
         return "\n".join(parts)[:max_chars]
     except Exception as e:
-        print(f"[defect] pdf text extraction failed: {e!r}")
+        print("[defect] pdf text extraction failed: " + repr(e))
         return ""
 
 
@@ -62,22 +47,19 @@ _CLAUSE_PROMPT_TEMPLATE = """You are reading a construction Method Statement (MS
 Task: extract the CLAUSE STRUCTURE from the text below.
 
 Return ONE JSON object with this exact shape:
-{{
+{
   "clauses": [
-    {{"id": "3.1", "title": "Bar Spacing", "text": "as per approved shop drawings"}},
-    {{"id": "3.2", "title": "Cover",       "text": "minimum 40mm for columns, 25mm for slabs"}}
+    {"id": "3.1", "title": "Bar Spacing", "text": "as per approved shop drawings"},
+    {"id": "3.2", "title": "Cover",       "text": "minimum 40mm for columns, 25mm for slabs"}
   ]
-}}
+}
 
 RULES:
 - Return EVERY numbered clause you can find, no matter the numbering style.
-  Acceptable formats: "3.1", "§3.1", "Article 3", "Clause 3.1", "3.1.1".
-- The "id" field is the clause number ONLY, as a string. Example: "3.2".
-- The "title" is a short name (1-5 words). If the clause has no title, use the first 3 words.
+- The "id" field is the clause number ONLY, as a string.
+- The "title" is a short name (1-5 words).
 - The "text" field is the clause body, trimmed to at most 200 characters.
-- Ignore the MS title page, revision history, and any signature blocks.
-- Ignore generic clauses like "Scope", "References", "Definitions" if they have no measurable requirement.
-- If a clause has a number but the body is empty, skip it.
+- Ignore the MS title page, revision history, and signature blocks.
 - MAX 60 clauses. Prioritize the ones with measurable requirements.
 - Output ONLY the JSON object. No prose. No markdown fences.
 
@@ -107,21 +89,11 @@ def _parse_json_object(raw):
     try:
         return json.loads(txt[start:end + 1])
     except Exception as e:
-        print(f"[defect] JSON parse failed: {e!r}")
+        print("[defect] JSON parse failed: " + repr(e))
         return None
 
 
 async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
-    """
-    Send MS PDF text to Gemini, get back a structured clause list.
-
-    Returns:
-        {
-            "clauses":  [{id, title, text}, ...],
-            "raw_text_length": int,
-            "error": str | None,
-        }
-    """
     text = extract_pdf_text(pdf_bytes)
     if not text or len(text) < 100:
         return {
@@ -138,7 +110,7 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
         return {
             "clauses": [],
             "raw_text_length": len(text),
-            "error": f"AI call failed: {e!r}",
+            "error": "AI call failed: " + repr(e),
         }
 
     data = _parse_json_object(raw)
@@ -158,8 +130,7 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
             continue
         clauses.append({"id": cid, "title": title, "text": body})
 
-    print(f"[defect] extracted {len(clauses)} clauses from MS "
-          f"({len(text)} chars)")
+    print("[defect] extracted " + str(len(clauses)) + " clauses from MS")
     return {
         "clauses": clauses,
         "raw_text_length": len(text),
@@ -217,7 +188,6 @@ _ECP_BY_ELEMENT = {
 
 
 def get_ecp_excerpts(element_type):
-    """Return hardcoded ECP excerpts for the given element type."""
     key = (element_type or "").lower().strip()
     return _ECP_BY_ELEMENT.get(key, _ECP_BY_ELEMENT.get("column", []))
 
@@ -246,7 +216,7 @@ Return ONE JSON object with this exact shape:
     {{
       "name": "Honeycomb on column face",
       "location_hint": "column base",
-      "severity": "Low" | "Medium" | "High" | "Critical",
+      "severity": "Medium",
       "ms_violations": ["3.5"],
       "code_violations": ["ECP 203 §6.3.1"],
       "repair_action": "Chip back to sound concrete, apply bonding agent, patch with non-shrink mortar."
@@ -255,17 +225,11 @@ Return ONE JSON object with this exact shape:
 }}
 
 RULES:
-- MAX 6 defects. If you find fewer real ones, return fewer.
+- MAX 6 defects.
 - Only cite MS clause ids that appear in the list above.
 - Only cite ECP codes that appear in the list above.
-- If the photo shows no clear defect, return {{"defects": []}}.
-- Severity guide:
-    Low      = cosmetic, no structural impact
-    Medium   = needs repair, not urgent
-    High     = structural or durability risk
-    Critical = immediate safety risk
-- location_hint is short: "column base", "slab edge", "wall joint", etc.
-- repair_action is one sentence, max 120 characters.
+- If the photo shows no clear defect, return {"defects": []}.
+- Severity must be one of: Low, Medium, High, Critical.
 - Output ONLY the JSON. No prose. No markdown fences.
 """
 
@@ -275,15 +239,16 @@ def _format_ms_clauses(ms_clauses):
         return "(none provided)"
     lines = []
     for c in ms_clauses[:30]:
-        lines.append(f'  id={c.get("id","?")} - {c.get("title","")} : '
-                     f'{c.get("text","")[:120]}')
+        lines.append("  id=" + str(c.get("id", "?")) +
+                     " - " + str(c.get("title", "")) +
+                     " : " + str(c.get("text", ""))[:120])
     return "\n".join(lines)
 
 
 def _format_ecp(ecp_excerpts):
     if not ecp_excerpts:
         return "(none provided)"
-    return "\n".join(f'  {e["code"]} - {e["text"]}'
+    return "\n".join("  " + e["code"] + " - " + e["text"]
                      for e in ecp_excerpts[:10])
 
 
@@ -293,9 +258,6 @@ async def analyze_defect_photo(photo_bytes,
                                 ms_clauses,
                                 element_type,
                                 call_gemini_json_fn):
-    """
-    Analyze a defect photo. Returns a list of candidate defects.
-    """
     from google.genai import types
 
     ecp_excerpts = get_ecp_excerpts(element_type)
@@ -310,20 +272,22 @@ async def analyze_defect_photo(photo_bytes,
     try:
         img_part = types.Part.from_bytes(data=photo_bytes, mime_type=mime_type)
     except Exception as e:
-        return {"defects": [], "error": f"Image load failed: {e!r}"}
+        return {"defects": [], "error": "Image load failed: " + repr(e)}
 
     contents = [prompt, img_part]
 
     try:
         raw = await call_gemini_json_fn(contents, temperature=0.0, timeout=180)
     except Exception as e:
-        return {"defects": [], "error": f"AI call failed: {e!r}"}
+        return {"defects": [], "error": "AI call failed: " + repr(e)}
+
+    print("[defect] RAW AI RESPONSE:")
+    print((raw or "")[:2500])
 
     data = _parse_json_object(raw)
     if not data:
         return {"defects": [], "error": "AI returned unparseable output."}
 
-    # Whitelist of MS ids and ECP codes the AI is allowed to cite.
     allowed_ms = {str(c.get("id", "")).strip() for c in (ms_clauses or [])}
     allowed_ecp = {e["code"] for e in ecp_excerpts}
 
@@ -348,9 +312,7 @@ async def analyze_defect_photo(photo_bytes,
             "repair_action": str(d.get("repair_action", "")).strip()[:180],
         })
 
-    print(f"[defect] AI returned {len(defects)} candidate defects "
-    print(f"[defect] RAW AI TEXT: {raw[:2000]}")
-          f"(element={element_type}, ms_clauses={len(ms_clauses or [])})")
+    print("[defect] parsed " + str(len(defects)) + " valid defects")
     return {"defects": defects, "error": None}
 
 
@@ -364,9 +326,6 @@ def build_notice_pdf(project,
                      deadline_days,
                      raise_type="qc_internal",
                      logo_bytes=None):
-    """
-    Build the Notice to Subcontractor PDF. Returns bytes.
-    """
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         Image as ReportLabImage, HRFlowable,
@@ -378,42 +337,29 @@ def build_notice_pdf(project,
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=18 * mm,
-        bottomMargin=18 * mm,
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
     )
 
     NAVY = colors.HexColor("#1B2A4A")
     ORANGE = colors.HexColor("#B45309")
     GREY = colors.HexColor("#334155")
 
-    title_style = ParagraphStyle(
-        "Title", fontName="Helvetica-Bold", fontSize=16,
-        textColor=NAVY, spaceAfter=4, leading=20,
-    )
-    sub_style = ParagraphStyle(
-        "Sub", fontName="Helvetica-Bold", fontSize=10,
-        textColor=ORANGE, spaceAfter=8,
-    )
-    meta_style = ParagraphStyle(
-        "Meta", fontName="Helvetica", fontSize=9,
-        textColor=GREY, leading=13,
-    )
-    body_style = ParagraphStyle(
-        "Body", fontName="Helvetica", fontSize=9.5,
-        textColor=colors.black, leading=13,
-    )
-    label_style = ParagraphStyle(
-        "Label", fontName="Helvetica-Bold", fontSize=9,
-        textColor=NAVY,
-    )
+    title_style = ParagraphStyle("Title", fontName="Helvetica-Bold",
+                                  fontSize=16, textColor=NAVY,
+                                  spaceAfter=4, leading=20)
+    sub_style = ParagraphStyle("Sub", fontName="Helvetica-Bold",
+                                fontSize=10, textColor=ORANGE, spaceAfter=8)
+    meta_style = ParagraphStyle("Meta", fontName="Helvetica", fontSize=9,
+                                 textColor=GREY, leading=13)
+    body_style = ParagraphStyle("Body", fontName="Helvetica", fontSize=9.5,
+                                 textColor=colors.black, leading=13)
+    label_style = ParagraphStyle("Label", fontName="Helvetica-Bold",
+                                  fontSize=9, textColor=NAVY)
 
     story = []
 
-    # ---- Header ----
     if logo_bytes:
         try:
             logo_img = ReportLabImage(io.BytesIO(logo_bytes),
@@ -425,7 +371,7 @@ def build_notice_pdf(project,
 
     header_text = [
         Paragraph("NOTICE TO SUBCONTRACTOR", title_style),
-        Paragraph(f"Notice No: {notice_uid}", sub_style),
+        Paragraph("Notice No: " + notice_uid, sub_style),
     ]
 
     if logo_img:
@@ -440,10 +386,9 @@ def build_notice_pdf(project,
     ]))
     story.append(t_head)
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=1.2,
-                             color=ORANGE, spaceAfter=10))
+    story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
+                             spaceAfter=10))
 
-    # ---- Project meta block ----
     meta_rows = [
         [Paragraph("<b>Project:</b>", label_style),
          Paragraph(project.get("name", ""), meta_style),
@@ -470,22 +415,19 @@ def build_notice_pdf(project,
     story.append(t_meta)
     story.append(Spacer(1, 10))
 
-    # ---- Recipient block ----
-    story.append(Paragraph(f"<b>To:</b> {subcontractor}", body_style))
+    story.append(Paragraph("<b>To:</b> " + subcontractor, body_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
-        f"<b>Deadline:</b> {deadline_days} working day"
-        f"{'s' if deadline_days != 1 else ''} from receipt of this notice.",
+        "<b>Deadline:</b> " + str(deadline_days) + " working day" +
+        ("s" if deadline_days != 1 else "") + " from receipt of this notice.",
         body_style))
     story.append(Spacer(1, 10))
     story.append(Paragraph(
         "You are required to remedy the following defects. "
-        "This notice is a permanent record and must be acknowledged "
-        "on site.",
+        "This notice is a permanent record and must be acknowledged on site.",
         body_style))
     story.append(Spacer(1, 12))
 
-    # ---- Defect list ----
     for idx, d in enumerate(defects, start=1):
         name = d.get("name", "Defect")
         zone = d.get("zone", "") or ""
@@ -495,10 +437,10 @@ def build_notice_pdf(project,
         ecp_v = d.get("code_violations") or []
         repair = d.get("repair_action", "") or ""
 
-        head = f"{idx}. {name}"
+        head = str(idx) + ". " + name
         if zone or loc:
-            head += f"  ({', '.join(p for p in [zone, loc] if p)})"
-        story.append(Paragraph(f"<b>{head}</b>", body_style))
+            head += "  (" + ", ".join(p for p in [zone, loc] if p) + ")"
+        story.append(Paragraph("<b>" + head + "</b>", body_style))
 
         cit_bits = []
         if ms_v:
@@ -506,16 +448,15 @@ def build_notice_pdf(project,
         if ecp_v:
             cit_bits.append("Code: " + ", ".join(ecp_v))
         if cit_bits:
-            story.append(Paragraph(f"  <i>{'  |  '.join(cit_bits)}</i>",
+            story.append(Paragraph("  <i>" + "  |  ".join(cit_bits) + "</i>",
                                     meta_style))
         if repair:
-            story.append(Paragraph(f"  Repair: {repair}", meta_style))
-        story.append(Paragraph(f"  Severity: {severity}", meta_style))
+            story.append(Paragraph("  Repair: " + repair, meta_style))
+        story.append(Paragraph("  Severity: " + severity, meta_style))
         story.append(Spacer(1, 8))
 
     story.append(Spacer(1, 20))
 
-    # ---- Signature block ----
     sig_data = [
         [Paragraph("<b>Issued by (QC):</b>", label_style),
          Paragraph("<b>Acknowledged by (Subcontractor):</b>", label_style)],
@@ -534,18 +475,17 @@ def build_notice_pdf(project,
     story.append(t_sig)
     story.append(Spacer(1, 14))
 
-    # ---- QR / UID footer ----
     try:
         from services.pdf_service import generate_qr_code
         qr_buf = generate_qr_code(
-            f"UID: {notice_uid} | Defect Notice | {project.get('name', '')}"
+            "UID: " + notice_uid + " | Defect Notice | " +
+            project.get("name", "")
         )
-        qr_img = ReportLabImage(qr_buf,
-                                 width=20 * mm, height=20 * mm)
+        qr_img = ReportLabImage(qr_buf, width=20 * mm, height=20 * mm)
         t_qr = Table([[qr_img,
-                       Paragraph(f"<b>UID:</b> {notice_uid}<br/>"
-                                 f"This notice can be verified by scanning "
-                                 f"the QR code.", meta_style)]],
+                       Paragraph("<b>UID:</b> " + notice_uid + "<br/>" +
+                                 "This notice can be verified by scanning " +
+                                 "the QR code.", meta_style)]],
                       colWidths=[25 * mm, 155 * mm])
         t_qr.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -553,8 +493,8 @@ def build_notice_pdf(project,
         ]))
         story.append(t_qr)
     except Exception as e:
-        print(f"[defect] QR embed failed: {e!r}")
-        story.append(Paragraph(f"UID: {notice_uid}", meta_style))
+        print("[defect] QR embed failed: " + repr(e))
+        story.append(Paragraph("UID: " + notice_uid, meta_style))
 
     doc.build(story)
     buf.seek(0)
