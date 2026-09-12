@@ -335,8 +335,12 @@ def _build_new_defect(state):
                                 "display:flex;gap:12px;align-items:flex-start;"
                                 "width:100%;"
                             ):
-                                cb = ui.checkbox(value=True)
-                                cb.bind_value(state["selected_flags"], i)
+                                 def _make_toggle(idx):
+                                    def _handler(e):
+                                        state["selected_flags"][idx] = bool(e.value)
+                                    return _handler
+                                cb = ui.checkbox(value=True,
+                                                  on_change=_make_toggle(i))
                                 with ui.element('div').style("flex:1;min-width:0;"):
                                     ui.label(str(c.get("name", ""))).style(
                                         "color:#0f172a;font-weight:700;"
