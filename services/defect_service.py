@@ -302,7 +302,7 @@ async def analyze_defect_photo(photo_bytes,
     contents = [prompt, img_part]
 
     try:
-        raw = await call_gemini_json_fn(contents, temperature=0.0, timeout=180)
+        raw = await call_gemini_json_fn(contents, temperature=0.0, timeout=40)
     except Exception as e:
         return {"defects": [], "error": "AI call failed: " + repr(e)}
 
