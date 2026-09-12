@@ -349,6 +349,7 @@ async def analyze_defect_photo(photo_bytes,
         })
 
     print(f"[defect] AI returned {len(defects)} candidate defects "
+    print(f"[defect] RAW AI TEXT: {raw[:2000]}")
           f"(element={element_type}, ms_clauses={len(ms_clauses or [])})")
     return {"defects": defects, "error": None}
 
