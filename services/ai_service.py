@@ -1,17 +1,14 @@
 """
-services/ai_service.py
-
-Thin wrapper around google-genai. One function for JSON responses.
+services/ai_service.py — Thin wrapper around google-genai.
 """
 import asyncio
 from google.genai import types
 from config import client, GEMINI_MODEL
 
 
-async def call_gemini_json(contents, temperature=0.0, timeout=180):
+async def call_gemini_json(contents, temperature=0.0, timeout=45):
     """
-    Call Gemini and return raw text. Raises on failure.
-    'contents' can be a string or a list of strings and Part objects.
+    Call Gemini and return raw text. Default timeout 45 seconds.
     """
     if not client:
         raise Exception("GEMINI_API_KEY missing.")
@@ -25,10 +22,15 @@ async def call_gemini_json(contents, temperature=0.0, timeout=180):
             config=config,
         )
 
+    print("[ai] calling model=" + str(GEMINI_MODEL) + " timeout=" + str(timeout))
     try:
         response = await asyncio.wait_for(_one_call(), timeout=timeout)
-        return response.text or ""
+        txt = response.text or ""
+        print("[ai] response length=" + str(len(txt)))
+        return txt
     except asyncio.TimeoutError:
-        raise Exception(f"AI request timed out after {timeout}s.")
+        print("[ai] TIMEOUT after " + str(timeout) + "s")
+        raise Exception("AI request timed out after " + str(timeout) + "s.")
     except Exception as e:
-        raise Exception(f"AI request failed: {e}")
+        print("[ai] FAILED: " + repr(e))
+        raise Exception("AI request failed: " + str(e))
