@@ -323,6 +323,15 @@ def _build_new_defect(state):
             with candidates_container:
                 if not candidates:
                     ui.label("AI found no defects in this photo.").style(TXT_MUTED)
+                    raw_txt = result.get("raw", "")
+                    if raw_txt:
+                        ui.label("Raw AI output (debug):").style(TXT_MUTED)
+                        ui.label(raw_txt).style(
+                            "color:#7c2d12;font-size:11px;"
+                            "font-family:monospace;white-space:pre-wrap;"
+                            "background:#fef3c7;padding:8px;"
+                            "border-radius:6px;width:100%;"
+                        )
                 else:
                     ui.label(
                         "AI found " + str(len(candidates)) +
