@@ -94,7 +94,24 @@ def _parse_json_object(raw):
 
 
 async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
-    text = extract_pdf_text(pdf_bytes)
+    import asyncio
+
+    print("[defect] MS extraction started, pdf_bytes=" +
+          str(len(pdf_bytes) // 1024) + " KB")
+
+    # Run PDF parsing in a thread — never blocks the event loop
+    try:
+        text = await asyncio.to_thread(extract_pdf_text, pdf_bytes)
+    except Exception as e:
+        print("[defect] pdf parse failed: " + repr(e))
+        return {
+            "clauses": [],
+            "raw_text_length": 0,
+            "error": "PDF parse failed: " + repr(e),
+        }
+
+    print("[defect] extracted " + str(len(text)) + " chars from PDF")
+
     if not text or len(text) < 100:
         return {
             "clauses": [],
@@ -102,16 +119,23 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
             "error": "PDF has no readable text (may be scanned image).",
         }
 
+    # Cap the text so we don't send a 40KB monster prompt
+    text = text[:15000]
+    print("[defect] sending " + str(len(text)) + " chars to Gemini")
+
     prompt = _CLAUSE_PROMPT_TEMPLATE.format(ms_text=text)
 
     try:
-        raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=180)
+        raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=40)
     except Exception as e:
+        print("[defect] AI call failed: " + repr(e))
         return {
             "clauses": [],
             "raw_text_length": len(text),
             "error": "AI call failed: " + repr(e),
         }
+
+    print("[defect] AI responded, " + str(len(raw or "")) + " chars")
 
     data = _parse_json_object(raw)
     if not data:
