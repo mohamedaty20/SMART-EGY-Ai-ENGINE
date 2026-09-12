@@ -9,6 +9,9 @@ load_dotenv()
 
 app.native.window_args = {"resizable": True}
 
+# Force light mode globally — our cards are white, so we need dark text
+ui.dark_mode(False)
+
 ui.add_head_html('''
 <style>
     body { background-color: #f8fafc;
