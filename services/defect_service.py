@@ -1,6 +1,5 @@
 """
-services/defect_service.py — Complete file.
-AI logic + PDF generation for the Defect Notice tool.
+services/defect_service.py — Complete fixed file.
 """
 
 import io
@@ -19,6 +18,33 @@ def generate_uid(prefix="NTC"):
     year = datetime.date.today().year
     seq = uuid.uuid4().int % 10000
     return prefix + "-" + short + "-" + str(year) + "-" + str(seq).zfill(4)
+
+
+# =====================================================================
+# IMAGE COMPRESSION — makes Gemini calls 5-10x faster
+# =====================================================================
+def _shrink_image(photo_bytes, max_side=1024):
+    """
+    Resize a photo so its longest side is max_side pixels.
+    Returns JPEG bytes. Cuts upload time to Gemini dramatically.
+    """
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(photo_bytes))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        w, h = img.size
+        if max(w, h) > max_side:
+            ratio = max_side / float(max(w, h))
+            img = img.resize((int(w * ratio), int(h * ratio)),
+                             Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=80, optimize=True)
+        out.seek(0)
+        return out.read()
+    except Exception as e:
+        print("[defect] image shrink failed: " + repr(e))
+        return photo_bytes
 
 
 # =====================================================================
@@ -48,12 +74,12 @@ _CLAUSE_PROMPT_TEMPLATE = """You are reading a construction Method Statement (MS
 Task: extract the CLAUSE STRUCTURE from the text below.
 
 Return ONE JSON object with this exact shape:
-{
+{{
   "clauses": [
-    {"id": "3.1", "title": "Bar Spacing", "text": "as per approved shop drawings"},
-    {"id": "3.2", "title": "Cover",       "text": "minimum 40mm for columns, 25mm for slabs"}
+    {{"id": "3.1", "title": "Bar Spacing", "text": "as per approved shop drawings"}},
+    {{"id": "3.2", "title": "Cover",       "text": "minimum 40mm for columns, 25mm for slabs"}}
   ]
-}
+}}
 
 RULES:
 - Return EVERY numbered clause you can find, no matter the numbering style.
@@ -95,12 +121,9 @@ def _parse_json_object(raw):
 
 
 async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
-    import asyncio
-
     print("[defect] MS extraction started, pdf_bytes=" +
           str(len(pdf_bytes) // 1024) + " KB")
 
-    # Run PDF parsing in a thread — never blocks the event loop
     try:
         text = await asyncio.to_thread(extract_pdf_text, pdf_bytes)
     except Exception as e:
@@ -120,10 +143,10 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
             "error": "PDF has no readable text (may be scanned image).",
         }
 
-    # Cap the text so we don't send a 40KB monster prompt
     text = text[:15000]
     print("[defect] sending " + str(len(text)) + " chars to Gemini")
 
+    # Use replace() not format() — braces in JSON examples break format()
     prompt = _CLAUSE_PROMPT_TEMPLATE.replace("{ms_text}", text)
 
     try:
@@ -218,22 +241,22 @@ def get_ecp_excerpts(element_type):
 
 
 # =====================================================================
-# DEFECT ANALYSIS
+# DEFECT ANALYSIS — uses REPLACE not FORMAT (braces in JSON)
 # =====================================================================
 _DEFECT_PROMPT = """You are a senior QC engineer inspecting a construction site photo.
 
 Your job: identify defects visible in the photo, and cite ONLY the
 provided MS clauses and ECP codes. Never invent clause numbers.
 
-USER NOTE (may be empty): {note}
+USER NOTE (may be empty): __NOTE__
 
-ELEMENT TYPE: {element_type}
+ELEMENT TYPE: __ELEMENT__
 
 METHOD STATEMENT CLAUSES AVAILABLE (cite by id only):
-{ms_clauses}
+__MS_CLAUSES__
 
 ECP CODE EXCERPTS AVAILABLE (cite by code string only):
-{ecp_excerpts}
+__ECP__
 
 Return ONE JSON object with this exact shape:
 {{
@@ -253,7 +276,7 @@ RULES:
 - MAX 6 defects.
 - Only cite MS clause ids that appear in the list above.
 - Only cite ECP codes that appear in the list above.
-- If the photo shows no clear defect, return {"defects": []}.
+- If the photo shows no clear defect, return an empty defects list.
 - Severity must be one of: Low, Medium, High, Critical.
 - Output ONLY the JSON. No prose. No markdown fences.
 """
@@ -277,6 +300,14 @@ def _format_ecp(ecp_excerpts):
                      for e in ecp_excerpts[:10])
 
 
+def _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts):
+    return (_DEFECT_PROMPT
+            .replace("__NOTE__", note or "(none)")
+            .replace("__ELEMENT__", (element_type or "column").lower())
+            .replace("__MS_CLAUSES__", _format_ms_clauses(ms_clauses))
+            .replace("__ECP__", _format_ecp(ecp_excerpts)))
+
+
 async def analyze_defect_photo(photo_bytes,
                                 mime_type,
                                 note,
@@ -287,15 +318,18 @@ async def analyze_defect_photo(photo_bytes,
 
     ecp_excerpts = get_ecp_excerpts(element_type)
 
-    prompt = _DEFECT_PROMPT.format(
-        note=note or "(none)",
-        element_type=(element_type or "column").lower(),
-        ms_clauses=_format_ms_clauses(ms_clauses),
-        ecp_excerpts=_format_ecp(ecp_excerpts),
-    )
+    prompt = _build_defect_prompt(note, element_type,
+                                   ms_clauses, ecp_excerpts)
+
+    # --- Compress photo before sending to Gemini ---
+    print("[defect] original image: " +
+          str(len(photo_bytes) // 1024) + " KB")
+    shrunk = _shrink_image(photo_bytes, max_side=1024)
+    print("[defect] shrunk image: " +
+          str(len(shrunk) // 1024) + " KB")
 
     try:
-        img_part = types.Part.from_bytes(data=photo_bytes, mime_type=mime_type)
+        img_part = types.Part.from_bytes(data=shrunk, mime_type="image/jpeg")
     except Exception as e:
         return {"defects": [], "error": "Image load failed: " + repr(e)}
 
