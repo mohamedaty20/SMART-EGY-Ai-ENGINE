@@ -12,6 +12,7 @@ app.native.window_args = {"resizable": True}
 ui.add_head_html('''
 <style>
     body { background-color: #f8fafc;
+           color: #0f172a;
            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     .custom-card {
         border-radius: 12px;
@@ -19,6 +20,13 @@ ui.add_head_html('''
                     0 2px 4px -2px rgb(0 0 0 / 0.1);
         background-color: white;
         padding: 24px;
+        color: #0f172a;
+    }
+    .q-card, .q-field__native, .q-field__label {
+        color: #0f172a;
+    }
+    input, textarea {
+        color: #0f172a !important;
     }
 </style>
 ''', shared=True)
