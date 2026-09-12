@@ -342,34 +342,43 @@ def _build_new_defect(state):
 
                     for i, c in enumerate(candidates):
                         with ui.element('div').style(
-                            "background:#f8fafc;border:1px solid #e2e8f0;"
-                            "border-radius:10px;padding:14px 16px;"
-                            "margin-bottom:10px;width:100%;"
+                            "background:#FEF08A;border:2px solid #000000;"
+                            "border-radius:10px;padding:14px;"
+                            "margin-bottom:12px;width:100%;display:block;"
                         ):
                             with ui.row().style(
-                                "width:100%;gap:12px;align-items:flex-start;"
-                                "flex-wrap:nowrap;"
+                                "width:100%;display:flex;"
+                                "align-items:flex-start;gap:12px;"
                             ):
-                                cb = ui.checkbox(value=True).style("margin-top:4px;")
+                                cb = ui.checkbox(value=True)
                                 cb.bind_value(state["selected_flags"], i)
-                                with ui.column().style("flex:1;gap:4px;"):
-                                    ui.label(c["name"]).style(S_NAME)
-                                    if c["location_hint"]:
-                                        ui.label(
-                                            f"Location: {c['location_hint']}"
-                                        ).style(S_MUTED)
-                                    cit = []
-                                    if c["ms_violations"]:
-                                        cit.append("MS: " + ", ".join(c["ms_violations"]))
-                                    if c["code_violations"]:
-                                        cit.append("Code: " + ", ".join(c["code_violations"]))
-                                    if cit:
-                                        ui.label(" | ".join(cit)).style(S_ITAL)
-                                    if c["repair_action"]:
-                                        ui.label(
-                                            f"Repair: {c['repair_action']}"
-                                        ).style(S_ITAL)
-                                    ui.label(f"Severity: {c['severity']}").style(S_MUTED)
+                                with ui.element('div').style(
+                                    "flex:1;display:block;min-width:0;"
+                                ):
+                                    ui.label("NAME: " + str(c.get("name", ""))).style(
+                                        "color:#000000 !important;font-size:16px;"
+                                        "font-weight:700;display:block;"
+                                    )
+                                    ui.label("LOCATION: " + str(c.get("location_hint", ""))).style(
+                                        "color:#000000 !important;font-size:13px;"
+                                        "display:block;margin-top:4px;"
+                                    )
+                                    ui.label("MS: " + ", ".join(c.get("ms_violations", []))).style(
+                                        "color:#000000 !important;font-size:13px;"
+                                        "display:block;margin-top:4px;"
+                                    )
+                                    ui.label("CODE: " + ", ".join(c.get("code_violations", []))).style(
+                                        "color:#000000 !important;font-size:13px;"
+                                        "display:block;margin-top:4px;"
+                                    )
+                                    ui.label("REPAIR: " + str(c.get("repair_action", ""))).style(
+                                        "color:#000000 !important;font-size:13px;"
+                                        "display:block;margin-top:4px;"
+                                    )
+                                    ui.label("SEVERITY: " + str(c.get("severity", ""))).style(
+                                        "color:#000000 !important;font-size:13px;"
+                                        "display:block;margin-top:4px;font-weight:700;"
+                                    )
 
                 # ---- Notice details ----
                 ui.separator().style("margin:20px 0;")
