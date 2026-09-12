@@ -323,7 +323,8 @@ async def analyze_defect_photo(photo_bytes,
 
     data = _parse_json_object(raw)
     if not data:
-        return {"defects": [], "error": "AI returned unparseable output."}
+        return {"defects": [], "error": "AI returned unparseable output.",
+                "raw": (raw or "")[:1500]}
 
     allowed_ms = {str(c.get("id", "")).strip() for c in (ms_clauses or [])}
     allowed_ecp = {e["code"] for e in ecp_excerpts}
@@ -350,7 +351,7 @@ async def analyze_defect_photo(photo_bytes,
         })
 
     print("[defect] parsed " + str(len(defects)) + " valid defects")
-    return {"defects": defects, "error": None}
+    return {"defects": defects, "error": None, "raw": (raw or "")[:1500]}
 
 
 # =====================================================================
