@@ -124,7 +124,7 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
     text = text[:15000]
     print("[defect] sending " + str(len(text)) + " chars to Gemini")
 
-    prompt = _CLAUSE_PROMPT_TEMPLATE.format(ms_text=text)
+    prompt = _CLAUSE_PROMPT_TEMPLATE.replace("{ms_text}", text)
 
     try:
         raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=40)
