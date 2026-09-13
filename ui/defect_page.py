@@ -1,6 +1,6 @@
 """
 ui/defect_page.py — Full file.
-Supports PDF / DOCX / TXT method statements + manual defect add/remove.
+Supports PDF / DOCX / TXT + manual defect add/remove + EN/AR toggle.
 """
 import io
 from nicegui import ui
@@ -10,14 +10,366 @@ from services import defect_service as svc
 from services.ai_service import call_gemini_json
 
 
-ELEMENT_TYPES = ["column", "beam", "slab", "wall", "foundation", "finishing"]
-DISCIPLINES = ["Structural", "Architectural", "MEP"]
-ZONES = ["A", "B", "C", "D", "General"]
+# =====================================================================
+# LANGUAGE STATE (per-process demo; swap to app.storage for multi-user)
+# =====================================================================
+LANG = {"code": "en"}
 
-TXT_DARK   = "color:#0f172a;"
-TXT_MUTED  = "color:#64748b;font-size:13px;"
+
+T = {
+    "en": {
+        "app_title": "Defect Notices",
+        "lang_button": "العربية",
+        "tab_setup": "Setup",
+        "tab_ms": "Method Statements",
+        "tab_new": "New Defect",
+        "tab_register": "Register",
+
+        "setup_title": "Project Setup",
+        "setup_sub": "Fill once. Saved for every future defect notice.",
+        "project_name": "Project Name",
+        "contractor": "Contractor",
+        "consultant": "Consultant",
+        "location": "Location",
+        "engineer_name": "QC Engineer Name",
+        "upload_logo": "Upload Company Logo (PNG/JPG)",
+        "logo_loaded": "Logo loaded: ",
+        "logo_loaded_flag": "loaded",
+        "logo_missing_flag": "not uploaded",
+        "logo_label": "Logo: ",
+        "save_project": "Save Project",
+        "project_saved": "Project saved.",
+        "project_name_required": "Project name is required.",
+
+        "ms_title": "Method Statements",
+        "ms_sub": "Upload an MS as PDF, DOCX, or TXT. The tool extracts "
+                  "clauses once, then cites them in every defect report.",
+        "ms_file_label": "File: not uploaded",
+        "ms_file_loaded": "File loaded: ",
+        "ms_upload": "Upload MS (PDF / DOCX / TXT)",
+        "ms_number": "MS Number",
+        "ms_doc_title": "Title",
+        "element_type": "Element Type",
+        "discipline": "Discipline",
+        "extract_clauses": "Extract Clauses via AI",
+        "extracting": "Extracting clauses via AI...",
+        "extracted_prefix": "Extracted ",
+        "extracted_suffix": " clauses — confirm to save:",
+        "confirm_save_ms": "Confirm & Save MS",
+        "ms_saved": "MS saved to library.",
+        "saved_ms_title": "Saved Method Statements",
+        "no_project": "No project set up yet.",
+        "no_ms": "No method statements yet.",
+        "complete_setup_first": "Complete Setup first.",
+        "upload_ms_first": "Upload the MS file first.",
+        "clauses_word": " clauses",
+
+        "new_defect_title": "New Defect",
+        "new_defect_sub": "Take a photo, add a note, let AI propose the "
+                          "defects, then tick the real ones. Add more "
+                          "manually if needed.",
+        "photo_label": "Photo: not uploaded",
+        "photo_upload": "Upload site photo",
+        "note_label": "Note (optional)",
+        "note_placeholder": "e.g. crack at column C3 base",
+        "zone": "Zone",
+        "element": "Element",
+        "analyze": "Analyze with AI",
+        "analyzing": "Analyzing photo... ",
+        "ms_clauses_loaded": " MS clauses loaded.",
+        "ai_found_prefix": "AI found ",
+        "ai_found_suffix": " candidate(s). Tick the real ones:",
+        "ai_found_none": "AI found no defects. Add one manually below.",
+        "add_manual": "+ Add defect manually",
+        "notice_details": "Notice details",
+        "notice_details_sub": "Who gets the notice, and by when.",
+        "send_to_sub": "Send to Subcontractor",
+        "send_to_sub_placeholder": "e.g. Al-Ahram Steel Fixing",
+        "deadline": "Deadline (days)",
+        "raised_as": "Raised as",
+        "raised_qc": "QC Internal",
+        "raised_consultant": "Consultant / NCR",
+        "generate_pdf": "Generate Notice PDF",
+        "tick_at_least_one": "Tick at least one defect.",
+        "enter_sub": "Enter the subcontractor name.",
+        "notice_saved": "Notice saved: ",
+        "upload_photo_first": "Upload a photo first.",
+        "raw_debug": "Raw AI output (debug):",
+        "error_prefix": "Error: ",
+
+        "add_title": "Add defect manually",
+        "add_sub": "AI missed something? Add it here.",
+        "add_name": "Defect name",
+        "add_location": "Location hint (optional)",
+        "add_severity": "Severity",
+        "add_ms": "MS clause id (optional)",
+        "add_ecp": "ECP code (optional)",
+        "add_repair": "Repair action (optional)",
+        "add_button": "Add",
+        "cancel_button": "Cancel",
+        "name_required": "Defect name required.",
+        "tag_ai": "AI",
+        "tag_manual": "MANUAL",
+
+        "reg_title": "Defect Register",
+        "reg_sub": "Every notice you have issued. Filter by source, click "
+                   "a row for detail, export the register or the closure "
+                   "report.",
+        "source": "Source",
+        "source_all": "All",
+        "source_qc": "QC Internal",
+        "source_consultant": "Consultant / NCR",
+        "export_register": "Export Register",
+        "closure_report": "Closure Report",
+        "refresh": "Refresh",
+        "no_defects_filter": "No defects for this filter.",
+        "shown": "Shown: ",
+        "open_label": "Open: ",
+        "closed_label": "Closed: ",
+        "no_rows_export": "No rows to export.",
+        "col_uid": "UID",
+        "col_zone": "Zone",
+        "col_sub": "Subcontractor",
+        "col_count": "#",
+        "col_source": "Source",
+        "col_status": "Status",
+        "col_created": "Created",
+
+        "dialog_notice": "Notice ",
+        "dialog_zone": "Zone ",
+        "dialog_ncr": "Consultant NCR: ",
+        "dialog_note": "Note: ",
+        "dialog_none": "(none)",
+        "dialog_repair": "Repair: ",
+        "dialog_download": "Download Notice PDF",
+        "dialog_close": "Mark Closed",
+        "dialog_dismiss": "Close",
+        "dialog_ncr_input": "Consultant NCR Number (required to close)",
+        "dialog_ncr_required": "Enter the consultant NCR number first.",
+        "dialog_closed_msg": "Defect marked closed.",
+        "dialog_not_found": "Defect not found.",
+
+        "sev_low": "Low",
+        "sev_medium": "Medium",
+        "sev_high": "High",
+        "sev_critical": "Critical",
+
+        "el_column": "column",
+        "el_beam": "beam",
+        "el_slab": "slab",
+        "el_wall": "wall",
+        "el_foundation": "foundation",
+        "el_finishing": "finishing",
+        "disc_structural": "Structural",
+        "disc_arch": "Architectural",
+        "disc_mep": "MEP",
+        "zone_general": "General",
+    },
+    "ar": {
+        "app_title": "إشعارات العيوب",
+        "lang_button": "English",
+        "tab_setup": "الإعداد",
+        "tab_ms": "بيانات الطريقة",
+        "tab_new": "عيب جديد",
+        "tab_register": "السجل",
+
+        "setup_title": "إعداد المشروع",
+        "setup_sub": "يُملأ مرة واحدة. يُحفظ لكل إشعار عيب.",
+        "project_name": "اسم المشروع",
+        "contractor": "المقاول",
+        "consultant": "الاستشاري",
+        "location": "الموقع",
+        "engineer_name": "اسم مهندس الجودة",
+        "upload_logo": "تحميل شعار الشركة (PNG/JPG)",
+        "logo_loaded": "تم تحميل الشعار: ",
+        "logo_loaded_flag": "محمل",
+        "logo_missing_flag": "غير محمل",
+        "logo_label": "الشعار: ",
+        "save_project": "حفظ المشروع",
+        "project_saved": "تم حفظ المشروع.",
+        "project_name_required": "اسم المشروع مطلوب.",
+
+        "ms_title": "بيانات طريقة العمل",
+        "ms_sub": "حمّل ملف MS بصيغة PDF أو DOCX أو TXT. يستخرج "
+                  "البرنامج البنود مرة واحدة ثم يستشهد بها في كل إشعار.",
+        "ms_file_label": "الملف: غير محمل",
+        "ms_file_loaded": "تم تحميل الملف: ",
+        "ms_upload": "تحميل ملف MS (PDF / DOCX / TXT)",
+        "ms_number": "رقم MS",
+        "ms_doc_title": "العنوان",
+        "element_type": "نوع العنصر",
+        "discipline": "التخصص",
+        "extract_clauses": "استخراج البنود بالذكاء الاصطناعي",
+        "extracting": "جاري استخراج البنود...",
+        "extracted_prefix": "تم استخراج ",
+        "extracted_suffix": " بند — أكد للحفظ:",
+        "confirm_save_ms": "تأكيد وحفظ MS",
+        "ms_saved": "تم حفظ MS في المكتبة.",
+        "saved_ms_title": "بيانات الطريقة المحفوظة",
+        "no_project": "لا يوجد مشروع بعد.",
+        "no_ms": "لا توجد بيانات طريقة بعد.",
+        "complete_setup_first": "أكمل الإعداد أولاً.",
+        "upload_ms_first": "حمّل ملف MS أولاً.",
+        "clauses_word": " بند",
+
+        "new_defect_title": "عيب جديد",
+        "new_defect_sub": "التقط صورة، أضف ملاحظة، ودع الذكاء الاصطناعي "
+                          "يقترح العيوب، ثم اختر الحقيقية منها. أضف يدوياً "
+                          "عند الحاجة.",
+        "photo_label": "الصورة: غير محملة",
+        "photo_upload": "تحميل صورة الموقع",
+        "note_label": "ملاحظة (اختياري)",
+        "note_placeholder": "مثال: شرخ عند قاعدة العمود C3",
+        "zone": "المنطقة",
+        "element": "العنصر",
+        "analyze": "تحليل بالذكاء الاصطناعي",
+        "analyzing": "جاري تحليل الصورة... ",
+        "ms_clauses_loaded": " بند MS محمّل.",
+        "ai_found_prefix": "وجد الذكاء الاصطناعي ",
+        "ai_found_suffix": " عيب محتمل. اختر الصحيح:",
+        "ai_found_none": "لم يجد الذكاء الاصطناعي عيوباً. أضف عيباً يدوياً أدناه.",
+        "add_manual": "+ إضافة عيب يدوياً",
+        "notice_details": "تفاصيل الإشعار",
+        "notice_details_sub": "من يستلم الإشعار، ومتى.",
+        "send_to_sub": "إرسال إلى المقاول الفرعي",
+        "send_to_sub_placeholder": "مثال: الأهرام لتثبيت الحديد",
+        "deadline": "المهلة (أيام)",
+        "raised_as": "مصدر الإشعار",
+        "raised_qc": "داخلي QC",
+        "raised_consultant": "استشاري / NCR",
+        "generate_pdf": "إنشاء إشعار PDF",
+        "tick_at_least_one": "اختر عيباً واحداً على الأقل.",
+        "enter_sub": "أدخل اسم المقاول الفرعي.",
+        "notice_saved": "تم حفظ الإشعار: ",
+        "upload_photo_first": "حمّل صورة أولاً.",
+        "raw_debug": "الناتج الخام للذكاء الاصطناعي (تصحيح):",
+        "error_prefix": "خطأ: ",
+
+        "add_title": "إضافة عيب يدوياً",
+        "add_sub": "فات الذكاء الاصطناعي شيء؟ أضفه هنا.",
+        "add_name": "اسم العيب",
+        "add_location": "الموقع (اختياري)",
+        "add_severity": "الخطورة",
+        "add_ms": "رقم بند MS (اختياري)",
+        "add_ecp": "كود ECP (اختياري)",
+        "add_repair": "إجراء الإصلاح (اختياري)",
+        "add_button": "إضافة",
+        "cancel_button": "إلغاء",
+        "name_required": "اسم العيب مطلوب.",
+        "tag_ai": "ذكاء اصطناعي",
+        "tag_manual": "يدوي",
+
+        "reg_title": "سجل العيوب",
+        "reg_sub": "كل إشعار صادرته. صفِّ حسب المصدر، اضغط على صف "
+                   "للتفاصيل، صدّر السجل أو تقرير الإغلاق.",
+        "source": "المصدر",
+        "source_all": "الكل",
+        "source_qc": "داخلي QC",
+        "source_consultant": "استشاري / NCR",
+        "export_register": "تصدير السجل",
+        "closure_report": "تقرير الإغلاق",
+        "refresh": "تحديث",
+        "no_defects_filter": "لا توجد عيوب لهذا الفلتر.",
+        "shown": "المعروض: ",
+        "open_label": "مفتوح: ",
+        "closed_label": "مغلق: ",
+        "no_rows_export": "لا توجد صفوف للتصدير.",
+        "col_uid": "الرقم",
+        "col_zone": "المنطقة",
+        "col_sub": "المقاول الفرعي",
+        "col_count": "#",
+        "col_source": "المصدر",
+        "col_status": "الحالة",
+        "col_created": "التاريخ",
+
+        "dialog_notice": "إشعار ",
+        "dialog_zone": "المنطقة ",
+        "dialog_ncr": "رقم NCR الاستشاري: ",
+        "dialog_note": "ملاحظة: ",
+        "dialog_none": "(لا يوجد)",
+        "dialog_repair": "الإصلاح: ",
+        "dialog_download": "تحميل إشعار PDF",
+        "dialog_close": "تعليم كمغلق",
+        "dialog_dismiss": "إغلاق",
+        "dialog_ncr_input": "رقم NCR الاستشاري (مطلوب للإغلاق)",
+        "dialog_ncr_required": "أدخل رقم NCR الاستشاري أولاً.",
+        "dialog_closed_msg": "تم تعليم العيب كمغلق.",
+        "dialog_not_found": "العيب غير موجود.",
+
+        "sev_low": "منخفض",
+        "sev_medium": "متوسط",
+        "sev_high": "عالي",
+        "sev_critical": "حرج",
+
+        "el_column": "عمود",
+        "el_beam": "كمرة",
+        "el_slab": "بلاطة",
+        "el_wall": "حائط",
+        "el_foundation": "أساس",
+        "el_finishing": "تشطيبات",
+        "disc_structural": "إنشائي",
+        "disc_arch": "معماري",
+        "disc_mep": "كهروميكانيكي",
+        "zone_general": "عام",
+    },
+}
+
+
+def _lang():
+    return LANG["code"]
+
+
+def _t(key):
+    return T[_lang()].get(key, key)
+
+
+def _toggle_lang():
+    LANG["code"] = "ar" if LANG["code"] == "en" else "en"
+    ui.run_javascript('window.location.reload()')
+
+
+# ---- Display helpers (English values in DB, translated for the UI) ----
+def _element_options():
+    return {
+        "column": _t("el_column"),
+        "beam": _t("el_beam"),
+        "slab": _t("el_slab"),
+        "wall": _t("el_wall"),
+        "foundation": _t("el_foundation"),
+        "finishing": _t("el_finishing"),
+    }
+
+
+def _discipline_options():
+    return {
+        "Structural": _t("disc_structural"),
+        "Architectural": _t("disc_arch"),
+        "MEP": _t("disc_mep"),
+    }
+
+
+def _zone_options():
+    return {
+        "A": "A", "B": "B", "C": "C", "D": "D",
+        "General": _t("zone_general"),
+    }
+
+
+def _severity_options():
+    return {
+        "Low": _t("sev_low"),
+        "Medium": _t("sev_medium"),
+        "High": _t("sev_high"),
+        "Critical": _t("sev_critical"),
+    }
+
+
+# =====================================================================
+# Styles
+# =====================================================================
 TXT_TITLE  = "color:#0f172a;font-size:16px;font-weight:700;margin-bottom:4px;"
 TXT_SUB    = "color:#64748b;font-size:13px;margin-bottom:16px;"
+TXT_MUTED  = "color:#64748b;font-size:13px;"
 CARD       = ("background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;"
               "padding:22px;margin-bottom:16px;width:100%;display:block;"
               "box-sizing:border-box;")
@@ -32,17 +384,34 @@ BTN_DANGER  = "background:#fee2e2;color:#b91c1c;font-weight:700;min-width:36px;"
 
 
 def build_defect_ui():
+    # Flip page direction for Arabic
+    if _lang() == "ar":
+        try:
+            ui.query('body').style('direction: rtl; text-align: right;')
+        except Exception:
+            pass
+
     state = {
         "project": db.get_project(),
         "photo_bytes": None,
         "photo_mime": None,
     }
 
+    # ---- Header with toggle ----
+    with ui.element('div').style(
+        "display:flex;justify-content:space-between;align-items:center;"
+        "width:100%;margin-bottom:12px;"
+    ):
+        ui.label(_t("app_title")).style(
+            "color:#0f172a;font-size:20px;font-weight:800;"
+        )
+        ui.button(_t("lang_button"), on_click=_toggle_lang).style(BTN_FLAT)
+
     with ui.tabs().style("width:100%;") as tabs:
-        t_setup = ui.tab("Setup", icon="settings")
-        t_ms = ui.tab("Method Statements", icon="menu_book")
-        t_new = ui.tab("New Defect", icon="add_a_photo")
-        t_reg = ui.tab("Register", icon="list_alt")
+        t_setup = ui.tab(_t("tab_setup"), icon="settings")
+        t_ms = ui.tab(_t("tab_ms"), icon="menu_book")
+        t_new = ui.tab(_t("tab_new"), icon="add_a_photo")
+        t_reg = ui.tab(_t("tab_register"), icon="list_alt")
 
     default = t_new if state["project"] else t_setup
     tabs.value = default
@@ -67,38 +436,37 @@ def _card():
 # =====================================================================
 def _build_setup(state, tabs, next_tab):
     with _card():
-        ui.label("Project Setup").style(TXT_TITLE)
-        ui.label("Fill once. Saved for every future defect notice.").style(TXT_SUB)
+        ui.label(_t("setup_title")).style(TXT_TITLE)
+        ui.label(_t("setup_sub")).style(TXT_SUB)
 
         proj = state["project"] or {}
-        name_in = ui.input("Project Name",
+        name_in = ui.input(_t("project_name"),
                             value=proj.get("name", "")).style("width:100%;")
         with ui.element('div').style(INPUT_ROW):
-            contractor_in = ui.input("Contractor",
+            contractor_in = ui.input(_t("contractor"),
                                       value=proj.get("contractor", "")).style("flex:1;")
-            consultant_in = ui.input("Consultant",
+            consultant_in = ui.input(_t("consultant"),
                                       value=proj.get("consultant", "")).style("flex:1;")
-        location_in = ui.input("Location",
+        location_in = ui.input(_t("location"),
                                 value=proj.get("location", "")).style("width:100%;")
-        engineer_in = ui.input("QC Engineer Name",
+        engineer_in = ui.input(_t("engineer_name"),
                                 value=proj.get("engineer_name", "")).style("width:100%;")
 
         logo_holder = {"bytes": proj.get("logo_bytes")}
-        logo_status = ui.label(
-            "Logo: " + ("loaded" if logo_holder["bytes"] else "not uploaded")
-        ).style(TXT_MUTED)
+        flag = _t("logo_loaded_flag") if logo_holder["bytes"] else _t("logo_missing_flag")
+        logo_status = ui.label(_t("logo_label") + flag).style(TXT_MUTED)
 
         async def handle_logo(e):
             logo_holder["bytes"] = await e.file.read()
-            logo_status.set_text("Logo loaded: " + e.file.name)
+            logo_status.set_text(_t("logo_loaded") + e.file.name)
 
         ui.upload(on_upload=handle_logo, auto_upload=True).style(
             "width:100%;"
-        ).props("flat bordered label='Upload Company Logo (PNG/JPG)'")
+        ).props("flat bordered label='" + _t("upload_logo") + "'")
 
         def save():
             if not name_in.value.strip():
-                ui.notify("Project name is required.", type="warning")
+                ui.notify(_t("project_name_required"), type="warning")
                 return
             db.save_project(
                 name=name_in.value.strip(),
@@ -109,10 +477,10 @@ def _build_setup(state, tabs, next_tab):
                 logo_bytes=logo_holder["bytes"],
             )
             state["project"] = db.get_project()
-            ui.notify("Project saved.", type="positive")
+            ui.notify(_t("project_saved"), type="positive")
             tabs.value = next_tab
 
-        ui.button("Save Project", on_click=save).style(BTN_PRIMARY)
+        ui.button(_t("save_project"), on_click=save).style(BTN_PRIMARY)
 
 
 # =====================================================================
@@ -120,46 +488,44 @@ def _build_setup(state, tabs, next_tab):
 # =====================================================================
 def _build_ms(state):
     with _card():
-        ui.label("Method Statements").style(TXT_TITLE)
-        ui.label(
-            "Upload an MS as PDF, DOCX, or TXT. The tool extracts clauses "
-            "once, then cites them in every defect report."
-        ).style(TXT_SUB)
+        ui.label(_t("ms_title")).style(TXT_TITLE)
+        ui.label(_t("ms_sub")).style(TXT_SUB)
 
         doc_holder = {"bytes": None, "name": ""}
-        doc_status = ui.label("File: not uploaded").style(TXT_MUTED)
+        doc_status = ui.label(_t("ms_file_label")).style(TXT_MUTED)
 
         async def handle_doc(e):
             doc_holder["bytes"] = await e.file.read()
             doc_holder["name"] = e.file.name
             doc_status.set_text(
-                "File loaded: " + e.file.name + " (" +
+                _t("ms_file_loaded") + e.file.name + " (" +
                 str(len(doc_holder["bytes"]) // 1024) + " KB)"
             )
 
         ui.upload(on_upload=handle_doc, auto_upload=True).style(
             "width:100%;"
         ).props("flat bordered accept=.pdf,.docx,.doc,.txt,.md "
-                "label='Upload MS (PDF / DOCX / TXT)'")
+                "label='" + _t("ms_upload") + "'")
 
         with ui.element('div').style(INPUT_ROW):
-            ms_num_in = ui.input("MS Number", value="MS-01").style("flex:1;")
-            title_in = ui.input("Title", value="Reinforcement").style("flex:1;")
+            ms_num_in = ui.input(_t("ms_number"), value="MS-01").style("flex:1;")
+            title_in = ui.input(_t("ms_doc_title"),
+                                 value="Reinforcement").style("flex:1;")
         with ui.element('div').style(INPUT_ROW):
-            element_in = ui.select(ELEMENT_TYPES, value="column",
-                                    label="Element Type").style("flex:1;")
-            disc_in = ui.select(DISCIPLINES, value="Structural",
-                                 label="Discipline").style("flex:1;")
+            element_in = ui.select(_element_options(), value="column",
+                                    label=_t("element_type")).style("flex:1;")
+            disc_in = ui.select(_discipline_options(), value="Structural",
+                                 label=_t("discipline")).style("flex:1;")
 
         clause_preview = ui.element('div').style("width:100%;")
 
         async def extract():
             if not doc_holder["bytes"]:
-                ui.notify("Upload the MS file first.", type="warning")
+                ui.notify(_t("upload_ms_first"), type="warning")
                 return
             clause_preview.clear()
             with clause_preview:
-                ui.label("Extracting clauses via AI...").style(TXT_MUTED)
+                ui.label(_t("extracting")).style(TXT_MUTED)
             result = await svc.extract_clauses_from_pdf(
                 doc_holder["bytes"], call_gemini_json, doc_holder["name"]
             )
@@ -167,7 +533,7 @@ def _build_ms(state):
 
             if result.get("error"):
                 with clause_preview:
-                    ui.label("Error: " + str(result["error"])).style(
+                    ui.label(_t("error_prefix") + str(result["error"])).style(
                         "color:#dc2626;font-size:13px;"
                     )
                 return
@@ -177,8 +543,8 @@ def _build_ms(state):
 
             with clause_preview:
                 ui.label(
-                    "Extracted " + str(len(clauses)) +
-                    " clauses — confirm to save:"
+                    _t("extracted_prefix") + str(len(clauses)) +
+                    _t("extracted_suffix")
                 ).style(TXT_TITLE)
                 for cl in clauses:
                     with ui.element('div').style(ITEM_BOX):
@@ -189,7 +555,7 @@ def _build_ms(state):
 
                 def confirm_save():
                     if not state.get("project"):
-                        ui.notify("Complete Setup first.", type="warning")
+                        ui.notify(_t("complete_setup_first"), type="warning")
                         return
                     db.save_ms(
                         project_id=state["project"]["id"],
@@ -200,18 +566,17 @@ def _build_ms(state):
                         pdf_bytes=doc_holder["bytes"],
                         clauses=clauses,
                     )
-                    ui.notify("MS saved to library.", type="positive")
+                    ui.notify(_t("ms_saved"), type="positive")
                     clause_preview.clear()
                     _refresh_ms_list(state)
 
-                ui.button("Confirm & Save MS", on_click=confirm_save).style(
-                    BTN_SUCCESS
-                )
+                ui.button(_t("confirm_save_ms"),
+                          on_click=confirm_save).style(BTN_SUCCESS)
 
-        ui.button("Extract Clauses via AI", on_click=extract).style(BTN_PRIMARY)
+        ui.button(_t("extract_clauses"), on_click=extract).style(BTN_PRIMARY)
 
     with _card():
-        ui.label("Saved Method Statements").style(TXT_TITLE)
+        ui.label(_t("saved_ms_title")).style(TXT_TITLE)
         state["ms_list_container"] = ui.element('div').style("width:100%;")
         _refresh_ms_list(state)
 
@@ -223,12 +588,12 @@ def _refresh_ms_list(state):
     container.clear()
     if not state.get("project"):
         with container:
-            ui.label("No project set up yet.").style(TXT_MUTED)
+            ui.label(_t("no_project")).style(TXT_MUTED)
         return
     ms_list = db.list_ms(state["project"]["id"])
     with container:
         if not ms_list:
-            ui.label("No method statements yet.").style(TXT_MUTED)
+            ui.label(_t("no_ms")).style(TXT_MUTED)
             return
         for m in ms_list:
             with ui.element('div').style(ITEM_BOX):
@@ -237,7 +602,7 @@ def _refresh_ms_list(state):
                 )
                 ui.label(
                     m["element_type"] + " · " + m["discipline"] + " · " +
-                    str(len(m["clauses"])) + " clauses"
+                    str(len(m["clauses"])) + _t("clauses_word")
                 ).style(TXT_MUTED)
 
 
@@ -246,14 +611,11 @@ def _refresh_ms_list(state):
 # =====================================================================
 def _build_new_defect(state):
     with _card():
-        ui.label("New Defect").style(TXT_TITLE)
-        ui.label(
-            "Take a photo, add a note, let AI propose the defects, "
-            "then tick the real ones. Add more manually if needed."
-        ).style(TXT_SUB)
+        ui.label(_t("new_defect_title")).style(TXT_TITLE)
+        ui.label(_t("new_defect_sub")).style(TXT_SUB)
 
         photo_holder = {"bytes": None, "mime": None}
-        photo_status = ui.label("Photo: not uploaded").style(TXT_MUTED)
+        photo_status = ui.label(_t("photo_label")).style(TXT_MUTED)
 
         async def handle_photo(e):
             data = await e.file.read()
@@ -263,22 +625,22 @@ def _build_new_defect(state):
                 else "image/png")
             state["photo_bytes"] = data
             state["photo_mime"] = photo_holder["mime"]
-            photo_status.set_text("Photo: " + e.file.name)
+            photo_status.set_text(_t("photo_label") + " " + e.file.name)
 
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
             "width:100%;"
-        ).props("flat bordered accept=image/* label='Upload site photo'")
+        ).props("flat bordered accept=image/* label='" + _t("photo_upload") + "'")
 
         note_in = ui.textarea(
-            label="Note (optional)",
-            placeholder="e.g. crack at column C3 base"
+            label=_t("note_label"),
+            placeholder=_t("note_placeholder")
         ).style("width:100%;")
 
         with ui.element('div').style(INPUT_ROW):
-            zone_in = ui.select(ZONES, value="A",
-                                 label="Zone").style("flex:1;")
-            element_in = ui.select(ELEMENT_TYPES, value="column",
-                                    label="Element").style("flex:1;")
+            zone_in = ui.select(_zone_options(), value="A",
+                                 label=_t("zone")).style("flex:1;")
+            element_in = ui.select(_element_options(), value="column",
+                                    label=_t("element")).style("flex:1;")
 
         candidates_container = ui.element('div').style(
             "width:100%;margin-top:16px;"
@@ -296,8 +658,10 @@ def _build_new_defect(state):
                     ui.checkbox(value=item.get("_sel", True),
                                  on_change=_make_toggle(item))
                     with ui.element('div').style("flex:1;min-width:0;"):
-                        tag = "MANUAL" if item.get("_manual") else "AI"
-                        tag_color = "#059669" if tag == "MANUAL" else "#2563eb"
+                        if item.get("_manual"):
+                            tag, tag_color = _t("tag_manual"), "#059669"
+                        else:
+                            tag, tag_color = _t("tag_ai"), "#2563eb"
                         ui.label(tag).style(
                             "color:" + tag_color + ";font-size:10px;"
                             "font-weight:700;display:inline-block;"
@@ -310,7 +674,7 @@ def _build_new_defect(state):
                             "margin-bottom:6px;"
                         )
                         if item.get("location_hint"):
-                            ui.label("Location: " + str(item["location_hint"])).style(
+                            ui.label(str(item["location_hint"])).style(
                                 "color:#475569;font-size:13px;"
                                 "display:block;margin-bottom:3px;"
                             )
@@ -326,11 +690,16 @@ def _build_new_defect(state):
                                 "margin-bottom:3px;"
                             )
                         if item.get("repair_action"):
-                            ui.label("Repair: " + str(item["repair_action"])).style(
+                            ui.label(_t("dialog_repair") +
+                                     str(item["repair_action"])).style(
                                 "color:#64748b;font-size:13px;"
                                 "display:block;margin-bottom:3px;"
                             )
-                        ui.label("Severity: " + str(item.get("severity", ""))).style(
+                        sev_display = _severity_options().get(
+                            item.get("severity", "Medium"),
+                            item.get("severity", "Medium")
+                        )
+                        ui.label(sev_display).style(
                             "color:#64748b;font-size:12px;display:block;"
                         )
                     def _make_remove(it, lst, fn):
@@ -347,22 +716,20 @@ def _build_new_defect(state):
             with ui.dialog() as dlg, ui.card().style(
                 "background:#ffffff;padding:22px;min-width:420px;max-width:95vw;"
             ):
-                ui.label("Add defect manually").style(TXT_TITLE)
-                ui.label("AI missed something? Add it here.").style(TXT_SUB)
+                ui.label(_t("add_title")).style(TXT_TITLE)
+                ui.label(_t("add_sub")).style(TXT_SUB)
 
-                name_in = ui.input("Defect name").style("width:100%;")
-                loc_in = ui.input("Location hint (optional)").style("width:100%;")
-                sev_in = ui.select(
-                    ["Low", "Medium", "High", "Critical"],
-                    value="Medium", label="Severity"
-                ).style("width:100%;")
-                ms_in = ui.input("MS clause id (optional)").style("width:100%;")
-                ecp_in = ui.input("ECP code (optional)").style("width:100%;")
-                rep_in = ui.input("Repair action (optional)").style("width:100%;")
+                name_in = ui.input(_t("add_name")).style("width:100%;")
+                loc_in = ui.input(_t("add_location")).style("width:100%;")
+                sev_in = ui.select(_severity_options(), value="Medium",
+                                    label=_t("add_severity")).style("width:100%;")
+                ms_in = ui.input(_t("add_ms")).style("width:100%;")
+                ecp_in = ui.input(_t("add_ecp")).style("width:100%;")
+                rep_in = ui.input(_t("add_repair")).style("width:100%;")
 
                 def _save():
                     if not name_in.value.strip():
-                        ui.notify("Defect name required.", type="warning")
+                        ui.notify(_t("name_required"), type="warning")
                         return
                     manual_list.append({
                         "name": name_in.value.strip(),
@@ -382,16 +749,16 @@ def _build_new_defect(state):
                 with ui.element('div').style(
                     "display:flex;gap:8px;margin-top:16px;"
                 ):
-                    ui.button("Add", on_click=_save).style(BTN_SUCCESS)
-                    ui.button("Cancel", on_click=dlg.close).style(BTN_FLAT)
+                    ui.button(_t("add_button"), on_click=_save).style(BTN_SUCCESS)
+                    ui.button(_t("cancel_button"), on_click=dlg.close).style(BTN_FLAT)
             dlg.open()
 
         async def analyze():
             if not photo_holder["bytes"]:
-                ui.notify("Upload a photo first.", type="warning")
+                ui.notify(_t("upload_photo_first"), type="warning")
                 return
             if not state.get("project"):
-                ui.notify("Complete Setup first.", type="warning")
+                ui.notify(_t("complete_setup_first"), type="warning")
                 return
 
             ms_clauses = db.get_clauses_for_element(
@@ -400,8 +767,8 @@ def _build_new_defect(state):
             candidates_container.clear()
             with candidates_container:
                 ui.label(
-                    "Analyzing photo... " + str(len(ms_clauses)) +
-                    " MS clauses loaded."
+                    _t("analyzing") + str(len(ms_clauses)) +
+                    _t("ms_clauses_loaded")
                 ).style(TXT_MUTED)
 
             result = await svc.analyze_defect_photo(
@@ -416,12 +783,12 @@ def _build_new_defect(state):
             if result.get("error"):
                 candidates_container.clear()
                 with candidates_container:
-                    ui.label("Error: " + str(result["error"])).style(
+                    ui.label(_t("error_prefix") + str(result["error"])).style(
                         "color:#dc2626;font-size:13px;"
                     )
                     raw_txt = result.get("raw", "")
                     if raw_txt:
-                        ui.label("Raw AI output (debug):").style(TXT_MUTED)
+                        ui.label(_t("raw_debug")).style(TXT_MUTED)
                         ui.label(raw_txt).style(
                             "color:#7c2d12;font-size:11px;"
                             "font-family:monospace;white-space:pre-wrap;"
@@ -441,13 +808,11 @@ def _build_new_defect(state):
                 all_items = candidates + manual_list
                 with candidates_container:
                     if not all_items:
-                        ui.label(
-                            "AI found no defects. Add one manually below."
-                        ).style(TXT_MUTED)
+                        ui.label(_t("ai_found_none")).style(TXT_MUTED)
                     else:
                         ui.label(
-                            "AI found " + str(len(candidates)) +
-                            " candidate(s). Tick the real ones:"
+                            _t("ai_found_prefix") + str(len(candidates)) +
+                            _t("ai_found_suffix")
                         ).style(TXT_TITLE)
                         for c in candidates:
                             _render_card(c, candidates, render_all)
@@ -457,43 +822,42 @@ def _build_new_defect(state):
                     def _add_click():
                         _open_add_dialog(manual_list, render_all)
 
-                    ui.button("+ Add defect manually",
+                    ui.button(_t("add_manual"),
                               on_click=_add_click).style(
                         BTN_FLAT + "margin-top:8px;"
                     )
 
-                    ui.label("Notice details").style(
+                    ui.label(_t("notice_details")).style(
                         TXT_TITLE + "margin-top:24px;"
                     )
-                    ui.label("Who gets the notice, and by when.").style(TXT_SUB)
+                    ui.label(_t("notice_details_sub")).style(TXT_SUB)
 
                     sub_in = ui.input(
-                        "Send to Subcontractor",
-                        placeholder="e.g. Al-Ahram Steel Fixing"
+                        _t("send_to_sub"),
+                        placeholder=_t("send_to_sub_placeholder")
                     ).style("width:100%;")
 
                     with ui.element('div').style(INPUT_ROW):
                         deadline_in = ui.select(
                             [1, 2, 3, 5, 7, 14], value=3,
-                            label="Deadline (days)"
+                            label=_t("deadline")
                         ).style("flex:1;")
                         raise_in = ui.select(
-                            {"qc_internal": "QC Internal",
-                             "consultant": "Consultant / NCR"},
+                            {"qc_internal": _t("raised_qc"),
+                             "consultant": _t("raised_consultant")},
                             value="qc_internal",
-                            label="Raised as"
+                            label=_t("raised_as")
                         ).style("flex:1;")
 
                     def generate():
                         selected = [c for c in all_items
                                     if c.get("_sel", True)]
                         if not selected:
-                            ui.notify("Tick at least one defect.",
+                            ui.notify(_t("tick_at_least_one"),
                                        type="warning")
                             return
                         if not sub_in.value.strip():
-                            ui.notify("Enter the subcontractor name.",
-                                       type="warning")
+                            ui.notify(_t("enter_sub"), type="warning")
                             return
 
                         clean_selected = []
@@ -530,18 +894,18 @@ def _build_new_defect(state):
                             selected=clean_selected,
                             notice_pdf=pdf_bytes,
                         )
-                        ui.notify("Notice " + notice_uid + " saved.",
+                        ui.notify(_t("notice_saved") + notice_uid,
                                    type="positive")
                         ui.download(pdf_bytes, filename=notice_uid + ".pdf")
 
-                    ui.button("Generate Notice PDF",
+                    ui.button(_t("generate_pdf"),
                               on_click=generate).style(
                         BTN_SUCCESS + "margin-top:12px;"
                     )
 
             render_all()
 
-        ui.button("Analyze with AI", on_click=analyze).style(
+        ui.button(_t("analyze"), on_click=analyze).style(
             BTN_PRIMARY + "margin-top:12px;"
         )
 
@@ -551,11 +915,8 @@ def _build_new_defect(state):
 # =====================================================================
 def _build_register(state):
     with _card():
-        ui.label("Defect Register").style(TXT_TITLE)
-        ui.label(
-            "Every notice you have issued. Filter by source, click a row "
-            "for detail, export the register or the closure report."
-        ).style(TXT_SUB)
+        ui.label(_t("reg_title")).style(TXT_TITLE)
+        ui.label(_t("reg_sub")).style(TXT_SUB)
 
         table_container = ui.element('div').style("width:100%;")
         fstate = {"raise_filter": "all"}
@@ -564,7 +925,7 @@ def _build_register(state):
             table_container.clear()
             if not state.get("project"):
                 with table_container:
-                    ui.label("No project set up yet.").style(TXT_MUTED)
+                    ui.label(_t("no_project")).style(TXT_MUTED)
                 return
 
             rf = fstate["raise_filter"]
@@ -578,11 +939,11 @@ def _build_register(state):
                     "display:flex;gap:10px;align-items:center;"
                     "width:100%;margin-bottom:12px;flex-wrap:wrap;"
                 ):
-                    ui.label("Source:").style(TXT_MUTED)
+                    ui.label(_t("source")).style(TXT_MUTED)
                     filt = ui.select(
-                        {"all": "All",
-                         "qc_internal": "QC Internal",
-                         "consultant": "Consultant / NCR"},
+                        {"all": _t("source_all"),
+                         "qc_internal": _t("source_qc"),
+                         "consultant": _t("source_consultant")},
                         value=rf,
                     ).style("min-width:180px;")
 
@@ -596,7 +957,7 @@ def _build_register(state):
 
                     def export_register():
                         if not rows:
-                            ui.notify("No rows to export.", type="warning")
+                            ui.notify(_t("no_rows_export"), type="warning")
                             return
                         pdf = svc.build_register_pdf(
                             state["project"], rows,
@@ -606,7 +967,7 @@ def _build_register(state):
 
                     def export_closure():
                         if not rows:
-                            ui.notify("No rows to export.", type="warning")
+                            ui.notify(_t("no_rows_export"), type="warning")
                             return
                         pdf = svc.build_closure_pdf(
                             state["project"], rows,
@@ -614,35 +975,37 @@ def _build_register(state):
                         )
                         ui.download(pdf, filename="closure_report.pdf")
 
-                    ui.button("Export Register",
+                    ui.button(_t("export_register"),
                               on_click=export_register).style(BTN_FLAT)
-                    ui.button("Closure Report",
+                    ui.button(_t("closure_report"),
                               on_click=export_closure).style(BTN_PRIMARY)
 
                 if not rows:
-                    ui.label("No defects for this filter.").style(TXT_MUTED)
+                    ui.label(_t("no_defects_filter")).style(TXT_MUTED)
                     return
 
                 open_count = sum(1 for r in rows if r["status"] == "open")
                 ui.label(
-                    "Shown: " + str(len(rows)) +
-                    "  ·  Open: " + str(open_count) +
-                    "  ·  Closed: " + str(len(rows) - open_count)
+                    _t("shown") + str(len(rows)) +
+                    "  ·  " + _t("open_label") + str(open_count) +
+                    "  ·  " + _t("closed_label") + str(len(rows) - open_count)
                 ).style(TXT_TITLE)
 
                 table = ui.table(
                     columns=[
-                        {"name": "uid", "label": "UID",
+                        {"name": "uid", "label": _t("col_uid"),
                          "field": "uid", "align": "left"},
-                        {"name": "zone", "label": "Zone", "field": "zone"},
-                        {"name": "sub", "label": "Subcontractor",
+                        {"name": "zone", "label": _t("col_zone"),
+                         "field": "zone"},
+                        {"name": "sub", "label": _t("col_sub"),
                          "field": "subcontractor", "align": "left"},
-                        {"name": "count", "label": "#", "field": "count"},
-                        {"name": "raise_type", "label": "Source",
+                        {"name": "count", "label": _t("col_count"),
+                         "field": "count"},
+                        {"name": "raise_type", "label": _t("col_source"),
                          "field": "raise_type"},
-                        {"name": "status", "label": "Status",
+                        {"name": "status", "label": _t("col_status"),
                          "field": "status"},
-                        {"name": "created", "label": "Created",
+                        {"name": "created", "label": _t("col_created"),
                          "field": "created_at"},
                     ],
                     rows=rows,
@@ -657,33 +1020,34 @@ def _build_register(state):
 
                 table.on("rowClick", on_row_click)
 
-        ui.button("Refresh", on_click=refresh).style(BTN_FLAT)
+        ui.button(_t("refresh"), on_click=refresh).style(BTN_FLAT)
         refresh()
 
 
 def _show_defect_dialog(defect_id, on_close_cb):
     d = db.get_defect(defect_id)
     if not d:
-        ui.notify("Defect not found.", type="negative")
+        ui.notify(_t("dialog_not_found"), type="negative")
         return
 
     is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
+    source_label = _t("source_consultant") if is_consultant else _t("source_qc")
 
     with ui.dialog() as dialog, ui.card().style(
         "background:#ffffff;padding:24px;max-width:880px;width:100%;"
     ):
-        ui.label("Notice " + d["uid"]).style(
+        ui.label(_t("dialog_notice") + d["uid"]).style(
             "color:#0f172a;font-size:18px;font-weight:700;"
         )
         ui.label(
-            "Zone " + str(d["zone"]) + " · " +
+            _t("dialog_zone") + str(d["zone"]) + " · " +
             str(d["subcontractor"]) + " · " +
-            ("Consultant / NCR" if is_consultant else "QC Internal") + " · " +
+            source_label + " · " +
             d["status"].upper()
         ).style(TXT_MUTED)
 
         if d.get("consultant_ncr"):
-            ui.label("Consultant NCR: " + str(d["consultant_ncr"])).style(
+            ui.label(_t("dialog_ncr") + str(d["consultant_ncr"])).style(
                 "color:#b45309;font-size:13px;font-weight:600;"
             )
 
@@ -697,7 +1061,8 @@ def _show_defect_dialog(defect_id, on_close_cb):
                     "width:280px;border-radius:10px;border:1px solid #e2e8f0;"
                 )
             with ui.element('div').style("flex:1;"):
-                ui.label("Note: " + str(d["note"] or "(none)")).style(TXT_MUTED)
+                ui.label(_t("dialog_note") +
+                         str(d["note"] or _t("dialog_none"))).style(TXT_MUTED)
                 for i, s in enumerate(d["selected"], 1):
                     with ui.element('div').style(ITEM_BOX):
                         ui.label(
@@ -714,7 +1079,8 @@ def _show_defect_dialog(defect_id, on_close_cb):
                                 "color:#475569;font-size:13px;font-style:italic;"
                             )
                         if s.get("repair_action"):
-                            ui.label("Repair: " + str(s["repair_action"])).style(
+                            ui.label(_t("dialog_repair") +
+                                     str(s["repair_action"])).style(
                                 "color:#64748b;font-size:13px;"
                             )
 
@@ -722,16 +1088,16 @@ def _show_defect_dialog(defect_id, on_close_cb):
 
         ncr_in = None
         if is_consultant and d["status"] == "open":
-            ncr_in = ui.input(
-                "Consultant NCR Number (required to close)"
-            ).style("width:100%;margin-top:6px;")
+            ncr_in = ui.input(_t("dialog_ncr_input")).style(
+                "width:100%;margin-top:6px;"
+            )
 
         with ui.element('div').style(
             "display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"
         ):
             if d.get("notice_pdf"):
                 ui.button(
-                    "Download Notice PDF",
+                    _t("dialog_download"),
                     on_click=lambda: ui.download(
                         d["notice_pdf"], filename=d["uid"] + ".pdf"
                     )
@@ -741,10 +1107,8 @@ def _show_defect_dialog(defect_id, on_close_cb):
                 def do_close():
                     if is_consultant:
                         if not ncr_in or not ncr_in.value.strip():
-                            ui.notify(
-                                "Enter the consultant NCR number first.",
-                                type="warning"
-                            )
+                            ui.notify(_t("dialog_ncr_required"),
+                                       type="warning")
                             return
                         db.close_defect(
                             defect_id,
@@ -752,12 +1116,13 @@ def _show_defect_dialog(defect_id, on_close_cb):
                         )
                     else:
                         db.close_defect(defect_id)
-                    ui.notify("Defect marked closed.", type="positive")
+                    ui.notify(_t("dialog_closed_msg"), type="positive")
                     dialog.close()
                     on_close_cb()
 
-                ui.button("Mark Closed", on_click=do_close).style(BTN_SUCCESS)
+                ui.button(_t("dialog_close"), on_click=do_close).style(BTN_SUCCESS)
 
-            ui.button("Close", on_click=dialog.close).style(BTN_FLAT)
+            ui.button(_t("dialog_dismiss"),
+                      on_click=dialog.close).style(BTN_FLAT)
 
     dialog.open()
