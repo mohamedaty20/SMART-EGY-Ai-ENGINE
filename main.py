@@ -3,8 +3,10 @@ main.py — Entry with auth, billing, admin, reset, PWA.
 """
 import os
 import io
+import json as _json
 from nicegui import ui, app
-from fastapi import Response
+from fastapi import Request
+from fastapi.responses import Response, RedirectResponse
 
 from services import auth_service as auth
 from services import billing_db as bdb
@@ -93,7 +95,6 @@ def _make_icon(size):
 
 @app.get('/manifest.json')
 def manifest_route():
-    import json as _json
     return Response(content=_json.dumps(MANIFEST),
                      media_type="application/manifest+json")
 
@@ -171,9 +172,41 @@ def app_route():
     if not uid:
         ui.navigate.to('/login')
         return
-    active, plan, _ = bdb.is_active(uid)
+    active, plan, reason = bdb.is_active(uid)
+    if not active:
+        _render_expired(plan, reason)
+        return
     from ui.defect_page import build_defect_ui
     build_defect_ui(uid)
+
+
+def _render_expired(plan, reason):
+    with ui.column().classes("w-full min-h-screen items-center "
+                              "justify-center").style(
+        "background:#0b0b0b;color:#e8e8e8;"
+        "font-family:'JetBrains Mono',monospace;"
+    ):
+        ui.icon("lock_clock").style("font-size:52px;color:#fbbf24;")
+        ui.label("Subscription expired").style(
+            "font-size:22px;font-weight:700;margin-top:16px;")
+        ui.label("Your " + str(plan) + " plan has ended "
+                  "(" + str(reason) + ").").style(
+            "color:#b8b8b8;font-size:13px;margin-top:6px;")
+        ui.label("Your data is safe. Renew to continue.").style(
+            "color:#808080;font-size:11px;margin-top:2px;")
+        ui.element('div').style("height:22px;")
+        with ui.row().style("gap:8px;"):
+            ui.button("View plans",
+                      on_click=lambda: ui.navigate.to("/pricing")).style(
+                "background:#5eead4;color:#0b0b0b;font-weight:700;"
+                "border-radius:3px;padding:0 22px;min-height:40px;"
+                "font-size:12px;text-transform:none;")
+            ui.button("Log out",
+                      on_click=lambda: ui.navigate.to("/logout")).style(
+                "background:#161616;color:#e8e8e8;"
+                "border:1px solid #262626;border-radius:3px;"
+                "padding:0 22px;min-height:40px;font-size:12px;"
+                "text-transform:none;")
 
 
 # =====================================================================
@@ -201,20 +234,44 @@ def payment_ok(provider: str = "", plan: str = "", uid: str = ""):
     except Exception:
         ui.navigate.to('/pricing')
         return
+
     if provider == "demo":
         pay.complete_demo_payment(user_id, plan, months=1)
         _render_paid("Demo", plan)
         return
-    if provider == "stripe":
-        bdb.apply_payment(user_id, plan, provider="stripe",
-                          provider_ref="checkout-" + str(user_id),
-                          months=1, amount=0, currency="USD")
-        _render_paid("Stripe", plan)
+
+    # Paymob activates via /payment/paymob/callback (HMAC-verified).
+    # Stripe requires a server-side session lookup — do NOT trust this URL.
+    if provider in ("stripe", "paymob"):
+        _render_pending(provider, plan)
         return
-    if provider == "paymob":
-        _render_paid("Paymob", plan)
-        return
+
     _render_paid(provider, plan)
+
+
+def _render_pending(provider, plan_id):
+    """Shown when a payment is awaiting server-side confirmation."""
+    plan = bdb.PLANS.get(plan_id, {})
+    with ui.column().classes("w-full min-h-screen items-center "
+                              "justify-center").style(
+        "background:#0b0b0b;color:#e8e8e8;"
+        "font-family:'JetBrains Mono',monospace;"
+    ):
+        ui.icon("hourglass_top").style("font-size:52px;color:#fbbf24;")
+        ui.label("Confirming payment...").style(
+            "font-size:22px;font-weight:700;margin-top:16px;")
+        ui.label("Plan: " + str(plan.get("name", plan_id))).style(
+            "color:#b8b8b8;font-size:13px;margin-top:4px;")
+        ui.label("Provider: " + str(provider)).style(
+            "color:#808080;font-size:11px;margin-top:2px;")
+        ui.label("Your plan will activate when the provider confirms.").style(
+            "color:#808080;font-size:11px;margin-top:8px;")
+        ui.element('div').style("height:20px;")
+        ui.button("Open app",
+                  on_click=lambda: ui.navigate.to("/app")).style(
+            "background:#5eead4;color:#0b0b0b;font-weight:700;"
+            "border-radius:3px;padding:0 24px;min-height:40px;"
+            "font-size:12px;text-transform:none;")
 
 
 def _render_paid(provider, plan_id):
@@ -257,20 +314,24 @@ def payment_demo(plan: str = "", months: str = "1", uid: str = ""):
     _render_paid("Demo", plan)
 
 
-@ui.page('/payment/paymob/callback')
-def paymob_callback(request=None, **kwargs):
+# ---------------------------------------------------------------------
+# PAYMOB CALLBACK — real FastAPI route (NOT a NiceGUI page)
+# ---------------------------------------------------------------------
+@app.get('/payment/paymob/callback')
+def paymob_callback(request: Request):
     try:
         params = dict(request.query_params)
     except Exception:
         params = {}
+
     if not pay.paymob_verify_hmac(params):
-        ui.label("Signature check failed.").style(
-            "color:#f87171;font-family:'JetBrains Mono',monospace;")
-        return
+        return Response(content="Signature check failed.", status_code=403,
+                         media_type="text/plain")
+
     success = str(params.get("success", "")).lower() in ("true", "1")
     if not success:
-        ui.navigate.to('/pricing?cancel=1')
-        return
+        return RedirectResponse(url="/pricing?cancel=1")
+
     moid = str(params.get("merchant_order_id", ""))
     plan_id = ""
     user_id = None
@@ -281,15 +342,20 @@ def paymob_callback(request=None, **kwargs):
             plan_id = parts[1] if len(parts) > 1 else ""
     except Exception:
         pass
+
     if not user_id or plan_id not in bdb.PLANS:
-        ui.navigate.to('/pricing')
-        return
-    bdb.apply_payment(user_id, plan_id, provider="paymob",
-                      provider_ref=str(params.get("id", "")),
-                      months=1,
-                      amount=float(params.get("amount_cents", 0)) / 100.0,
-                      currency=str(params.get("currency", "EGP")))
-    _render_paid("Paymob", plan_id)
+        return RedirectResponse(url="/pricing")
+
+    bdb.apply_payment(
+        user_id, plan_id, provider="paymob",
+        provider_ref=str(params.get("id", "")),
+        months=1,
+        amount=float(params.get("amount_cents", 0)) / 100.0,
+        currency=str(params.get("currency", "EGP")))
+
+    # Paymob expects a 200 on the callback; send them to the success page.
+    return RedirectResponse(url="/payment/ok?provider=paymob&plan=" +
+                                 plan_id + "&uid=" + str(user_id))
 
 
 if __name__ in {"__main__", "__mp_main__"}:
