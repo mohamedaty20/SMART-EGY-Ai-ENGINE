@@ -1,6 +1,6 @@
 """
 services/defect_service.py — Full file.
-Arabic + monospace support. Context-mismatch aware defect analysis.
+Adds analyze_defect_text() for text-only defect entry (no photo).
 """
 
 import io
@@ -17,7 +17,6 @@ import asyncio
 # =====================================================================
 _FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
 
-# Amiri — Arabic + Latin
 _FONT_REG_PATH = os.path.join(_FONT_DIR, "Amiri-Regular.ttf")
 _FONT_BOLD_PATH = os.path.join(_FONT_DIR, "Amiri-Bold.ttf")
 _FONT_REG_URLS = [
@@ -29,7 +28,6 @@ _FONT_BOLD_URLS = [
     "https://github.com/aliftype/amiri/raw/main/Amiri-Bold.ttf",
 ]
 
-# JetBrains Mono — Latin monospace
 _MONO_REG_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Regular.ttf")
 _MONO_BOLD_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Bold.ttf")
 _MONO_REG_URLS = [
@@ -80,7 +78,6 @@ def _ensure_fonts():
         print("[defect] reportlab font import failed: " + repr(e))
         return
 
-    # Amiri (Arabic + Latin)
     if not os.path.exists(_FONT_REG_PATH):
         for u in _FONT_REG_URLS:
             if _download_font(u, _FONT_REG_PATH):
@@ -101,7 +98,6 @@ def _ensure_fonts():
     except Exception as e:
         print("[defect] Amiri registration failed: " + repr(e))
 
-    # JetBrains Mono (Latin monospace)
     if not os.path.exists(_MONO_REG_PATH):
         for u in _MONO_REG_URLS:
             if _download_font(u, _MONO_REG_PATH):
@@ -150,7 +146,6 @@ def _fix(text):
 
 
 def _mono_font(text, bold=False):
-    """Return mono font name, falling back to Amiri if text has Arabic."""
     if _has_arabic(text):
         return _FONT_BOLD if bold else _FONT_NAME
     return _MONO_BOLD if bold else _MONO_NAME
@@ -188,9 +183,6 @@ def _shrink_image(photo_bytes, max_side=1024):
         return photo_bytes
 
 
-# =====================================================================
-# FILE TYPE VALIDATION
-# =====================================================================
 def _detect_image_type(data):
     if not data or len(data) < 8:
         return None
@@ -329,8 +321,7 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
 
     try:
         text = await asyncio.to_thread(
-            extract_document_text, pdf_bytes, filename
-        )
+            extract_document_text, pdf_bytes, filename)
     except Exception as e:
         print("[defect] document parse failed: " + repr(e))
         return {"clauses": [], "raw_text_length": 0,
@@ -344,8 +335,6 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
                          "(legacy), save it as .docx and re-upload."}
 
     text = text[:15000]
-    print("[defect] sending " + str(len(text)) + " chars to Gemini")
-
     prompt = _CLAUSE_PROMPT_TEMPLATE.replace("__MS_TEXT__", text)
 
     try:
@@ -354,8 +343,6 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
         print("[defect] AI call failed: " + repr(e))
         return {"clauses": [], "raw_text_length": len(text),
                 "error": "AI call failed: " + repr(e)}
-
-    print("[defect] AI responded, " + str(len(raw or "")) + " chars")
 
     data = _parse_json_object(raw)
     if not data:
@@ -371,12 +358,12 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
             continue
         clauses.append({"id": cid, "title": title, "text": body})
 
-    print("[defect] extracted " + str(len(clauses)) + " clauses from MS")
+    print("[defect] extracted " + str(len(clauses)) + " clauses")
     return {"clauses": clauses, "raw_text_length": len(text), "error": None}
 
 
 # =====================================================================
-# HARDCODED ECP EXCERPTS
+# ECP EXCERPTS
 # =====================================================================
 _ECP_BY_ELEMENT = {
     "column": [
@@ -429,8 +416,26 @@ def get_ecp_excerpts(element_type):
     return _ECP_BY_ELEMENT.get(key, _ECP_BY_ELEMENT.get("column", []))
 
 
+def _format_ms_clauses(ms_clauses):
+    if not ms_clauses:
+        return "(none provided)"
+    lines = []
+    for c in ms_clauses[:30]:
+        lines.append("  id=" + str(c.get("id", "?")) +
+                     " - " + str(c.get("title", "")) +
+                     " : " + str(c.get("text", ""))[:120])
+    return "\n".join(lines)
+
+
+def _format_ecp(ecp_excerpts):
+    if not ecp_excerpts:
+        return "(none provided)"
+    return "\n".join("  " + e["code"] + " - " + e["text"]
+                     for e in ecp_excerpts[:10])
+
+
 # =====================================================================
-# DEFECT ANALYSIS — with strict context matching
+# DEFECT ANALYSIS — PHOTO
 # =====================================================================
 _DEFECT_PROMPT = """You are a senior QC engineer inspecting a construction site photo.
 
@@ -459,7 +464,7 @@ When the MS clauses DO match the photo:
 - Set "context_mismatch" to false
 
 NEVER invent a clause match. It is far better to return zero citations than
-a wrong one. Do not force-fit a clause onto an unrelated photo.
+a wrong one.
 
 OBSERVATION CHECKLIST — look for these in the photo:
 - Cracks (any pattern, direction, width)
@@ -511,24 +516,6 @@ RULES:
 """
 
 
-def _format_ms_clauses(ms_clauses):
-    if not ms_clauses:
-        return "(none provided)"
-    lines = []
-    for c in ms_clauses[:30]:
-        lines.append("  id=" + str(c.get("id", "?")) +
-                     " - " + str(c.get("title", "")) +
-                     " : " + str(c.get("text", ""))[:120])
-    return "\n".join(lines)
-
-
-def _format_ecp(ecp_excerpts):
-    if not ecp_excerpts:
-        return "(none provided)"
-    return "\n".join("  " + e["code"] + " - " + e["text"]
-                     for e in ecp_excerpts[:10])
-
-
 def _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts):
     return (_DEFECT_PROMPT
             .replace("__NOTE__", note or "(none)")
@@ -553,9 +540,7 @@ async def analyze_defect_photo(photo_bytes,
     ecp_excerpts = get_ecp_excerpts(element_type)
     prompt = _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts)
 
-    print("[defect] original image: " + str(len(photo_bytes) // 1024) + " KB")
     shrunk = _shrink_image(photo_bytes, max_side=1024)
-    print("[defect] shrunk image: " + str(len(shrunk) // 1024) + " KB")
 
     try:
         img_part = types.Part.from_bytes(data=shrunk, mime_type="image/jpeg")
@@ -568,9 +553,6 @@ async def analyze_defect_photo(photo_bytes,
         raw = await call_gemini_json_fn(contents, temperature=0.0, timeout=40)
     except Exception as e:
         return {"defects": [], "error": "AI call failed: " + repr(e)}
-
-    print("[defect] RAW AI RESPONSE:")
-    print((raw or "")[:2500])
 
     data = _parse_json_object(raw)
     if not data:
@@ -593,7 +575,6 @@ async def analyze_defect_photo(photo_bytes,
         if severity not in ("Low", "Medium", "High", "Critical"):
             severity = "Medium"
         mismatch = bool(d.get("context_mismatch", False))
-        # If AI cited nothing, treat as mismatch (MS not covering this defect)
         if not ms_v and not ecp_v:
             mismatch = True
         defects.append({
@@ -606,7 +587,131 @@ async def analyze_defect_photo(photo_bytes,
             "context_mismatch": mismatch,
         })
 
-    print("[defect] parsed " + str(len(defects)) + " valid defects")
+    return {"defects": defects, "error": None, "raw": (raw or "")[:1500]}
+
+
+# =====================================================================
+# DEFECT ANALYSIS — TEXT ONLY (no photo)
+# =====================================================================
+_DEFECT_TEXT_PROMPT = """You are a senior QC engineer reviewing a defect description
+that a site engineer wrote in the field. There is no photo — the engineer
+saw the defect and typed a description.
+
+Your job: turn that description into a structured defect, and match it
+against the available MS clauses / ECP codes.
+
+CRITICAL — MATCHING RULE:
+Before citing any MS clause, ask: does this clause describe work that relates
+to the ACTUAL content of the description?
+
+When the MS clauses do NOT match the description:
+- STILL return the defect as the engineer described
+- Set "ms_violations" to an empty array []
+- Set "code_violations" to an empty array []
+- Set "context_mismatch" to true
+
+When the MS clauses DO match:
+- Cite 1-3 MS clause ids that appear in the provided list
+- Cite 1-3 ECP codes that appear in the provided list
+- Set "context_mismatch" to false
+
+NEVER invent a clause match. Empty citations are far better than wrong ones.
+
+ENGINEER'S DEFECT DESCRIPTION (this is the source of truth):
+__DESC__
+
+OPTIONAL EXTRA NOTE: __NOTE__
+
+ELEMENT TYPE (from the app): __ELEMENT__
+
+METHOD STATEMENT CLAUSES AVAILABLE (cite by id only):
+__MS_CLAUSES__
+
+ECP CODE EXCERPTS AVAILABLE (cite by code string only):
+__ECP__
+
+Return ONE JSON object with this exact shape:
+{
+  "defects": [
+    {
+      "name": "Clean short name of the defect",
+      "location_hint": "where on site (from the description)",
+      "severity": "Medium",
+      "ms_violations": ["3.5"],
+      "code_violations": ["ECP 203 §6.3.1"],
+      "repair_action": "Suggested repair if the MS covers it, else a general suggestion.",
+      "context_mismatch": false
+    }
+  ]
+}
+
+RULES:
+- Return exactly 1 defect that matches the engineer's description.
+- Do NOT invent a different defect — stick to what was written.
+- Only cite MS clause ids that appear in the list above.
+- Only cite ECP codes that appear in the list above.
+- If nothing in the MS matches, use empty arrays and context_mismatch=true.
+- Severity must be one of: Low, Medium, High, Critical.
+- Output ONLY the JSON. No prose. No markdown fences.
+"""
+
+
+async def analyze_defect_text(description,
+                               note,
+                               ms_clauses,
+                               element_type,
+                               call_gemini_json_fn):
+    """Text-only defect analysis. No photo. Returns same schema as photo."""
+    if not (description or "").strip():
+        return {"defects": [], "error": "Defect description is required."}
+
+    ecp_excerpts = get_ecp_excerpts(element_type)
+
+    prompt = (_DEFECT_TEXT_PROMPT
+              .replace("__DESC__", description.strip())
+              .replace("__NOTE__", note or "(none)")
+              .replace("__ELEMENT__", (element_type or "column").lower())
+              .replace("__MS_CLAUSES__", _format_ms_clauses(ms_clauses))
+              .replace("__ECP__", _format_ecp(ecp_excerpts)))
+
+    try:
+        raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=40)
+    except Exception as e:
+        return {"defects": [], "error": "AI call failed: " + repr(e)}
+
+    data = _parse_json_object(raw)
+    if not data:
+        return {"defects": [], "error": "AI returned unparseable output.",
+                "raw": (raw or "")[:1500]}
+
+    allowed_ms = {str(c.get("id", "")).strip() for c in (ms_clauses or [])}
+    allowed_ecp = {e["code"] for e in ecp_excerpts}
+
+    defects = []
+    for d in data.get("defects", [])[:3]:
+        name = str(d.get("name", "")).strip()[:120]
+        if not name:
+            continue
+        ms_v = [str(v).strip() for v in (d.get("ms_violations") or [])]
+        ms_v = [v for v in ms_v if v in allowed_ms][:3]
+        ecp_v = [str(v).strip() for v in (d.get("code_violations") or [])]
+        ecp_v = [v for v in ecp_v if v in allowed_ecp][:3]
+        severity = str(d.get("severity", "Medium")).strip().title()
+        if severity not in ("Low", "Medium", "High", "Critical"):
+            severity = "Medium"
+        mismatch = bool(d.get("context_mismatch", False))
+        if not ms_v and not ecp_v:
+            mismatch = True
+        defects.append({
+            "name": name,
+            "location_hint": str(d.get("location_hint", "")).strip()[:60],
+            "severity": severity,
+            "ms_violations": ms_v,
+            "code_violations": ecp_v,
+            "repair_action": str(d.get("repair_action", "")).strip()[:180],
+            "context_mismatch": mismatch,
+        })
+
     return {"defects": defects, "error": None, "raw": (raw or "")[:1500]}
 
 
@@ -664,7 +769,6 @@ def build_notice_pdf(project,
                                  textColor=colors.black, leading=13)
     label_style = ParagraphStyle("Label", fontName=_FONT_BOLD,
                                   fontSize=9, textColor=NAVY)
-    # Monospace styles for defect names + citations
     mono_head_style = ParagraphStyle("MonoHead", fontName=_MONO_BOLD,
                                       fontSize=10, textColor=NAVY,
                                       leading=13, spaceAfter=2)
@@ -759,8 +863,7 @@ def build_notice_pdf(project,
             head += "   //  " + ", ".join(p for p in [zone, loc] if p)
         head_style_use = ParagraphStyle(
             "H" + str(idx), parent=mono_head_style,
-            fontName=_mono_font(raw_name, bold=True)
-        )
+            fontName=_mono_font(raw_name, bold=True))
         story.append(Paragraph(head, head_style_use))
 
         cit_bits = []
@@ -802,8 +905,7 @@ def build_notice_pdf(project,
 
     qr_buf = _make_qr_buffer(
         "UID: " + notice_uid + " | Defect Notice | " +
-        project.get("name", "")
-    )
+        project.get("name", ""))
     if qr_buf:
         try:
             qr_img = ReportLabImage(qr_buf, width=20 * mm, height=20 * mm)
