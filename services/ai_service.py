@@ -1,36 +1,49 @@
 """
-services/ai_service.py — Thin wrapper around google-genai.
+services/ai_service.py — Thin wrapper around google-genai with retry.
 """
 import asyncio
 from google.genai import types
 from config import client, GEMINI_MODEL
 
 
-async def call_gemini_json(contents, temperature=0.0, timeout=45):
-    """
-    Call Gemini and return raw text. Default timeout 45 seconds.
-    """
-    if not client:
-        raise Exception("GEMINI_API_KEY missing.")
-
+async def _one_attempt(contents, temperature, timeout):
     config = types.GenerateContentConfig(temperature=temperature)
-
-    async def _one_call():
+    async def _call():
         return await client.aio.models.generate_content(
             model=GEMINI_MODEL,
             contents=contents,
             config=config,
         )
+    return await asyncio.wait_for(_call(), timeout=timeout)
+
+
+async def call_gemini_json(contents, temperature=0.0, timeout=45):
+    if not client:
+        raise Exception("GEMINI_API_KEY missing.")
 
     print("[ai] calling model=" + str(GEMINI_MODEL) + " timeout=" + str(timeout))
-    try:
-        response = await asyncio.wait_for(_one_call(), timeout=timeout)
-        txt = response.text or ""
-        print("[ai] response length=" + str(len(txt)))
-        return txt
-    except asyncio.TimeoutError:
-        print("[ai] TIMEOUT after " + str(timeout) + "s")
-        raise Exception("AI request timed out after " + str(timeout) + "s.")
-    except Exception as e:
-        print("[ai] FAILED: " + repr(e))
-        raise Exception("AI request failed: " + str(e))
+
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            response = await _one_attempt(contents, temperature, timeout)
+            txt = response.text or ""
+            print("[ai] response length=" + str(len(txt)) +
+                  " (attempt " + str(attempt) + ")")
+            return txt
+        except asyncio.TimeoutError:
+            print("[ai] TIMEOUT on attempt " + str(attempt))
+            last_err = "AI request timed out after " + str(timeout) + "s."
+        except Exception as e:
+            msg = str(e)
+            print("[ai] FAILED attempt " + str(attempt) + ": " + repr(e))
+            last_err = msg
+            # Retry only on 503 / UNAVAILABLE / high demand
+            retryable = ("503" in msg or "UNAVAILABLE" in msg or
+                         "high demand" in msg or "overloaded" in msg)
+            if not retryable:
+                raise Exception("AI request failed: " + msg)
+        if attempt < 3:
+            await asyncio.sleep(2 * attempt)
+
+    raise Exception("AI request failed after retries: " + str(last_err))
