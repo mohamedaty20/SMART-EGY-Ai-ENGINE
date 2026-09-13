@@ -1,5 +1,5 @@
 """
-services/auth_service.py — Password hashing + session tokens.
+services/auth_service.py — Password hashing + session tokens + reset tokens.
 """
 import os
 import hmac
@@ -7,12 +7,12 @@ import time
 import json
 import base64
 import hashlib
+import secrets
 
 SECRET = os.environ.get("SESSION_SECRET", "change-me-in-render-env").encode()
 
 
 def hash_password(password, salt=None):
-    """Return (salt_hex, hash_hex)."""
     if salt is None:
         salt = os.urandom(16).hex()
     dk = hashlib.pbkdf2_hmac("sha256", password.encode(),
@@ -57,3 +57,14 @@ def read_session(token):
         return int(payload["uid"])
     except Exception:
         return None
+
+
+def new_reset_token():
+    """Return a short URL-safe token for password reset."""
+    return secrets.token_urlsafe(24)
+
+
+def password_strength_ok(pw):
+    if not pw or len(pw) < 6:
+        return False, "Password must be 6+ characters."
+    return True, ""
