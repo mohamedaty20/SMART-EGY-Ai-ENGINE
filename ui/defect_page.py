@@ -1,6 +1,6 @@
 """
 ui/defect_page.py — Dark theme, multi-user, project switcher,
-no-photo defect entry, Dashboard tab, Subcontractor master + scorecard.
+no-photo defect entry, Dashboard, Subs, closure photo prompt.
 """
 import io
 import base64
@@ -135,6 +135,16 @@ T = {
         "sub_open": "Open", "sub_overdue": "Overdue",
         "sub_closed": "Closed", "sub_total": "Total",
         "delete_sub": "Remove",
+        "close_defect_title": "Close defect",
+        "close_defect_sub": "Attach a closure photo as proof the fix is done.",
+        "closure_photo_label": "Closure photo",
+        "closure_photo_optional": "Closure photo (optional)",
+        "closure_photo_hint": "Recommended — take a photo of the repaired work.",
+        "closure_attached": "Closure photo attached",
+        "closure_skipped": "Closing without a photo",
+        "confirm_close": "Confirm close",
+        "close_without_photo": "Close without photo",
+        "closure_photo_short": "Closure",
     },
     "ar": {
         "app_title": "إشعارات العيوب", "new_defect": "عيب جديد", "logs": "السجل",
@@ -250,6 +260,16 @@ T = {
         "sub_open": "مفتوح", "sub_overdue": "متأخر",
         "sub_closed": "مغلق", "sub_total": "الإجمالي",
         "delete_sub": "حذف",
+        "close_defect_title": "إغلاق العيب",
+        "close_defect_sub": "أرفق صورة إغلاق كإثبات أن الإصلاح تم.",
+        "closure_photo_label": "صورة الإغلاق",
+        "closure_photo_optional": "صورة الإغلاق (اختياري)",
+        "closure_photo_hint": "يُفضل — التقط صورة للأعمال بعد الإصلاح.",
+        "closure_attached": "تم إرفاق صورة الإغلاق",
+        "closure_skipped": "الإغلاق بدون صورة",
+        "confirm_close": "تأكيد الإغلاق",
+        "close_without_photo": "إغلاق بدون صورة",
+        "closure_photo_short": "الإغلاق",
     },
 }
 
@@ -405,6 +425,9 @@ def _inject_theme():
   .badge-seen { display: inline-block; background: rgba(115,115,115,0.2);
                 color: #a3a3a3; font-size: 9px; font-weight: 800;
                 padding: 2px 7px; border-radius: 6px; letter-spacing: 0.03em; }
+  .badge-closure { display: inline-block; background: rgba(16,185,129,0.15);
+                   color: #6ee7b7; font-size: 9px; font-weight: 800;
+                   padding: 2px 7px; border-radius: 6px; letter-spacing: 0.03em; }
   .q-notification { border-radius: 10px !important; font-weight: 600 !important;
                     background: var(--surface-2) !important; color: var(--text) !important;
                     border: 1px solid var(--border) !important; }
@@ -464,6 +487,15 @@ def _inject_theme():
           color: var(--text); font-size: 12px; font-weight: 600;
           padding: 4px 10px; border-radius: 20px; }
   .chip .q-icon { font-size: 14px; }
+  .photo-compare { display: grid; grid-template-columns: 1fr 1fr;
+                   gap: 10px; margin-bottom: 14px; }
+  .photo-box { position: relative; }
+  .photo-tag { position: absolute; top: 8px; left: 8px;
+               background: rgba(10,10,10,0.85); color: #fafafa;
+               font-size: 10px; font-weight: 700; padding: 3px 8px;
+               border-radius: 6px; letter-spacing: 0.05em;
+               text-transform: uppercase; z-index: 2; }
+  .photo-tag.closure { color: #6ee7b7; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -656,7 +688,6 @@ def _build_subs(state):
                         "flat round dense size=sm").style(
                         "color:#737373;")
 
-            # Score badges
             with ui.element('div').classes("sub-badges"):
                 if score["open"]:
                     ui.html('<span class="badge-open">' +
@@ -1630,7 +1661,6 @@ def _build_logs(state):
     ui.label(_t("logs_title")).classes("h1").style("margin-bottom:4px;")
     ui.label(_t("logs_sub")).classes("muted").style("margin-bottom:16px;")
 
-    # Sub filter chip
     if state.get("sub_filter"):
         with ui.element('div').style(
             "display:flex;align-items:center;gap:8px;margin-bottom:14px;"
@@ -1743,6 +1773,9 @@ def _render_log_card(row, refresh_fn):
         card.on("click", _click)
 
 
+# =====================================================================
+# DEFECT DETAIL / CLOSE DIALOG
+# =====================================================================
 def _show_defect_dialog(defect_id, on_close_cb):
     d = db.get_defect(defect_id)
     if not d:
@@ -1765,7 +1798,15 @@ def _show_defect_dialog(defect_id, on_close_cb):
 
         with ui.element('div').style(
             "padding:20px;max-height:60vh;overflow-y:auto;"):
-            if d.get("photo_bytes"):
+            # Before / after photos
+            has_before = bool(d.get("photo_bytes"))
+            has_after = bool(d.get("closure_photo"))
+            if has_before and has_after:
+                with ui.element('div').classes("photo-compare"):
+                    _photo_box(d["photo_bytes"], _t("notice"))
+                    _photo_box(d["closure_photo"],
+                                _t("closure_photo_short"), is_closure=True)
+            elif has_before:
                 try:
                     b64 = base64.b64encode(d["photo_bytes"]).decode("ascii")
                     ui.image("data:image/jpeg;base64," + b64).style(
@@ -1774,6 +1815,10 @@ def _show_defect_dialog(defect_id, on_close_cb):
                         "border:1px solid #262626;")
                 except Exception:
                     pass
+            elif has_after:
+                _photo_box(d["closure_photo"],
+                            _t("closure_photo_short"), is_closure=True)
+
             if d.get("note"):
                 ui.label("📝 " + str(d["note"])).classes("soft").style(
                     "margin-bottom:14px;font-style:italic;")
@@ -1803,26 +1848,100 @@ def _show_defect_dialog(defect_id, on_close_cb):
                           ).classes(BTN_SOFT).style("width:100%;")
 
             if d["status"] == "open":
-                ncr_in = None
-                if is_consultant:
-                    ncr_in = ui.input(_t("ncr_input")).style("width:100%;")
+                def _open_close():
+                    _open_close_defect_dialog(d, is_consultant,
+                                                dialog, on_close_cb)
 
-                def do_close():
-                    if is_consultant:
-                        if not ncr_in or not ncr_in.value.strip():
-                            ui.notify(_t("ncr_required"), type="warning")
-                            return
-                        db.close_defect(defect_id, consultant_ncr=ncr_in.value.strip())
-                    else:
-                        db.close_defect(defect_id)
-                    ui.notify(_t("marked_closed"), type="positive")
-                    dialog.close()
-                    on_close_cb()
-
-                ui.button(_t("mark_closed"), icon="check", on_click=do_close).classes(
+                ui.button(_t("mark_closed"), icon="check",
+                          on_click=_open_close).classes(
                     BTN_PRIMARY).style("width:100%;")
 
             ui.button(_t("close"), on_click=dialog.close).props("flat").style(
                 "width:100%;color:#a3a3a3;")
 
     dialog.open()
+
+
+def _photo_box(photo_bytes, tag, is_closure=False):
+    with ui.element('div').classes("photo-box"):
+        tag_cls = "photo-tag closure" if is_closure else "photo-tag"
+        ui.html('<div class="' + tag_cls + '">' + tag + '</div>')
+        try:
+            b64 = base64.b64encode(photo_bytes).decode("ascii")
+            ui.image("data:image/jpeg;base64," + b64).style(
+                "width:100%;height:160px;object-fit:cover;"
+                "border-radius:10px;border:1px solid #262626;")
+        except Exception:
+            ui.element('div').style(
+                "width:100%;height:160px;background:#1a1a1a;"
+                "border-radius:10px;border:1px solid #262626;")
+
+
+def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
+    with ui.dialog() as dlg, ui.card().style(
+        "background:#141414;padding:24px;min-width:320px;"
+        "max-width:95vw;width:440px;border-radius:16px;"
+        "border:1px solid #262626;"
+    ):
+        ui.label(_t("close_defect_title")).classes("h1").style(
+            "margin-bottom:4px;")
+        ui.label(_t("close_defect_sub")).classes("muted").style(
+            "margin-bottom:14px;")
+
+        ncr_in = None
+        if is_consultant:
+            ncr_in = ui.input(_t("ncr_input")).style("width:100%;")
+
+        closure_holder = {"bytes": None}
+        closure_status = ui.label(_t("closure_photo_hint")).classes("muted").style(
+            "font-size:12px;margin-top:6px;")
+
+        async def handle_closure(e):
+            try:
+                data = await e.file.read()
+            except Exception as ex:
+                ui.notify(_t("upload_failed") + str(ex), type="negative")
+                return
+            if not data:
+                ui.notify(_t("empty_file"), type="warning")
+                return
+            closure_holder["bytes"] = data
+            closure_status.set_text(_t("closure_attached") + " (" +
+                                     str(len(data) // 1024) + " KB)")
+            closure_status.style("color:#34d399;font-size:12px;margin-top:6px;")
+
+        ui.upload(on_upload=handle_closure, auto_upload=True).style(
+            "width:100%;").props(
+            "flat bordered accept=image/* label='" +
+            _t("closure_photo_optional") + "'")
+        closure_status
+
+        def _do_close():
+            if is_consultant:
+                if not ncr_in or not ncr_in.value.strip():
+                    ui.notify(_t("ncr_required"), type="warning")
+                    return
+                db.close_defect(d["id"],
+                                 consultant_ncr=ncr_in.value.strip(),
+                                 closure_photo=closure_holder["bytes"])
+            else:
+                db.close_defect(d["id"],
+                                 closure_photo=closure_holder["bytes"])
+            ui.notify(_t("marked_closed"), type="positive")
+            dlg.close()
+            try:
+                parent_dlg.close()
+            except Exception:
+                pass
+            on_close_cb()
+
+        with ui.element('div').style(
+            "display:flex;flex-direction:column;gap:8px;margin-top:16px;"
+        ):
+            ui.button(_t("confirm_close"), icon="check",
+                      on_click=_do_close).classes(BTN_PRIMARY).style(
+                "width:100%;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
+                BTN_SOFT).style("width:100%;")
+
+    dlg.open()
