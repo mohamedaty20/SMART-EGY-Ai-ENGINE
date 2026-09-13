@@ -1,6 +1,6 @@
 """
 ui/defect_page.py — Dark theme, multi-user, project switcher,
-no-photo defect entry, Dashboard tab.
+no-photo defect entry, Dashboard tab, Subcontractor master + scorecard.
 """
 import io
 import base64
@@ -17,7 +17,7 @@ T = {
     "en": {
         "app_title": "Defect Notices",
         "new_defect": "New Defect", "logs": "Logs",
-        "dashboard": "Dashboard",
+        "dashboard": "Dashboard", "subs": "Subs",
         "project": "Project", "no_project": "No project yet",
         "setup_project": "Set up project", "edit": "Edit",
         "contractor": "Contractor", "subcontractor": "Subcontractor",
@@ -105,27 +105,40 @@ T = {
         "or_divider": "— OR —",
         "dash_title": "Dashboard",
         "dash_sub": "Live view of your defect register.",
-        "kpi_total": "Total",
-        "kpi_open": "Open",
-        "kpi_closed": "Closed",
-        "kpi_overdue": "Overdue",
-        "kpi_closed_7d": "Closed 7d",
+        "kpi_total": "Total", "kpi_open": "Open", "kpi_closed": "Closed",
+        "kpi_overdue": "Overdue", "kpi_closed_7d": "Closed 7d",
         "kpi_avg_days": "Avg days",
-        "dash_zones": "Open by Zone",
-        "dash_weeks": "Raised per Week",
+        "dash_zones": "Open by Zone", "dash_weeks": "Raised per Week",
         "dash_subs": "By Subcontractor",
         "dash_empty": "No defects yet — raise one from the New Defect tab.",
         "no_data": "No data yet.",
-        "col_name": "Name",
-        "col_open": "Open",
-        "col_overdue": "Overdue",
-        "col_closed": "Closed",
-        "col_total": "Total",
+        "col_name": "Name", "col_open": "Open", "col_overdue": "Overdue",
+        "col_closed": "Closed", "col_total": "Total",
         "unassigned": "(unassigned)",
+        "subs_title": "Subcontractors",
+        "subs_sub": "Master list and live scorecard per subcontractor.",
+        "add_sub": "Add subcontractor",
+        "add_sub_title": "Add subcontractor",
+        "sub_name": "Subcontractor name",
+        "sub_trade": "Trade (e.g. steel fixing, masonry)",
+        "sub_phone": "Phone (optional)",
+        "sub_notes": "Notes (optional)",
+        "sub_saved": "Subcontractor saved.",
+        "sub_deleted": "Subcontractor deleted.",
+        "delete_sub_confirm": "Remove this subcontractor from the master list?",
+        "no_subs": "No subcontractors yet.",
+        "no_subs_hint": "Add one to track their performance.",
+        "view_defects": "View their defects",
+        "filtered_by": "Filtered:",
+        "clear_filter": "Clear",
+        "from_defects": "Seen in notices",
+        "sub_open": "Open", "sub_overdue": "Overdue",
+        "sub_closed": "Closed", "sub_total": "Total",
+        "delete_sub": "Remove",
     },
     "ar": {
         "app_title": "إشعارات العيوب", "new_defect": "عيب جديد", "logs": "السجل",
-        "dashboard": "الرئيسية",
+        "dashboard": "الرئيسية", "subs": "المقاولون",
         "project": "المشروع", "no_project": "لا يوجد مشروع بعد",
         "setup_project": "إعداد المشروع", "edit": "تعديل",
         "contractor": "المقاول", "subcontractor": "المقاول الفرعي",
@@ -207,23 +220,36 @@ T = {
         "or_divider": "— أو —",
         "dash_title": "الرئيسية",
         "dash_sub": "عرض مباشر لسجل العيوب.",
-        "kpi_total": "الإجمالي",
-        "kpi_open": "مفتوح",
-        "kpi_closed": "مغلق",
-        "kpi_overdue": "متأخر",
-        "kpi_closed_7d": "أُغلق ٧ أيام",
+        "kpi_total": "الإجمالي", "kpi_open": "مفتوح", "kpi_closed": "مغلق",
+        "kpi_overdue": "متأخر", "kpi_closed_7d": "أُغلق ٧ أيام",
         "kpi_avg_days": "متوسط الأيام",
-        "dash_zones": "المفتوح حسب المنطقة",
-        "dash_weeks": "المُصدر أسبوعياً",
+        "dash_zones": "المفتوح حسب المنطقة", "dash_weeks": "المُصدر أسبوعياً",
         "dash_subs": "حسب المقاول الفرعي",
         "dash_empty": "لا توجد عيوب بعد — أصدر واحداً من تاب عيب جديد.",
         "no_data": "لا توجد بيانات بعد.",
-        "col_name": "الاسم",
-        "col_open": "مفتوح",
-        "col_overdue": "متأخر",
-        "col_closed": "مغلق",
-        "col_total": "الإجمالي",
+        "col_name": "الاسم", "col_open": "مفتوح", "col_overdue": "متأخر",
+        "col_closed": "مغلق", "col_total": "الإجمالي",
         "unassigned": "(غير معين)",
+        "subs_title": "المقاولون الفرعيون",
+        "subs_sub": "القائمة الرئيسية ولوحة الأداء لكل مقاول فرعي.",
+        "add_sub": "إضافة مقاول فرعي",
+        "add_sub_title": "إضافة مقاول فرعي",
+        "sub_name": "اسم المقاول الفرعي",
+        "sub_trade": "التخصص (مثال: تثبيت حديد، مباني)",
+        "sub_phone": "هاتف (اختياري)",
+        "sub_notes": "ملاحظات (اختياري)",
+        "sub_saved": "تم حفظ المقاول الفرعي.",
+        "sub_deleted": "تم حذف المقاول الفرعي.",
+        "delete_sub_confirm": "حذف هذا المقاول الفرعي من القائمة الرئيسية؟",
+        "no_subs": "لا يوجد مقاولون فرعيون بعد.",
+        "no_subs_hint": "أضف واحداً لتتبع أدائه.",
+        "view_defects": "عرض عيوبه",
+        "filtered_by": "مفلتر بـ:",
+        "clear_filter": "مسح",
+        "from_defects": "ظهر في الإشعارات",
+        "sub_open": "مفتوح", "sub_overdue": "متأخر",
+        "sub_closed": "مغلق", "sub_total": "الإجمالي",
+        "delete_sub": "حذف",
     },
 }
 
@@ -360,6 +386,10 @@ def _inject_theme():
                   color: #34d399; border: 1px solid rgba(16,185,129,0.3);
                   font-size: 10px; font-weight: 700; padding: 2px 8px;
                   border-radius: 20px; text-transform: uppercase; }
+  .badge-overdue { display: inline-block; background: rgba(239,68,68,0.12);
+                   color: #fca5a5; border: 1px solid rgba(239,68,68,0.3);
+                   font-size: 10px; font-weight: 700; padding: 2px 8px;
+                   border-radius: 20px; text-transform: uppercase; }
   .badge-ai { display: inline-block; background: rgba(168,85,247,0.15);
               color: #c4b5fd; font-size: 9px; font-weight: 800;
               padding: 2px 7px; border-radius: 6px; }
@@ -372,6 +402,9 @@ def _inject_theme():
   .badge-mismatch { display: inline-block; background: rgba(245,158,11,0.15);
                     color: #fbbf24; font-size: 9px; font-weight: 800;
                     padding: 2px 7px; border-radius: 6px; letter-spacing: 0.03em; }
+  .badge-seen { display: inline-block; background: rgba(115,115,115,0.2);
+                color: #a3a3a3; font-size: 9px; font-weight: 800;
+                padding: 2px 7px; border-radius: 6px; letter-spacing: 0.03em; }
   .q-notification { border-radius: 10px !important; font-weight: 600 !important;
                     background: var(--surface-2) !important; color: var(--text) !important;
                     border: 1px solid var(--border) !important; }
@@ -388,7 +421,6 @@ def _inject_theme():
   .or-divider::before, .or-divider::after {
     content: ''; flex: 1; height: 1px; background: var(--border);
   }
-  /* Dashboard */
   .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr);
               gap: 10px; margin-bottom: 14px; }
   .kpi-card { background: var(--surface); border: 1px solid var(--border);
@@ -424,6 +456,14 @@ def _inject_theme():
               font-family: 'JetBrains Mono', monospace; }
   .week-count { font-size: 11px; font-weight: 700; color: var(--text);
                 font-family: 'JetBrains Mono', monospace; }
+  .sub-card { background: var(--surface); border: 1px solid var(--border);
+              border-radius: 12px; padding: 16px; margin-bottom: 10px; }
+  .sub-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px;
+          background: var(--surface-2); border: 1px solid var(--border);
+          color: var(--text); font-size: 12px; font-weight: 600;
+          padding: 4px 10px; border-radius: 20px; }
+  .chip .q-icon { font-size: 14px; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -449,6 +489,7 @@ def build_defect_ui(user_id):
         "project_id": app.storage.user.get("project_id"),
         "project": None,
         "tab": {"value": "new"},
+        "sub_filter": None,
     }
 
     if state["project_id"]:
@@ -495,6 +536,8 @@ def build_defect_ui(user_id):
                 _build_new_defect(state)
             elif tab == "logs":
                 _build_logs(state)
+            elif tab == "subs":
+                _build_subs(state)
             else:
                 _build_dashboard(state)
 
@@ -503,11 +546,13 @@ def build_defect_ui(user_id):
 
     with ui.element('div').classes("bottom-nav"):
         _nav_item("new", "add_a_photo", _t("new_defect"),
-                  state, render_main)
+                  state, render_main, 0)
         _nav_item("logs", "list_alt", _t("logs"),
-                  state, render_main)
+                  state, render_main, 1)
+        _nav_item("subs", "engineering", _t("subs"),
+                  state, render_main, 2)
         _nav_item("dashboard", "insights", _t("dashboard"),
-                  state, render_main)
+                  state, render_main, 3)
 
 
 def _render_no_project(state, refresh_fn):
@@ -526,7 +571,7 @@ def _render_no_project(state, refresh_fn):
             BTN_PRIMARY).style("width:100%;")
 
 
-def _nav_item(key, icon, label, state, render_fn):
+def _nav_item(key, icon, label, state, render_fn, idx):
     active = state["tab"]["value"] == key
     cls = "bottom-nav-item active" if active else "bottom-nav-item"
     btn = ui.element('button').classes(cls)
@@ -540,11 +585,175 @@ def _nav_item(key, icon, label, state, render_fn):
         ui.run_javascript(
             "var items=document.querySelectorAll('.bottom-nav-item');"
             "items.forEach(function(el){el.classList.remove('active');});"
-            "var idx=" + ("0" if key == "new" else
-                          ("1" if key == "logs" else "2")) + ";"
-            "if(items[idx]){items[idx].classList.add('active');}")
+            "if(items[" + str(idx) + "]){items[" + str(idx) +
+            "].classList.add('active');}")
 
     btn.on("click", _click)
+
+
+# =====================================================================
+# SUBCONTRACTORS
+# =====================================================================
+def _build_subs(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+
+    pid = state["project_id"]
+    masters = db.list_subcontractors(pid)
+    scores = db.subcontractor_scores(pid)
+    scores_by_name = {s["name"]: s for s in scores}
+
+    ui.label(_t("subs_title")).classes("h1").style("margin-bottom:4px;")
+    ui.label(_t("subs_sub")).classes("muted").style("margin-bottom:16px;")
+
+    def _open_add():
+        _open_add_sub_dialog(state, state["render_main"])
+
+    ui.button(_t("add_sub"), icon="add", on_click=_open_add).classes(
+        BTN_PRIMARY).style("width:100%;margin-bottom:16px;")
+
+    if not masters:
+        with ui.element('div').classes("card").style("text-align:center;"):
+            ui.icon("engineering").style("font-size:40px;color:#737373;")
+            ui.label(_t("no_subs")).classes("h3").style("margin-top:10px;")
+            ui.label(_t("no_subs_hint")).classes("muted").style(
+                "margin-top:4px;")
+        return
+
+    for m in masters:
+        name = m.get("name") or ""
+        score = scores_by_name.get(name) or {
+            "open": 0, "closed": 0, "overdue": 0, "total": 0}
+
+        with ui.element('div').classes("sub-card"):
+            with ui.element('div').style(
+                "display:flex;justify-content:space-between;"
+                "align-items:flex-start;gap:10px;"
+            ):
+                with ui.element('div').style("flex:1;min-width:0;"):
+                    ui.label(str(name)).classes("h2").style(
+                        "margin-bottom:4px;word-break:break-word;")
+                    meta_bits = []
+                    if m.get("trade"):
+                        meta_bits.append(str(m["trade"]))
+                    if m.get("phone"):
+                        meta_bits.append("📞 " + str(m["phone"]))
+                    if meta_bits:
+                        ui.label(" · ".join(meta_bits)).classes("muted").style(
+                            "font-size:12px;")
+                    if not m.get("from_master"):
+                        ui.html('<span class="badge-seen">' +
+                                _t("from_defects") + '</span>').style(
+                            "margin-top:6px;display:inline-block;")
+
+                if m.get("id"):
+                    def _del(sub_id=m["id"]):
+                        _confirm_delete_sub(state, sub_id,
+                                             state["render_main"])
+
+                    ui.button(icon="delete", on_click=_del).props(
+                        "flat round dense size=sm").style(
+                        "color:#737373;")
+
+            # Score badges
+            with ui.element('div').classes("sub-badges"):
+                if score["open"]:
+                    ui.html('<span class="badge-open">' +
+                            str(score["open"]) + ' ' +
+                            _t("sub_open") + '</span>')
+                if score["overdue"]:
+                    ui.html('<span class="badge-overdue">' +
+                            str(score["overdue"]) + ' ' +
+                            _t("sub_overdue") + '</span>')
+                if score["closed"]:
+                    ui.html('<span class="badge-closed">' +
+                            str(score["closed"]) + ' ' +
+                            _t("sub_closed") + '</span>')
+                if score["total"] == 0:
+                    ui.label(_t("no_data")).classes("muted").style(
+                        "font-size:11px;")
+
+            if score["total"]:
+                def _view(nm=name):
+                    state["sub_filter"] = nm
+                    state["tab"]["value"] = "logs"
+                    state["render_main"]()
+                    ui.run_javascript(
+                        "var items=document.querySelectorAll("
+                        "'.bottom-nav-item');"
+                        "items.forEach(function(el){"
+                        "el.classList.remove('active');});"
+                        "if(items[1]){items[1].classList.add('active');}")
+
+                ui.button(_t("view_defects"), icon="list_alt",
+                          on_click=_view).classes(BTN_SOFT).style(
+                    "width:100%;margin-top:10px;font-size:13px;"
+                    "min-height:36px;")
+
+
+def _open_add_sub_dialog(state, refresh_fn):
+    if not state.get("project_id"):
+        ui.notify(_t("setup_first"), type="warning")
+        return
+
+    with ui.dialog() as dlg, ui.card().style(
+        "background:#141414;padding:24px;min-width:320px;"
+        "max-width:95vw;width:440px;border-radius:16px;"
+        "border:1px solid #262626;"
+    ):
+        ui.label(_t("add_sub_title")).classes("h1").style(
+            "margin-bottom:14px;")
+
+        name_in = ui.input(_t("sub_name")).style("width:100%;")
+        trade_in = ui.input(_t("sub_trade")).style("width:100%;")
+        phone_in = ui.input(_t("sub_phone")).style("width:100%;")
+        notes_in = ui.input(_t("sub_notes")).style("width:100%;")
+
+        def _save():
+            if not name_in.value.strip():
+                ui.notify(_t("sub_name"), type="warning")
+                return
+            db.add_subcontractor(
+                project_id=state["project_id"],
+                name=name_in.value.strip(),
+                trade=trade_in.value.strip(),
+                phone=phone_in.value.strip(),
+                notes=notes_in.value.strip())
+            ui.notify(_t("sub_saved"), type="positive")
+            dlg.close()
+            ui.timer(0.05, refresh_fn, once=True)
+
+        with ui.element('div').style("display:flex;gap:8px;margin-top:16px;"):
+            ui.button(_t("add"), on_click=_save).classes(
+                BTN_PRIMARY).style("flex:1;")
+            ui.button(_t("cancel"), on_click=dlg.close).classes(BTN_SOFT)
+
+    dlg.open()
+
+
+def _confirm_delete_sub(state, sub_id, refresh_fn):
+    with ui.dialog() as dlg, ui.card().style(
+        "background:#141414;padding:24px;min-width:300px;"
+        "max-width:95vw;width:400px;border-radius:16px;"
+        "border:1px solid #262626;"
+    ):
+        ui.label(_t("delete_sub_confirm")).classes("h3").style(
+            "margin-bottom:14px;")
+
+        def _yes():
+            db.delete_subcontractor(sub_id)
+            ui.notify(_t("sub_deleted"), type="positive")
+            dlg.close()
+            ui.timer(0.05, refresh_fn, once=True)
+
+        with ui.element('div').style("display:flex;gap:8px;"):
+            ui.button(_t("delete_sub"), on_click=_yes).classes(
+                BTN_PRIMARY).style(
+                "flex:1;background:#ef4444 !important;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+
+    dlg.open()
 
 
 # =====================================================================
@@ -571,7 +780,6 @@ def _build_dashboard(state):
                 "margin-top:10px;")
         return
 
-    # ---- KPI grid ----
     with ui.element('div').classes("kpi-grid"):
         _kpi_card(str(kpis["total"]), _t("kpi_total"), "")
         _kpi_card(str(kpis["open"]), _t("kpi_open"), "open")
@@ -580,7 +788,6 @@ def _build_dashboard(state):
         _kpi_card(str(kpis["closed_7d"]), _t("kpi_closed_7d"), "closed")
         _kpi_card(str(kpis["avg_days"]), _t("kpi_avg_days"), "primary")
 
-    # ---- Per zone ----
     if zones:
         with ui.element('div').classes("card").style("margin-bottom:14px;"):
             ui.label(_t("dash_zones")).classes("h3").style("margin-bottom:14px;")
@@ -594,7 +801,6 @@ def _build_dashboard(state):
                             "width:" + str(pct) + "%;")
                     ui.label(str(z["count"])).classes("zone-count")
 
-    # ---- Per week ----
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
         ui.label(_t("dash_weeks")).classes("h3").style("margin-bottom:4px;")
         max_w = max((w["count"] for w in weeks), default=0) or 1
@@ -607,7 +813,6 @@ def _build_dashboard(state):
                         "height:" + str(max(pct, 3)) + "%;")
                     ui.label(w["label"]).classes("week-lbl")
 
-    # ---- Subcontractor mini table ----
     if subs:
         with ui.element('div').classes("card"):
             ui.label(_t("dash_subs")).classes("h3").style("margin-bottom:14px;")
@@ -627,10 +832,7 @@ def _build_dashboard(state):
                     )
                     if s["overdue"]:
                         ui.html(
-                            '<span style="background:rgba(239,68,68,0.15);'
-                            'color:#fca5a5;border:1px solid rgba(239,68,68,0.3);'
-                            'font-size:10px;font-weight:700;padding:2px 8px;'
-                            'border-radius:20px;text-transform:uppercase;">' +
+                            '<span class="badge-overdue">' +
                             str(s["overdue"]) + ' ' + _t("col_overdue") +
                             '</span>'
                         )
@@ -798,6 +1000,7 @@ def _open_project_chooser(state, refresh_drawer, refresh_main):
                         state["project_id"] = pid
                         app.storage.user["project_id"] = pid
                         state["project"] = db.get_project(pid)
+                        state["sub_filter"] = None
                         dlg.close()
                         refresh_drawer()
                         refresh_main()
@@ -836,6 +1039,7 @@ def _confirm_delete(state, parent_dlg, refresh_drawer, refresh_main):
             db.delete_project(pid)
             state["project_id"] = None
             state["project"] = None
+            state["sub_filter"] = None
             app.storage.user.pop("project_id", None)
             dlg2.close()
             try:
@@ -1426,6 +1630,24 @@ def _build_logs(state):
     ui.label(_t("logs_title")).classes("h1").style("margin-bottom:4px;")
     ui.label(_t("logs_sub")).classes("muted").style("margin-bottom:16px;")
 
+    # Sub filter chip
+    if state.get("sub_filter"):
+        with ui.element('div').style(
+            "display:flex;align-items:center;gap:8px;margin-bottom:14px;"
+        ):
+            with ui.element('span').classes("chip"):
+                ui.icon("engineering")
+                ui.label(_t("filtered_by") + " " + str(state["sub_filter"]))
+
+            def _clear():
+                state["sub_filter"] = None
+                state["render_main"]()
+
+            ui.button(_t("clear_filter"), on_click=_clear).props(
+                "flat dense no-caps").style(
+                "color:#a855f7;font-weight:600;font-size:12px;"
+                "min-height:32px;")
+
     fstate = {"filter": "all"}
 
     @ui.refreshable
@@ -1433,6 +1655,10 @@ def _build_logs(state):
         rows = db.list_defects(
             state["project_id"],
             raise_filter=None if fstate["filter"] == "all" else fstate["filter"])
+
+        if state.get("sub_filter"):
+            rows = [r for r in rows
+                    if (r.get("subcontractor") or "") == state["sub_filter"]]
 
         with ui.element('div').style(
             "display:flex;gap:8px;align-items:center;margin-bottom:14px;"):
