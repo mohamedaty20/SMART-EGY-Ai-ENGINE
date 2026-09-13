@@ -25,16 +25,13 @@ T = {
         "consultant": "Consultant",
         "location": "Location",
         "engineer": "QC Engineer",
-        "logo": "Company logo",
         "upload_logo": "Upload logo",
         "ms_section": "Method Statements",
-        "upload_ms": "Upload",
         "no_ms": "No method statements yet",
         "clauses_count": "clauses",
         "photo_title": "Take a photo of the defect",
         "photo_sub": "Tap below to pick a site photo.",
         "choose_photo": "Choose photo",
-        "change_photo": "Change photo",
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
         "zone": "Zone", "element": "Element",
@@ -54,7 +51,6 @@ T = {
         "tick_one": "Tick at least one defect.",
         "enter_sub": "Enter the subcontractor name.",
         "notice_saved": "Notice saved",
-        "upload_photo_first": "Upload a photo first.",
         "setup_first": "Set up the project first.",
         "add_defect_title": "Add defect manually",
         "name": "Defect name",
@@ -114,8 +110,8 @@ T = {
         "lang_button": "AR",
         "upload_failed": "Upload failed: ",
         "empty_file": "Empty file received.",
+        "photo_received": "Photo received",
         "file_loaded": "File loaded: ",
-        "photo_loaded": "Photo loaded",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -130,16 +126,13 @@ T = {
         "consultant": "الاستشاري",
         "location": "الموقع",
         "engineer": "مهندس الجودة",
-        "logo": "شعار الشركة",
         "upload_logo": "تحميل الشعار",
         "ms_section": "بيانات طريقة العمل",
-        "upload_ms": "تحميل",
         "no_ms": "لا توجد بيانات طريقة بعد",
         "clauses_count": "بند",
         "photo_title": "التقط صورة للعيب",
         "photo_sub": "اضغط أدناه لاختيار صورة الموقع.",
         "choose_photo": "اختر صورة",
-        "change_photo": "تغيير الصورة",
         "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة العمود C3",
         "zone": "المنطقة", "element": "العنصر",
@@ -159,7 +152,6 @@ T = {
         "tick_one": "اختر عيباً واحداً على الأقل.",
         "enter_sub": "أدخل اسم المقاول الفرعي.",
         "notice_saved": "تم حفظ الإشعار",
-        "upload_photo_first": "حمّل صورة أولاً.",
         "setup_first": "أعدّ المشروع أولاً.",
         "add_defect_title": "إضافة عيب يدوياً",
         "name": "اسم العيب",
@@ -219,8 +211,8 @@ T = {
         "lang_button": "EN",
         "upload_failed": "فشل التحميل: ",
         "empty_file": "الملف فارغ.",
+        "photo_received": "تم استلام الصورة",
         "file_loaded": "تم تحميل الملف: ",
-        "photo_loaded": "تم تحميل الصورة",
     },
 }
 
@@ -288,8 +280,6 @@ def _inject_theme():
     --violet: #a855f7;
     --violet-soft: #7c3aed;
     --green: #10b981;
-    --amber: #f59e0b;
-    --red: #ef4444;
   }
 
   html, body {
@@ -328,16 +318,12 @@ def _inject_theme():
   .btn-primary {
     background: var(--violet) !important;
     color: #ffffff !important;
-    box-shadow: 0 1px 3px rgba(168,85,247,0.3) !important;
   }
-  .btn-primary:hover { background: var(--violet-soft) !important; }
-
   .btn-soft {
     background: var(--surface-2) !important;
     color: var(--text) !important;
     border: 1px solid var(--border) !important;
   }
-
   .btn-success {
     background: var(--green) !important;
     color: #ffffff !important;
@@ -356,7 +342,7 @@ def _inject_theme():
   .q-field__label, .q-field__native, .q-field__input {
     color: var(--text) !important;
   }
-  .q-field__label { color: var(--muted) !important; font-weight: 500; }
+  .q-field__label { color: var(--muted) !important; }
 
   .card {
     background: var(--surface);
@@ -445,12 +431,9 @@ def _inject_theme():
     box-sizing: border-box;
   }
   .app-header .brand {
-    font-weight: 700;
-    font-size: 15px;
-    color: var(--text);
+    font-weight: 700; font-size: 15px; color: var(--text);
   }
 
-  /* Make the NiceGUI uploader look like a nice big button */
   .q-uploader {
     background: var(--surface-2) !important;
     border: 1.5px dashed #333 !important;
@@ -462,11 +445,11 @@ def _inject_theme():
   .q-uploader__header {
     background: transparent !important;
     color: var(--text) !important;
-    border-radius: 12px !important;
   }
   .q-uploader__title { color: var(--text) !important; }
   .q-uploader__subtitle { color: var(--muted) !important; }
   .q-uploader__list { background: transparent !important; }
+  .q-uploader .q-btn { color: var(--text) !important; }
   .q-uploader__list .q-item {
     background: var(--surface) !important;
     color: var(--text) !important;
@@ -475,17 +458,14 @@ def _inject_theme():
   }
   .q-uploader__list .q-item__label { color: var(--text) !important; }
   .q-uploader__list .q-item__label--caption { color: var(--muted) !important; }
-  .q-uploader .q-btn { color: var(--text) !important; }
 
   .badge-open {
     display: inline-block;
     background: rgba(245,158,11,0.12);
     color: #fbbf24;
     border: 1px solid rgba(245,158,11,0.3);
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 20px;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 20px;
     text-transform: uppercase;
   }
   .badge-closed {
@@ -493,29 +473,23 @@ def _inject_theme():
     background: rgba(16,185,129,0.12);
     color: #34d399;
     border: 1px solid rgba(16,185,129,0.3);
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 20px;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 20px;
     text-transform: uppercase;
   }
   .badge-ai {
     display: inline-block;
     background: rgba(168,85,247,0.15);
     color: #c4b5fd;
-    font-size: 9px;
-    font-weight: 800;
-    padding: 2px 7px;
-    border-radius: 6px;
+    font-size: 9px; font-weight: 800;
+    padding: 2px 7px; border-radius: 6px;
   }
   .badge-manual {
     display: inline-block;
     background: rgba(16,185,129,0.15);
     color: #6ee7b7;
-    font-size: 9px;
-    font-weight: 800;
-    padding: 2px 7px;
-    border-radius: 6px;
+    font-size: 9px; font-weight: 800;
+    padding: 2px 7px; border-radius: 6px;
   }
 
   .q-notification {
@@ -892,11 +866,11 @@ def _open_ms_dialog(state, refresh_drawer):
                           " " + _t("clauses_count")).classes("h3").style(
                     "margin-bottom:6px;"
                 )
-                # Show ALL clauses in a scrollable box
                 with ui.element('div').classes("scroll-box"):
                     for cl in clauses:
                         with ui.element('div').style(
-                            "padding:8px 6px;border-bottom:1px solid #1f1f1f;"
+                            "padding:8px 6px;"
+                            "border-bottom:1px solid #1f1f1f;"
                         ):
                             ui.label(
                                 "§" + cl["id"] + " — " + cl["title"]
@@ -945,32 +919,14 @@ def _open_ms_dialog(state, refresh_drawer):
 # NEW DEFECT WIZARD
 # =====================================================================
 def _build_new_defect(state):
-    stage = {
-        "photo": None, "mime": None,
-        "candidates": None, "manual": [],
-    }
+    stage = {"photo": None, "mime": None,
+             "candidates": None, "manual": []}
 
-    @ui.refreshable
-    def wizard():
-        _render_wizard(state, stage, wizard.refresh)
-
-    wizard()
-
-
-def _render_wizard(state, stage, refresh_fn):
-    if not state.get("project"):
-        with ui.element('div').classes("card").style("text-align:center;"):
-            ui.icon("info").style("font-size:36px;color:#737373;")
-            ui.label(_t("setup_first")).classes("h3").style(
-                "margin-top:10px;"
-            )
-        return
-
-    # ---- Photo card ----
+    # Fixed uploader card — never destroyed
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:4px;")
         ui.label(_t("photo_sub")).classes("muted").style(
-            "margin-bottom:16px;"
+            "margin-bottom:14px;"
         )
 
         async def handle_photo(e):
@@ -988,24 +944,45 @@ def _render_wizard(state, stage, refresh_fn):
                              else "image/png")
             stage["candidates"] = None
             stage["manual"] = []
-            refresh_fn()
+            ui.notify(_t("photo_received") + " (" +
+                       str(len(data) // 1024) + " KB)",
+                       type="positive")
+            body.refresh()
 
-        # Visible uploader — the built-in NiceGUI upload shows a progress bar
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
             "width:100%;"
         ).props("flat bordered accept=image/* label='" +
-                (_t("change_photo") if stage["photo"]
-                 else _t("choose_photo")) + "'")
+                _t("choose_photo") + "'")
 
-        if stage["photo"]:
-            ui.image(io.BytesIO(stage["photo"])).style(
-                "width:100%;max-height:340px;object-fit:cover;"
-                "border-radius:12px;border:1px solid #262626;"
-                "margin-top:12px;"
+    # Body — rebuilt on every state change
+    @ui.refreshable
+    def body():
+        _render_body(state, stage, body.refresh)
+
+    body()
+
+
+def _render_body(state, stage, refresh_fn):
+    if not state.get("project"):
+        with ui.element('div').classes("card").style("text-align:center;"):
+            ui.icon("info").style("font-size:36px;color:#737373;")
+            ui.label(_t("setup_first")).classes("h3").style(
+                "margin-top:10px;"
             )
+        return
 
-    # ---- Stage 2: note + analyze ----
-    if stage["photo"] and stage["candidates"] is None:
+    if not stage["photo"]:
+        return
+
+    # Preview
+    with ui.element('div').classes("card").style("margin-bottom:14px;"):
+        ui.image(io.BytesIO(stage["photo"])).style(
+            "width:100%;max-height:340px;object-fit:cover;"
+            "border-radius:12px;border:1px solid #262626;"
+        )
+
+    # Stage 2 — note + analyze
+    if stage["candidates"] is None:
         with ui.element('div').classes("card"):
             note_in = ui.textarea(
                 label=_t("note_label"),
@@ -1056,10 +1033,10 @@ def _render_wizard(state, stage, refresh_fn):
             analyze_btn.classes(BTN_PRIMARY).style(
                 "width:100%;margin-top:14px;"
             )
+        return
 
-    # ---- Stage 3: candidates + notice ----
-    if stage["photo"] and stage["candidates"] is not None:
-        _render_candidates(state, stage, refresh_fn)
+    # Stage 3 — candidates + notice
+    _render_candidates(state, stage, refresh_fn)
 
 
 def _render_candidates(state, stage, refresh_fn):
@@ -1194,7 +1171,7 @@ def _render_defect_card(item, stage, refresh_fn):
                     tag_cls = "badge-ai"
                     tag_txt = _t("tag_ai")
                 ui.html('<span class="' + tag_cls + '">' + tag_txt +
-                        '</span>').style("margin-bottom:6px;")
+                        '</span>')
                 ui.label(str(item.get("name", ""))).classes("h3").style(
                     "margin-top:6px;margin-bottom:4px;"
                 )
