@@ -1,5 +1,5 @@
 """
-services/defect_db.py — Turso-compatible SQLite layer with multi-photos.
+services/defect_db.py — Turso-compatible. Adds engineer_name, place, chat.
 """
 import os
 import re
@@ -38,11 +38,11 @@ def _conn():
                                     auth_token=TURSO_TOKEN)
             try:
                 c.sync()
-            except Exception as e:
-                print("[db] turso sync warn: " + repr(e))
+            except Exception:
+                pass
             return c
         except Exception as e:
-            print("[db] Turso failed, fallback: " + repr(e))
+            print("[db] Turso failed: " + repr(e))
     return sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
 
 
@@ -91,8 +91,7 @@ def _encode_photos(photos):
     try:
         arr = [base64.b64encode(p).decode("ascii") for p in photos]
         return json.dumps(arr)
-    except Exception as e:
-        print("[db] encode photos failed: " + repr(e))
+    except Exception:
         return None
 
 
@@ -123,15 +122,20 @@ MS_LIST_COLS = ["id", "ms_number", "title", "element_type", "discipline",
 
 DEFECT_LIST_COLS = ["id", "uid", "zone", "subcontractor", "status",
                     "created_at", "closed_at", "raise_type",
-                    "selected_json", "deadline_days"]
+                    "selected_json", "deadline_days",
+                    "engineer_name", "place"]
 
 DEFECT_FULL_COLS = ["id", "project_id", "uid", "zone", "photo_bytes",
                     "note", "ai_candidates_json", "selected_json",
                     "subcontractor", "deadline_days", "raise_type",
                     "status", "created_at", "closed_at", "notice_pdf",
-                    "consultant_ncr", "closure_photo", "photos_json"]
+                    "consultant_ncr", "closure_photo", "photos_json",
+                    "engineer_name", "place"]
 
 SUB_COLS = ["id", "name", "trade", "phone", "notes"]
+
+CHAT_COLS = ["id", "project_id", "user_id", "author", "body",
+             "reply_to_id", "mentions", "created_at"]
 
 
 def _ensure_columns(cur, table, wanted):
@@ -159,6 +163,7 @@ def init_db():
     with _LOCK:
         c = _conn()
         cur = c.cursor()
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,7 +195,8 @@ def init_db():
                 subcontractor TEXT, deadline_days INTEGER,
                 raise_type TEXT, status TEXT, created_at TEXT,
                 closed_at TEXT, notice_pdf BLOB, consultant_ncr TEXT,
-                closure_photo BLOB, photos_json TEXT
+                closure_photo BLOB, photos_json TEXT,
+                engineer_name TEXT, place TEXT
             )
         """)
         cur.execute("""
@@ -200,6 +206,15 @@ def init_db():
                 created_at TEXT
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, user_id INTEGER, author TEXT,
+                body TEXT, reply_to_id INTEGER, mentions TEXT,
+                created_at TEXT
+            )
+        """)
+
         _ensure_columns(cur, "projects", [
             ("user_id", "INTEGER"), ("subcontractor", "TEXT"),
         ])
@@ -207,7 +222,27 @@ def init_db():
             ("raise_type", "TEXT"), ("closed_at", "TEXT"),
             ("notice_pdf", "BLOB"), ("consultant_ncr", "TEXT"),
             ("closure_photo", "BLOB"), ("photos_json", "TEXT"),
+            ("engineer_name", "TEXT"), ("place", "TEXT"),
         ])
+
+        # Speed: indexes on the columns we query by
+        for idx in [
+            "CREATE INDEX IF NOT EXISTS idx_defects_project "
+            "ON defects(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ms_project "
+            "ON method_statements(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_subs_project "
+            "ON subcontractors(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_chat_project "
+            "ON chat_messages(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_chat_reply "
+            "ON chat_messages(reply_to_id)",
+        ]:
+            try:
+                cur.execute(idx)
+            except Exception:
+                pass
+
         c.commit()
         _sync(c)
         c.close()
@@ -345,6 +380,8 @@ def delete_project(project_id):
         cur.execute("DELETE FROM defects WHERE project_id=?", (project_id,))
         cur.execute("DELETE FROM subcontractors WHERE project_id=?",
                     (project_id,))
+        cur.execute("DELETE FROM chat_messages WHERE project_id=?",
+                    (project_id,))
         cur.execute("DELETE FROM projects WHERE id=?", (project_id,))
         c.commit()
         _sync(c)
@@ -434,7 +471,8 @@ def get_clauses_for_element(project_id, element_type):
 # =====================================================================
 def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                 raise_type, photo_bytes, note, selected, notice_pdf,
-                ai_candidates=None, extra_photos=None):
+                ai_candidates=None, extra_photos=None,
+                engineer_name=None, place=None):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -443,14 +481,15 @@ def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                 (project_id, uid, zone, photo_bytes, note,
                  ai_candidates_json, selected_json, subcontractor,
                  deadline_days, raise_type, status, created_at,
-                 notice_pdf, photos_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
+                 notice_pdf, photos_json, engineer_name, place)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
         """, (project_id, uid, zone, photo_bytes, note,
               json.dumps(ai_candidates or []),
               json.dumps(selected or []),
               subcontractor, int(deadline_days or 3),
               raise_type or "qc_internal", _now(), notice_pdf,
-              _encode_photos(extra_photos)))
+              _encode_photos(extra_photos),
+              engineer_name or "", place or ""))
         c.commit()
         _sync(c)
         c.close()
@@ -462,7 +501,8 @@ def list_defects(project_id, raise_filter=None):
     if raise_filter in ("qc_internal", "consultant"):
         cur.execute("""
             SELECT id, uid, zone, subcontractor, status, created_at,
-                   closed_at, raise_type, selected_json, deadline_days
+                   closed_at, raise_type, selected_json, deadline_days,
+                   engineer_name, place
             FROM defects
             WHERE project_id=? AND COALESCE(raise_type,'qc_internal')=?
             ORDER BY id DESC
@@ -470,7 +510,8 @@ def list_defects(project_id, raise_filter=None):
     else:
         cur.execute("""
             SELECT id, uid, zone, subcontractor, status, created_at,
-                   closed_at, raise_type, selected_json, deadline_days
+                   closed_at, raise_type, selected_json, deadline_days,
+                   engineer_name, place
             FROM defects WHERE project_id=? ORDER BY id DESC
         """, (project_id,))
     raw = _to_dicts(cur.fetchall(), DEFECT_LIST_COLS)
@@ -492,6 +533,8 @@ def list_defects(project_id, raise_filter=None):
             "count": len(sel), "first_defect": first_name,
             "deadline_days": r.get("deadline_days") or 3,
             "selected": sel,
+            "engineer_name": r.get("engineer_name") or "",
+            "place": r.get("place") or "",
         })
     return out
 
@@ -504,7 +547,7 @@ def get_defect(defect_id):
                ai_candidates_json, selected_json, subcontractor,
                deadline_days, raise_type, status, created_at,
                closed_at, notice_pdf, consultant_ncr, closure_photo,
-               photos_json
+               photos_json, engineer_name, place
         FROM defects WHERE id=?
     """, (defect_id,))
     row = cur.fetchone()
@@ -554,7 +597,8 @@ def close_defect(defect_id, consultant_ncr=None, closure_photo=None):
 
 def update_defect_notice(defect_id, subcontractor, deadline_days, zone,
                           note, raise_type, selected, notice_pdf,
-                          consultant_ncr=None, extra_photos=None):
+                          consultant_ncr=None, extra_photos=None,
+                          engineer_name=None, place=None):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -566,21 +610,27 @@ def update_defect_notice(defect_id, subcontractor, deadline_days, zone,
                 UPDATE defects
                 SET subcontractor=?, deadline_days=?, zone=?, note=?,
                     raise_type=?, selected_json=?, notice_pdf=?,
-                    consultant_ncr=?, photos_json=?
+                    consultant_ncr=?, photos_json=?,
+                    engineer_name=COALESCE(?, engineer_name),
+                    place=COALESCE(?, place)
                 WHERE id=?
             """, (subcontractor, int(deadline_days or 3), zone, note,
                   raise_type or "qc_internal", json.dumps(selected),
-                  notice_pdf, consultant_ncr, photos_json, defect_id))
+                  notice_pdf, consultant_ncr, photos_json,
+                  engineer_name, place, defect_id))
         else:
             cur.execute("""
                 UPDATE defects
                 SET subcontractor=?, deadline_days=?, zone=?, note=?,
                     raise_type=?, selected_json=?, notice_pdf=?,
-                    photos_json=?
+                    photos_json=?,
+                    engineer_name=COALESCE(?, engineer_name),
+                    place=COALESCE(?, place)
                 WHERE id=?
             """, (subcontractor, int(deadline_days or 3), zone, note,
                   raise_type or "qc_internal", json.dumps(selected),
-                  notice_pdf, photos_json, defect_id))
+                  notice_pdf, photos_json,
+                  engineer_name, place, defect_id))
         c.commit()
         _sync(c)
         c.close()
@@ -672,19 +722,6 @@ def delete_subcontractor(sub_id):
         c.commit()
         _sync(c)
         c.close()
-
-
-def get_subcontractor(project_id, name):
-    c = _conn()
-    cur = c.cursor()
-    cur.execute("""
-        SELECT id, name, trade, phone, notes FROM subcontractors
-        WHERE project_id=? AND LOWER(name)=LOWER(?)
-        LIMIT 1
-    """, (project_id, (name or "").strip()))
-    row = cur.fetchone()
-    c.close()
-    return _to_dict(row, SUB_COLS)
 
 
 def list_subcontractors(project_id):
@@ -825,7 +862,6 @@ def kpi_per_week(project_id, weeks=8):
 
 
 def get_overdue_defects(project_id):
-    """Convenience: open defects past their deadline."""
     import datetime as _dt
     now = _dt.datetime.utcnow()
     rows = list_defects(project_id)
@@ -845,3 +881,127 @@ def get_overdue_defects(project_id):
             pass
     out.sort(key=lambda x: -x.get("_days_overdue", 0))
     return out
+
+
+def defect_scatter_data(project_id):
+    """
+    Returns list of {x: date_index, y: days_to_close_or_age, status}
+    for scatter plot. x = days since project start (or first defect).
+    """
+    rows = list_defects(project_id)
+    out = []
+    now = datetime.datetime.utcnow()
+    for r in rows:
+        try:
+            cr = datetime.datetime.strptime(r["created_at"][:19],
+                                             "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        days_open = (now - cr).days
+        if r["status"] == "closed" and r.get("closed_at"):
+            try:
+                cd = datetime.datetime.strptime(r["closed_at"][:19],
+                                                 "%Y-%m-%d %H:%M:%S")
+                dur = max((cd - cr).days, 0)
+            except Exception:
+                dur = days_open
+        else:
+            dur = days_open
+        out.append({
+            "x": days_open,
+            "y": dur,
+            "status": r["status"],
+            "uid": r.get("uid", ""),
+            "name": r.get("first_defect", "")[:40],
+        })
+    out.sort(key=lambda p: p["x"])
+    return out
+
+
+# =====================================================================
+# CHAT
+# =====================================================================
+def chat_add(project_id, user_id, author, body, reply_to_id=None,
+              mentions=None):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            INSERT INTO chat_messages
+                (project_id, user_id, author, body, reply_to_id,
+                 mentions, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (project_id, user_id, author, body,
+              int(reply_to_id) if reply_to_id else None,
+              json.dumps(mentions or []), _now()))
+        mid = cur.lastrowid
+        c.commit()
+        _sync(c)
+        c.close()
+        return mid
+
+
+def chat_list(project_id, limit=300):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, user_id, author, body, reply_to_id,
+               mentions, created_at
+        FROM chat_messages
+        WHERE project_id=?
+        ORDER BY id DESC LIMIT ?
+    """, (project_id, int(limit)))
+    rows = _to_dicts(cur.fetchall(), CHAT_COLS)
+    c.close()
+    out = []
+    for r in rows:
+        try:
+            r["mentions"] = json.loads(r.get("mentions") or "[]")
+        except Exception:
+            r["mentions"] = []
+        out.append(r)
+    out.reverse()
+    return out
+
+
+def chat_get(msg_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, user_id, author, body, reply_to_id,
+               mentions, created_at
+        FROM chat_messages WHERE id=?
+    """, (msg_id,))
+    row = cur.fetchone()
+    c.close()
+    d = _to_dict(row, CHAT_COLS)
+    if d:
+        try:
+            d["mentions"] = json.loads(d.get("mentions") or "[]")
+        except Exception:
+            d["mentions"] = []
+    return d
+
+
+def chat_delete(msg_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("DELETE FROM chat_messages WHERE id=?", (msg_id,))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def chat_authors(project_id):
+    """Distinct author names for filter dropdown."""
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT DISTINCT author FROM chat_messages
+        WHERE project_id=? AND author IS NOT NULL AND author != ''
+        ORDER BY author
+    """, (project_id,))
+    rows = _to_dicts(cur.fetchall(), ["author"])
+    c.close()
+    return [r["author"] for r in rows if r.get("author")]
