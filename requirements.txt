@@ -11,3 +11,4 @@ python-docx
 arabic-reshaper
 python-bidi
 libsql
+openpyxl
