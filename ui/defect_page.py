@@ -1,5 +1,6 @@
 """
-ui/defect_page.py — Full tool, all inline styles.
+ui/defect_page.py — Full file.
+Supports PDF / DOCX / TXT method statements.
 """
 import io
 from nicegui import ui
@@ -13,7 +14,6 @@ ELEMENT_TYPES = ["column", "beam", "slab", "wall", "foundation", "finishing"]
 DISCIPLINES = ["Structural", "Architectural", "MEP"]
 ZONES = ["A", "B", "C", "D", "General"]
 
-# ----- Inline styles (proven to render) -----
 TXT_DARK   = "color:#0f172a;"
 TXT_MUTED  = "color:#64748b;font-size:13px;"
 TXT_TITLE  = "color:#0f172a;font-size:16px;font-weight:700;margin-bottom:4px;"
@@ -122,23 +122,25 @@ def _build_ms(state):
     with _card():
         ui.label("Method Statements").style(TXT_TITLE)
         ui.label(
-            "Upload an MS PDF. The tool extracts clauses once, "
-            "then cites them in every defect report."
+            "Upload an MS as PDF, DOCX, or TXT. The tool extracts clauses "
+            "once, then cites them in every defect report."
         ).style(TXT_SUB)
 
-        pdf_holder = {"bytes": None}
-        pdf_status = ui.label("PDF: not uploaded").style(TXT_MUTED)
+        doc_holder = {"bytes": None, "name": ""}
+        doc_status = ui.label("File: not uploaded").style(TXT_MUTED)
 
-        async def handle_pdf(e):
-            pdf_holder["bytes"] = await e.file.read()
-            pdf_status.set_text(
-                "PDF loaded: " + e.file.name + " (" +
-                str(len(pdf_holder["bytes"]) // 1024) + " KB)"
+        async def handle_doc(e):
+            doc_holder["bytes"] = await e.file.read()
+            doc_holder["name"] = e.file.name
+            doc_status.set_text(
+                "File loaded: " + e.file.name + " (" +
+                str(len(doc_holder["bytes"]) // 1024) + " KB)"
             )
 
-        ui.upload(on_upload=handle_pdf, auto_upload=True).style(
+        ui.upload(on_upload=handle_doc, auto_upload=True).style(
             "width:100%;"
-        ).props("flat bordered accept=.pdf label='Upload MS PDF'")
+        ).props("flat bordered accept=.pdf,.docx,.doc,.txt,.md "
+                "label='Upload MS (PDF / DOCX / TXT)'")
 
         with ui.element('div').style(INPUT_ROW):
             ms_num_in = ui.input("MS Number", value="MS-01").style("flex:1;")
@@ -152,14 +154,14 @@ def _build_ms(state):
         clause_preview = ui.element('div').style("width:100%;")
 
         async def extract():
-            if not pdf_holder["bytes"]:
-                ui.notify("Upload the MS PDF first.", type="warning")
+            if not doc_holder["bytes"]:
+                ui.notify("Upload the MS file first.", type="warning")
                 return
             clause_preview.clear()
             with clause_preview:
                 ui.label("Extracting clauses via AI...").style(TXT_MUTED)
             result = await svc.extract_clauses_from_pdf(
-                pdf_holder["bytes"], call_gemini_json
+                doc_holder["bytes"], call_gemini_json, doc_holder["name"]
             )
             clause_preview.clear()
 
@@ -195,7 +197,7 @@ def _build_ms(state):
                         title=title_in.value.strip(),
                         element_type=element_in.value,
                         discipline=disc_in.value,
-                        pdf_bytes=pdf_holder["bytes"],
+                        pdf_bytes=doc_holder["bytes"],
                         clauses=clauses,
                     )
                     ui.notify("MS saved to library.", type="positive")
@@ -315,6 +317,15 @@ def _build_new_defect(state):
                     ui.label("Error: " + str(result["error"])).style(
                         "color:#dc2626;font-size:13px;"
                     )
+                    raw_txt = result.get("raw", "")
+                    if raw_txt:
+                        ui.label("Raw AI output (debug):").style(TXT_MUTED)
+                        ui.label(raw_txt).style(
+                            "color:#7c2d12;font-size:11px;"
+                            "font-family:monospace;white-space:pre-wrap;"
+                            "background:#fef3c7;padding:8px;"
+                            "border-radius:6px;width:100%;"
+                        )
                 return
 
             candidates = result["defects"]
@@ -387,7 +398,6 @@ def _build_new_defect(state):
                                         "display:block;"
                                     )
 
-                    # Notice details
                     ui.label("Notice details").style(
                         TXT_TITLE + "margin-top:24px;"
                     )
@@ -471,10 +481,12 @@ def _build_register(state):
     with _card():
         ui.label("Defect Register").style(TXT_TITLE)
         ui.label(
-            "Every notice you have issued. Click a row to see full detail."
+            "Every notice you have issued. Filter by source, click a row "
+            "for detail, export the register or the closure report."
         ).style(TXT_SUB)
 
         table_container = ui.element('div').style("width:100%;")
+        fstate = {"raise_filter": "all"}
 
         def refresh():
             table_container.clear()
@@ -482,15 +494,66 @@ def _build_register(state):
                 with table_container:
                     ui.label("No project set up yet.").style(TXT_MUTED)
                 return
-            rows = db.list_defects(state["project"]["id"])
+
+            rf = fstate["raise_filter"]
+            rows = db.list_defects(
+                state["project"]["id"],
+                raise_filter=None if rf == "all" else rf,
+            )
+
             with table_container:
+                with ui.element('div').style(
+                    "display:flex;gap:10px;align-items:center;"
+                    "width:100%;margin-bottom:12px;flex-wrap:wrap;"
+                ):
+                    ui.label("Source:").style(TXT_MUTED)
+                    filt = ui.select(
+                        {"all": "All",
+                         "qc_internal": "QC Internal",
+                         "consultant": "Consultant / NCR"},
+                        value=rf,
+                    ).style("min-width:180px;")
+
+                    def on_filter(e):
+                        fstate["raise_filter"] = e.value
+                        refresh()
+
+                    filt.on("update:model-value", on_filter)
+
+                    ui.space()
+
+                    def export_register():
+                        if not rows:
+                            ui.notify("No rows to export.", type="warning")
+                            return
+                        pdf = svc.build_register_pdf(
+                            state["project"], rows,
+                            logo_bytes=state["project"].get("logo_bytes"),
+                        )
+                        ui.download(pdf, filename="defect_register.pdf")
+
+                    def export_closure():
+                        if not rows:
+                            ui.notify("No rows to export.", type="warning")
+                            return
+                        pdf = svc.build_closure_pdf(
+                            state["project"], rows,
+                            logo_bytes=state["project"].get("logo_bytes"),
+                        )
+                        ui.download(pdf, filename="closure_report.pdf")
+
+                    ui.button("Export Register",
+                              on_click=export_register).style(BTN_FLAT)
+                    ui.button("Closure Report",
+                              on_click=export_closure).style(BTN_PRIMARY)
+
                 if not rows:
-                    ui.label("No defects yet.").style(TXT_MUTED)
+                    ui.label("No defects for this filter.").style(TXT_MUTED)
                     return
 
                 open_count = sum(1 for r in rows if r["status"] == "open")
                 ui.label(
-                    "Total: " + str(len(rows)) +
+                    "Shown: " + str(len(rows)) +
                     "  ·  Open: " + str(open_count) +
                     "  ·  Closed: " + str(len(rows) - open_count)
                 ).style(TXT_TITLE)
@@ -503,6 +566,8 @@ def _build_register(state):
                         {"name": "sub", "label": "Subcontractor",
                          "field": "subcontractor", "align": "left"},
                         {"name": "count", "label": "#", "field": "count"},
+                        {"name": "raise_type", "label": "Source",
+                         "field": "raise_type"},
                         {"name": "status", "label": "Status",
                          "field": "status"},
                         {"name": "created", "label": "Created",
@@ -530,6 +595,8 @@ def _show_defect_dialog(defect_id, on_close_cb):
         ui.notify("Defect not found.", type="negative")
         return
 
+    is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
+
     with ui.dialog() as dialog, ui.card().style(
         "background:#ffffff;padding:24px;max-width:880px;width:100%;"
     ):
@@ -537,16 +604,23 @@ def _show_defect_dialog(defect_id, on_close_cb):
             "color:#0f172a;font-size:18px;font-weight:700;"
         )
         ui.label(
-            "Zone " + str(d["zone"]) + " · " + str(d["subcontractor"]) +
-            " · " + d["status"].upper()
+            "Zone " + str(d["zone"]) + " · " +
+            str(d["subcontractor"]) + " · " +
+            ("Consultant / NCR" if is_consultant else "QC Internal") + " · " +
+            d["status"].upper()
         ).style(TXT_MUTED)
+
+        if d.get("consultant_ncr"):
+            ui.label("Consultant NCR: " + str(d["consultant_ncr"])).style(
+                "color:#b45309;font-size:13px;font-weight:600;"
+            )
 
         ui.separator()
 
         with ui.element('div').style(
             "display:flex;gap:20px;align-items:flex-start;width:100%;"
         ):
-            if d["photo_bytes"]:
+            if d.get("photo_bytes"):
                 ui.image(io.BytesIO(d["photo_bytes"])).style(
                     "width:280px;border-radius:10px;border:1px solid #e2e8f0;"
                 )
@@ -561,18 +635,31 @@ def _show_defect_dialog(defect_id, on_close_cb):
                         if s.get("ms_violations"):
                             cit.append("MS: " + ", ".join(s["ms_violations"]))
                         if s.get("code_violations"):
-                            cit.append("Code: " + ", ".join(s["code_violations"]))
+                            cit.append("Code: " +
+                                       ", ".join(s["code_violations"]))
                         if cit:
                             ui.label(" | ".join(cit)).style(
                                 "color:#475569;font-size:13px;font-style:italic;"
                             )
+                        if s.get("repair_action"):
+                            ui.label("Repair: " + str(s["repair_action"])).style(
+                                "color:#64748b;font-size:13px;"
+                            )
 
         ui.separator()
 
-        with ui.element('div').style("display:flex;gap:8px;margin-top:8px;"):
+        ncr_in = None
+        if is_consultant and d["status"] == "open":
+            ncr_in = ui.input(
+                "Consultant NCR Number (required to close)"
+            ).style("width:100%;margin-top:6px;")
+
+        with ui.element('div').style(
+            "display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"
+        ):
             if d.get("notice_pdf"):
                 ui.button(
-                    "Download PDF",
+                    "Download Notice PDF",
                     on_click=lambda: ui.download(
                         d["notice_pdf"], filename=d["uid"] + ".pdf"
                     )
@@ -580,7 +667,19 @@ def _show_defect_dialog(defect_id, on_close_cb):
 
             if d["status"] == "open":
                 def do_close():
-                    db.close_defect(defect_id)
+                    if is_consultant:
+                        if not ncr_in or not ncr_in.value.strip():
+                            ui.notify(
+                                "Enter the consultant NCR number first.",
+                                type="warning"
+                            )
+                            return
+                        db.close_defect(
+                            defect_id,
+                            consultant_ncr=ncr_in.value.strip()
+                        )
+                    else:
+                        db.close_defect(defect_id)
                     ui.notify("Defect marked closed.", type="positive")
                     dialog.close()
                     on_close_cb()
