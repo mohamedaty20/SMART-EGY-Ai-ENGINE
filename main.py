@@ -16,4 +16,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         port=10000,
         title="Defect Notices",
         reload=False,
+        reconnect_timeout=60.0,
+        ws_ping_interval=30,
+        ws_ping_timeout=120,
     )
