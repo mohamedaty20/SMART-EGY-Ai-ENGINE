@@ -1,12 +1,13 @@
 """
-services/defect_service.py — Full file. Fonts + PDFs + Excel.
+services/defect_service.py — Full file.
+Adds build_sub_pdf() + photo strip in notice PDF.
 """
-
 import io
 import os
 import re
 import json
 import uuid
+import base64
 import datetime
 import asyncio
 
@@ -15,33 +16,25 @@ import asyncio
 # FONTS
 # =====================================================================
 _FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
-
 _FONT_REG_PATH = os.path.join(_FONT_DIR, "Amiri-Regular.ttf")
 _FONT_BOLD_PATH = os.path.join(_FONT_DIR, "Amiri-Bold.ttf")
 _FONT_REG_URLS = [
     "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
     "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf",
-    "https://github.com/aliftype/amiri/raw/main/Amiri-Regular.ttf",
 ]
 _FONT_BOLD_URLS = [
     "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Bold.ttf",
     "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf",
-    "https://github.com/aliftype/amiri/raw/main/Amiri-Bold.ttf",
 ]
-
 _MONO_REG_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Regular.ttf")
 _MONO_BOLD_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Bold.ttf")
 _MONO_REG_URLS = [
     "https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/ttf/JetBrainsMono-Regular.ttf",
     "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Regular.ttf",
-    "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSansMono.ttf",
-    "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSansMono.ttf",
 ]
 _MONO_BOLD_URLS = [
     "https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/ttf/JetBrainsMono-Bold.ttf",
     "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Bold.ttf",
-    "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSansMono-Bold.ttf",
-    "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSansMono-Bold.ttf",
 ]
 
 _FONT_NAME = "Helvetica"
@@ -63,7 +56,6 @@ def _download_font(url, dest):
         if not data or len(data) < 5000:
             return False
         if data[:4] not in (b"\x00\x01\x00\x00", b"OTTO", b"true", b"ttcf"):
-            print("[defect] not a TTF: " + url)
             return False
         with open(dest, "wb") as f:
             f.write(data)
@@ -83,7 +75,6 @@ def _registered():
 
 
 def _ensure_fonts():
-    """Call before every PDF build. Retries if fonts aren't registered."""
     global _FONT_NAME, _FONT_BOLD, _MONO_NAME, _MONO_BOLD
     try:
         from reportlab.pdfbase import pdfmetrics
@@ -91,10 +82,8 @@ def _ensure_fonts():
     except Exception as e:
         print("[defect] reportlab missing: " + repr(e))
         return
-
     have = _registered()
 
-    # --- JetBrains Mono (Latin) ---
     if "MonoReg" in have:
         _MONO_NAME = "MonoReg"
         _MONO_BOLD = "MonoBold" if "MonoBold" in have else "MonoReg"
@@ -119,15 +108,13 @@ def _ensure_fonts():
             if _MONO_NAME == "MonoReg":
                 try:
                     pdfmetrics.registerFontFamily(
-                        "MonoReg",
-                        normal="MonoReg", bold=_MONO_BOLD,
+                        "MonoReg", normal="MonoReg", bold=_MONO_BOLD,
                         italic="MonoReg", boldItalic=_MONO_BOLD)
                 except Exception:
                     pass
         except Exception as e:
             print("[defect] Mono register failed: " + repr(e))
 
-    # --- Amiri (Arabic) ---
     if "ArReg" in have:
         _FONT_NAME = "ArReg"
         _FONT_BOLD = "ArBold" if "ArBold" in have else "ArReg"
@@ -152,8 +139,7 @@ def _ensure_fonts():
             if _FONT_NAME == "ArReg":
                 try:
                     pdfmetrics.registerFontFamily(
-                        "ArReg",
-                        normal="ArReg", bold=_FONT_BOLD,
+                        "ArReg", normal="ArReg", bold=_FONT_BOLD,
                         italic="ArReg", boldItalic=_FONT_BOLD)
                 except Exception:
                     pass
@@ -161,8 +147,7 @@ def _ensure_fonts():
             print("[defect] Amiri register failed: " + repr(e))
 
     print("[defect] fonts ready: mono=" + _MONO_NAME +
-          " arabic=" + _FONT_NAME + " | registered=" +
-          str(sorted(_registered())))
+          " arabic=" + _FONT_NAME)
 
 
 def _has_arabic(text):
@@ -207,7 +192,6 @@ def _font_for(text, bold=False):
 
 
 def _para(text, base_style, bold=False):
-    """Force font via inline <font name> so no fallback happens."""
     from reportlab.platypus import Paragraph
     raw = str(text or "")
     shaped = _fix(raw)
@@ -254,6 +238,25 @@ def _detect_image_type(data):
     if data[:8] == b'\x89PNG\r\n\x1a\n':
         return "png"
     return None
+
+
+def _thumb(photo_bytes, max_side=280):
+    """Small JPEG thumbnail for embedding in PDF tables."""
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(photo_bytes))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        w, h = img.size
+        if max(w, h) > max_side:
+            r = max_side / float(max(w, h))
+            img = img.resize((int(w * r), int(h * r)), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=75, optimize=True)
+        out.seek(0)
+        return out.read()
+    except Exception:
+        return photo_bytes
 
 
 # =====================================================================
@@ -493,12 +496,9 @@ apply to what the photo shows.
 
 MATCHING RULE: before citing an MS clause ask: does this clause relate to
 what the photo shows?
-If NOT:
-- still describe the defect in plain language
-- ms_violations = [], code_violations = [], context_mismatch = true
-If YES:
-- cite 1-3 MS clause ids and 1-3 ECP codes from the provided lists
-- context_mismatch = false
+If NOT: still describe the defect; ms_violations=[]; code_violations=[];
+context_mismatch=true.
+If YES: cite 1-3 MS ids and 1-3 ECP codes from the lists; context_mismatch=false.
 
 NEVER invent a clause match.
 
@@ -695,10 +695,15 @@ def _make_qr_buffer(text):
 
 
 # =====================================================================
-# NOTICE PDF
+# NOTICE PDF (with photo strip)
 # =====================================================================
 def build_notice_pdf(project, defects, notice_uid, subcontractor,
-                     deadline_days, raise_type="qc_internal", logo_bytes=None):
+                     deadline_days, raise_type="qc_internal",
+                     logo_bytes=None, photos=None):
+    """
+    photos: optional list of bytes (photos to embed after the header).
+            If None, no photo strip is added.
+    """
     _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Spacer, Table, TableStyle,
@@ -715,7 +720,6 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
         leftMargin=18 * mm, rightMargin=18 * mm,
         topMargin=18 * mm, bottomMargin=18 * mm,
     )
-
     NAVY = colors.HexColor("#0a0a0a")
     ACCENT = colors.HexColor("#14b8a6")
     GREY = colors.HexColor("#525252")
@@ -793,6 +797,30 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
     ]))
     story.append(t_meta)
     story.append(Spacer(1, 10))
+
+    # ---- Photos strip (up to 4) ----
+    if photos:
+        valid = [p for p in photos if p][:4]
+        if valid:
+            thumbs = []
+            for p in valid:
+                try:
+                    thumbs.append(ReportLabImage(
+                        io.BytesIO(_thumb(p)), width=42 * mm, height=42 * mm))
+                except Exception:
+                    thumbs.append("")
+            row = [t for t in thumbs if t]
+            if row:
+                t_photos = Table([row],
+                                  colWidths=[44 * mm] * len(row))
+                t_photos.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                story.append(_para("PHOTOS", label_style, bold=True))
+                story.append(t_photos)
+                story.append(Spacer(1, 10))
 
     story.append(_para("TO:", label_style, bold=True))
     story.append(_para(subcontractor, body_style))
@@ -1114,6 +1142,198 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
 
 
 # =====================================================================
+# PER-SUBCONTRACTOR PERFORMANCE PDF
+# =====================================================================
+def build_sub_pdf(project, sub_name, score, defects,
+                   report_uid=None, logo_bytes=None):
+    """
+    One-page performance report for a single subcontractor.
+    score: {"open": N, "closed": N, "overdue": N, "total": N}
+    defects: list of dicts (rows from db.list_defects for this sub)
+    """
+    _ensure_fonts()
+    from reportlab.platypus import (
+        SimpleDocTemplate, Spacer, Table, TableStyle,
+        Image as ReportLabImage, HRFlowable,
+    )
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+
+    if report_uid is None:
+        report_uid = generate_uid("SUB")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+    )
+    NAVY = colors.HexColor("#0a0a0a")
+    ACCENT = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+    GREEN = colors.HexColor("#16a34a")
+    AMBER = colors.HexColor("#d97706")
+    RED = colors.HexColor("#dc2626")
+
+    title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
+                                  fontSize=14, textColor=NAVY,
+                                  spaceAfter=2, leading=18)
+    sub_style = ParagraphStyle("Sub", fontName=_MONO_NAME,
+                                fontSize=9, textColor=ACCENT,
+                                spaceAfter=6, leading=12)
+    label_style = ParagraphStyle("Label", fontName=_MONO_BOLD,
+                                  fontSize=8, textColor=NAVY, leading=11)
+    meta_style = ParagraphStyle("Meta", fontName=_MONO_NAME, fontSize=8.5,
+                                 textColor=GREY, leading=12)
+    cell_style = ParagraphStyle("Cell", fontName=_MONO_NAME, fontSize=8,
+                                 textColor=colors.black, leading=11)
+    head_style = ParagraphStyle("Head", fontName=_MONO_BOLD,
+                                 fontSize=8, textColor=colors.white, leading=11)
+    small_style = ParagraphStyle("Small", fontName=_MONO_NAME, fontSize=7,
+                                  textColor=GREY, leading=9)
+
+    story = []
+
+    logo_img = ""
+    if logo_bytes:
+        try:
+            logo_img = ReportLabImage(io.BytesIO(logo_bytes),
+                                       width=26 * mm, height=13 * mm)
+        except Exception:
+            logo_img = ""
+
+    header_text = [
+        _para("SUBCONTRACTOR PERFORMANCE", title_style, bold=True),
+        _para("REPORT NO: " + report_uid, sub_style),
+    ]
+    t_head = Table([[logo_img, header_text]] if logo_img else [[header_text]],
+                   colWidths=[32 * mm, 148 * mm] if logo_img else [180 * mm])
+    t_head.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_head)
+    story.append(Spacer(1, 4))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
+                             spaceAfter=10))
+
+    # Sub name + big
+    story.append(_para("SUBCONTRACTOR", label_style, bold=True))
+    name_style = ParagraphStyle("NameBig", fontName=_MONO_BOLD, fontSize=13,
+                                 textColor=NAVY, leading=16)
+    story.append(_para(sub_name or "-", name_style, bold=True))
+    story.append(Spacer(1, 10))
+
+    meta_rows = [
+        [_para("PROJECT", label_style, bold=True),
+         _para(project.get("name", ""), meta_style),
+         _para("DATE", label_style, bold=True),
+         _para(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
+    ]
+    t_meta = Table(meta_rows, colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
+    t_meta.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_meta)
+    story.append(Spacer(1, 14))
+
+    # KPI strip
+    kpi = [
+        [_para("TOTAL", label_style, bold=True),
+         _para("OPEN", label_style, bold=True),
+         _para("OVERDUE", label_style, bold=True),
+         _para("CLOSED", label_style, bold=True)],
+        [_para(str(score.get("total", 0)), meta_style),
+         _para(str(score.get("open", 0)), meta_style),
+         _para(str(score.get("overdue", 0)), meta_style),
+         _para(str(score.get("closed", 0)), meta_style)],
+    ]
+    t_kpi = Table(kpi, colWidths=[45 * mm, 45 * mm, 45 * mm, 45 * mm])
+    t_kpi.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F5F5")),
+        ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(t_kpi)
+    story.append(Spacer(1, 16))
+
+    # Defects table
+    story.append(_para("DEFECTS ISSUED TO THIS SUBCONTRACTOR",
+                        label_style, bold=True))
+    story.append(Spacer(1, 6))
+
+    head = ["UID", "DEFECT", "ZONE", "STATUS", "CREATED", "CLOSED"]
+    data = [[_para(h, head_style, bold=True) for h in head]]
+    for r in defects:
+        st = str(r.get("status", "")).upper()
+        cell = cell_style
+        if st == "CLOSED":
+            cell = ParagraphStyle("c" + str(r.get("id")), parent=cell_style,
+                                   textColor=GREEN)
+        elif st == "OPEN":
+            cell = ParagraphStyle("c" + str(r.get("id")), parent=cell_style,
+                                   textColor=AMBER)
+        data.append([
+            _para(r.get("uid", ""), cell_style),
+            _para((r.get("first_defect") or "-")[:70], cell_style),
+            _para(r.get("zone", ""), cell_style),
+            _para(st, cell, bold=True),
+            _para(str(r.get("created_at", ""))[:10], cell_style),
+            _para(str(r.get("closed_at", "") or "-")[:10], cell_style),
+        ])
+
+    t = Table(data, colWidths=[34*mm, 60*mm, 14*mm, 22*mm, 25*mm, 25*mm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1),
+         [colors.white, colors.HexColor("#F5F5F5")]),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+    ]))
+    story.append(t)
+
+    story.append(Spacer(1, 12))
+    story.append(_para(
+        "Generated " + datetime.date.today().strftime("%Y-%m-%d") +
+        "  ·  " + str(len(defects)) + " record(s)", small_style))
+
+    story.append(Spacer(1, 24))
+    sig_data = [
+        [_para("QC ENGINEER", label_style, bold=True),
+         _para("PROJECT MANAGER", label_style, bold=True)],
+        [_para("_" * 32, meta_style), _para("_" * 32, meta_style)],
+        [_para(project.get("engineer_name", ""), meta_style),
+         _para("Name / Date / Signature", small_style)],
+    ]
+    t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
+    t_sig.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_sig)
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+# =====================================================================
 # EXCEL EXPORT
 # =====================================================================
 def build_register_xlsx(project, rows, logo_bytes=None):
@@ -1123,7 +1343,6 @@ def build_register_xlsx(project, rows, logo_bytes=None):
     from openpyxl.utils import get_column_letter
 
     wb = Workbook()
-
     navy = PatternFill("solid", fgColor="0A0A0A")
     white_bold = Font(bold=True, color="FFFFFF", size=10, name="Consolas")
     body_font = Font(size=10, name="Consolas")
