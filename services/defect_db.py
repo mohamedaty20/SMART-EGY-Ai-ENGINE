@@ -1,9 +1,8 @@
 """
-services/defect_db.py — SQLite layer.
-Uses Turso (libsql) when TURSO_URL + TURSO_TOKEN are set;
-falls back to a local file otherwise.
+services/defect_db.py — SQLite layer with Turso support + analytics.
 """
 import os
+import re
 import json
 import sqlite3
 import datetime
@@ -30,15 +29,12 @@ def _conn():
         try:
             import libsql
             try:
-                c = libsql.connect(
-                    LOCAL_CACHE,
-                    sync_url=TURSO_URL,
-                    auth_token=TURSO_TOKEN,
-                )
+                c = libsql.connect(LOCAL_CACHE, sync_url=TURSO_URL,
+                                    auth_token=TURSO_TOKEN)
             except TypeError:
                 c = libsql.connect(database=LOCAL_CACHE,
-                                   sync_url=TURSO_URL,
-                                   auth_token=TURSO_TOKEN)
+                                    sync_url=TURSO_URL,
+                                    auth_token=TURSO_TOKEN)
             try:
                 c.row_factory = sqlite3.Row
             except Exception:
@@ -49,11 +45,17 @@ def _conn():
                 pass
             return c
         except Exception as e:
-            print("[db] Turso connect failed, falling back to local: "
-                  + repr(e))
+            print("[db] Turso failed, fallback local: " + repr(e))
     c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
     c.row_factory = sqlite3.Row
     return c
+
+
+def _sync(c):
+    try:
+        c.sync()
+    except Exception:
+        pass
 
 
 def _ensure_columns(cur, table, wanted):
@@ -77,70 +79,54 @@ def init_db():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                contractor TEXT,
-                subcontractor TEXT,
-                consultant TEXT,
-                location TEXT,
-                engineer_name TEXT,
-                logo_bytes BLOB,
-                created_at TEXT
+                name TEXT, contractor TEXT, subcontractor TEXT,
+                consultant TEXT, location TEXT, engineer_name TEXT,
+                logo_bytes BLOB, created_at TEXT
             )
         """)
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS method_statements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER,
-                ms_number TEXT,
-                title TEXT,
-                element_type TEXT,
-                discipline TEXT,
-                pdf_bytes BLOB,
-                clauses_json TEXT,
-                created_at TEXT
+                project_id INTEGER, ms_number TEXT, title TEXT,
+                element_type TEXT, discipline TEXT,
+                pdf_bytes BLOB, clauses_json TEXT, created_at TEXT
             )
         """)
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS defects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER,
-                uid TEXT,
-                zone TEXT,
-                photo_bytes BLOB,
-                note TEXT,
-                ai_candidates_json TEXT,
-                selected_json TEXT,
-                subcontractor TEXT,
-                deadline_days INTEGER,
-                raise_type TEXT,
-                status TEXT,
-                created_at TEXT,
-                closed_at TEXT,
-                notice_pdf BLOB,
-                consultant_ncr TEXT
+                project_id INTEGER, uid TEXT, zone TEXT,
+                photo_bytes BLOB, note TEXT,
+                ai_candidates_json TEXT, selected_json TEXT,
+                subcontractor TEXT, deadline_days INTEGER,
+                raise_type TEXT, status TEXT,
+                created_at TEXT, closed_at TEXT,
+                notice_pdf BLOB, consultant_ncr TEXT,
+                closure_photo BLOB
             )
         """)
 
-        _ensure_columns(cur, "projects", [
-            ("subcontractor", "TEXT"),
-        ])
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS subcontractors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, name TEXT, trade TEXT,
+                phone TEXT, notes TEXT, created_at TEXT
+            )
+        """)
+
+        _ensure_columns(cur, "projects", [("subcontractor", "TEXT")])
         _ensure_columns(cur, "defects", [
-            ("raise_type", "TEXT"),
-            ("closed_at", "TEXT"),
-            ("notice_pdf", "BLOB"),
-            ("consultant_ncr", "TEXT"),
+            ("raise_type", "TEXT"), ("closed_at", "TEXT"),
+            ("notice_pdf", "BLOB"), ("consultant_ncr", "TEXT"),
+            ("closure_photo", "BLOB"),
         ])
 
         c.commit()
-        try:
-            c.sync()
-        except Exception:
-            pass
+        _sync(c)
         c.close()
-
-        print("[db] init complete — turso=" + str(_use_turso()))
+        print("[db] init — turso=" + str(_use_turso()))
 
 
 init_db()
@@ -178,29 +164,9 @@ def save_project(name, contractor, consultant, location,
                   location, engineer_name, logo_bytes, _now()))
             pid = cur.lastrowid
         c.commit()
-        try:
-            c.sync()
-        except Exception:
-            pass
+        _sync(c)
         c.close()
         return pid
-
-
-def save_subcontractor(name):
-    with _LOCK:
-        c = _conn()
-        cur = c.cursor()
-        cur.execute("SELECT id FROM projects ORDER BY id LIMIT 1")
-        row = cur.fetchone()
-        if row:
-            cur.execute("UPDATE projects SET subcontractor=? WHERE id=?",
-                        (name, row["id"]))
-            c.commit()
-            try:
-                c.sync()
-            except Exception:
-                pass
-        c.close()
 
 
 def get_project():
@@ -209,9 +175,7 @@ def get_project():
     cur.execute("SELECT * FROM projects ORDER BY id LIMIT 1")
     row = cur.fetchone()
     c.close()
-    if not row:
-        return None
-    return dict(row)
+    return dict(row) if row else None
 
 
 # =====================================================================
@@ -230,10 +194,7 @@ def save_ms(project_id, ms_number, title, element_type, discipline,
         """, (project_id, ms_number, title, element_type, discipline,
               pdf_bytes, json.dumps(clauses), _now()))
         c.commit()
-        try:
-            c.sync()
-        except Exception:
-            pass
+        _sync(c)
         c.close()
 
 
@@ -253,12 +214,9 @@ def list_ms(project_id):
         except Exception:
             clauses = []
         out.append({
-            "id": r["id"],
-            "ms_number": r["ms_number"],
-            "title": r["title"],
+            "id": r["id"], "ms_number": r["ms_number"], "title": r["title"],
             "element_type": r["element_type"],
-            "discipline": r["discipline"],
-            "clauses": clauses,
+            "discipline": r["discipline"], "clauses": clauses,
         })
     return out
 
@@ -272,10 +230,8 @@ def get_clauses_for_element(project_id, element_type):
     """, (project_id, element_type))
     rows = cur.fetchall()
     if not rows:
-        cur.execute("""
-            SELECT clauses_json FROM method_statements
-            WHERE project_id=?
-        """, (project_id,))
+        cur.execute("SELECT clauses_json FROM method_statements "
+                    "WHERE project_id=?", (project_id,))
         rows = cur.fetchall()
     c.close()
     clauses = []
@@ -303,20 +259,13 @@ def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                  deadline_days, raise_type, status, created_at,
                  notice_pdf)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
-        """, (
-            project_id, uid, zone, photo_bytes, note,
-            json.dumps(ai_candidates or []),
-            json.dumps(selected or []),
-            subcontractor, int(deadline_days or 3),
-            raise_type or "qc_internal",
-            _now(),
-            notice_pdf,
-        ))
+        """, (project_id, uid, zone, photo_bytes, note,
+              json.dumps(ai_candidates or []),
+              json.dumps(selected or []),
+              subcontractor, int(deadline_days or 3),
+              raise_type or "qc_internal", _now(), notice_pdf))
         c.commit()
-        try:
-            c.sync()
-        except Exception:
-            pass
+        _sync(c)
         c.close()
 
 
@@ -326,7 +275,7 @@ def list_defects(project_id, raise_filter=None):
     if raise_filter in ("qc_internal", "consultant"):
         cur.execute("""
             SELECT id, uid, zone, subcontractor, status, created_at,
-                   closed_at, raise_type, selected_json
+                   closed_at, raise_type, selected_json, deadline_days
             FROM defects
             WHERE project_id=? AND COALESCE(raise_type,'qc_internal')=?
             ORDER BY id DESC
@@ -334,10 +283,9 @@ def list_defects(project_id, raise_filter=None):
     else:
         cur.execute("""
             SELECT id, uid, zone, subcontractor, status, created_at,
-                   closed_at, raise_type, selected_json
+                   closed_at, raise_type, selected_json, deadline_days
             FROM defects
-            WHERE project_id=?
-            ORDER BY id DESC
+            WHERE project_id=? ORDER BY id DESC
         """, (project_id,))
     rows = cur.fetchall()
     c.close()
@@ -347,20 +295,15 @@ def list_defects(project_id, raise_filter=None):
             sel = json.loads(r["selected_json"] or "[]")
         except Exception:
             sel = []
-        first_name = ""
-        if sel:
-            first_name = str(sel[0].get("name", ""))[:100]
+        first_name = str(sel[0].get("name", ""))[:100] if sel else ""
         out.append({
-            "id": r["id"],
-            "uid": r["uid"],
-            "zone": r["zone"],
-            "subcontractor": r["subcontractor"],
-            "status": r["status"],
-            "created_at": r["created_at"],
-            "closed_at": r["closed_at"],
+            "id": r["id"], "uid": r["uid"], "zone": r["zone"],
+            "subcontractor": r["subcontractor"], "status": r["status"],
+            "created_at": r["created_at"], "closed_at": r["closed_at"],
             "raise_type": r["raise_type"] or "qc_internal",
-            "count": len(sel),
-            "first_defect": first_name,
+            "count": len(sel), "first_defect": first_name,
+            "deadline_days": r["deadline_days"] or 3,
+            "selected": sel,
         })
     return out
 
@@ -385,25 +328,243 @@ def get_defect(defect_id):
     return d
 
 
-def close_defect(defect_id, consultant_ncr=None):
+def close_defect(defect_id, consultant_ncr=None, closure_photo=None):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
-        if consultant_ncr:
+        if consultant_ncr and closure_photo is not None:
             cur.execute("""
-                UPDATE defects
-                SET status='closed', closed_at=?, consultant_ncr=?
-                WHERE id=?
+                UPDATE defects SET status='closed', closed_at=?,
+                    consultant_ncr=?, closure_photo=? WHERE id=?
+            """, (_now(), consultant_ncr, closure_photo, defect_id))
+        elif consultant_ncr:
+            cur.execute("""
+                UPDATE defects SET status='closed', closed_at=?,
+                    consultant_ncr=? WHERE id=?
             """, (_now(), consultant_ncr, defect_id))
+        elif closure_photo is not None:
+            cur.execute("""
+                UPDATE defects SET status='closed', closed_at=?,
+                    closure_photo=? WHERE id=?
+            """, (_now(), closure_photo, defect_id))
         else:
             cur.execute("""
-                UPDATE defects
-                SET status='closed', closed_at=?
-                WHERE id=?
+                UPDATE defects SET status='closed', closed_at=? WHERE id=?
             """, (_now(), defect_id))
         c.commit()
-        try:
-            c.sync()
-        except Exception:
-            pass
+        _sync(c)
         c.close()
+
+
+# =====================================================================
+# DUPLICATE DETECTION
+# =====================================================================
+def _keywords(text):
+    if not text:
+        return set()
+    return set(re.findall(r'[a-z\u0600-\u06FF]{4,}', str(text).lower()))
+
+
+def find_similar_defects(project_id, name, days=60, limit=5,
+                          min_overlap=0.4):
+    """Return past defects with keyword overlap >= min_overlap."""
+    kw = _keywords(name)
+    if not kw:
+        return []
+    cutoff = (datetime.datetime.utcnow() -
+              datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, uid, zone, created_at, selected_json, subcontractor
+        FROM defects WHERE project_id=? AND created_at >= ?
+        ORDER BY id DESC LIMIT 300
+    """, (project_id, cutoff))
+    rows = cur.fetchall()
+    c.close()
+    matches = []
+    for r in rows:
+        try:
+            sel = json.loads(r["selected_json"] or "[]")
+        except Exception:
+            continue
+        for s in sel:
+            past = str(s.get("name", ""))
+            past_kw = _keywords(past)
+            if not past_kw:
+                continue
+            overlap = len(kw & past_kw) / float(max(len(kw), len(past_kw)))
+            if overlap >= min_overlap:
+                matches.append({
+                    "uid": r["uid"], "zone": r["zone"],
+                    "subcontractor": r["subcontractor"],
+                    "name": past, "date": r["created_at"],
+                })
+                break
+        if len(matches) >= limit:
+            break
+    return matches
+
+
+# =====================================================================
+# SUBCONTRACTORS
+# =====================================================================
+def add_subcontractor(project_id, name, trade="", phone="", notes=""):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            INSERT INTO subcontractors
+                (project_id, name, trade, phone, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (project_id, name, trade, phone, notes, _now()))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def delete_subcontractor(sub_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("DELETE FROM subcontractors WHERE id=?", (sub_id,))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def list_subcontractors(project_id):
+    """Return masters + any names that appear in defects but not in masters."""
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, name, trade, phone, notes
+        FROM subcontractors WHERE project_id=? ORDER BY name ASC
+    """, (project_id,))
+    master = cur.fetchall()
+    cur.execute("""
+        SELECT DISTINCT subcontractor FROM defects
+        WHERE project_id=? AND subcontractor IS NOT NULL
+              AND subcontractor != ''
+    """, (project_id,))
+    used = {r["subcontractor"] for r in cur.fetchall()}
+    c.close()
+    out = []
+    seen = set()
+    for r in master:
+        out.append({"id": r["id"], "name": r["name"],
+                    "trade": r["trade"] or "", "phone": r["phone"] or "",
+                    "notes": r["notes"] or "", "from_master": True})
+        seen.add(r["name"])
+    for name in used:
+        if name not in seen:
+            out.append({"id": None, "name": name, "trade": "",
+                        "phone": "", "notes": "", "from_master": False})
+    return out
+
+
+def subcontractor_scores(project_id):
+    """Per-subcontractor open/closed/overdue counts."""
+    rows = list_defects(project_id)
+    now = datetime.datetime.utcnow()
+    agg = {}
+    for r in rows:
+        name = r.get("subcontractor") or "(unassigned)"
+        if name not in agg:
+            agg[name] = {"name": name, "open": 0, "closed": 0,
+                         "overdue": 0, "total": 0}
+        agg[name]["total"] += 1
+        if r["status"] == "open":
+            agg[name]["open"] += 1
+            # overdue = open + created > deadline_days ago
+            try:
+                created = datetime.datetime.strptime(
+                    r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+                days = (now - created).days
+                if days > int(r.get("deadline_days") or 3):
+                    agg[name]["overdue"] += 1
+            except Exception:
+                pass
+        else:
+            agg[name]["closed"] += 1
+    return sorted(agg.values(), key=lambda x: x["open"], reverse=True)
+
+
+# =====================================================================
+# DASHBOARD KPIs
+# =====================================================================
+def kpi_summary(project_id):
+    rows = list_defects(project_id)
+    now = datetime.datetime.utcnow()
+    week_ago = now - datetime.timedelta(days=7)
+    total = len(rows)
+    open_c = 0
+    closed_c = 0
+    overdue_c = 0
+    closed_7d = 0
+    days_to_close = []
+    for r in rows:
+        if r["status"] == "open":
+            open_c += 1
+            try:
+                created = datetime.datetime.strptime(
+                    r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+                if (now - created).days > int(r.get("deadline_days") or 3):
+                    overdue_c += 1
+            except Exception:
+                pass
+        else:
+            closed_c += 1
+            if r.get("closed_at"):
+                try:
+                    cd = datetime.datetime.strptime(
+                        r["closed_at"][:19], "%Y-%m-%d %H:%M:%S")
+                    if cd >= week_ago:
+                        closed_7d += 1
+                    try:
+                        cr = datetime.datetime.strptime(
+                            r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+                        days_to_close.append((cd - cr).days)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+    avg_days = 0
+    if days_to_close:
+        avg_days = round(sum(days_to_close) / float(len(days_to_close)), 1)
+    return {"total": total, "open": open_c, "closed": closed_c,
+            "overdue": overdue_c, "closed_7d": closed_7d,
+            "avg_days": avg_days}
+
+
+def kpi_per_zone(project_id):
+    rows = list_defects(project_id)
+    agg = {}
+    for r in rows:
+        z = r.get("zone") or "?"
+        if r["status"] != "open":
+            continue
+        agg[z] = agg.get(z, 0) + 1
+    return [{"zone": k, "count": v}
+            for k, v in sorted(agg.items(), key=lambda x: -x[1])]
+
+
+def kpi_per_week(project_id, weeks=8):
+    rows = list_defects(project_id)
+    now = datetime.datetime.utcnow()
+    buckets = []
+    for i in range(weeks - 1, -1, -1):
+        start = now - datetime.timedelta(days=7 * (i + 1))
+        end = now - datetime.timedelta(days=7 * i)
+        label = start.strftime("%d %b")
+        count = 0
+        for r in rows:
+            try:
+                cr = datetime.datetime.strptime(
+                    r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+                if start <= cr < end:
+                    count += 1
+            except Exception:
+                pass
+        buckets.append({"label": label, "count": count})
+    return buckets
