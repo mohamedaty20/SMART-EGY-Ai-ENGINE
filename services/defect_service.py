@@ -1,14 +1,98 @@
 """
 services/defect_service.py — Full file.
-Supports PDF, DOCX, TXT method statements.
+Supports PDF / DOCX / TXT. Renders Arabic correctly in generated PDFs.
 """
 
 import io
+import os
 import re
 import json
 import uuid
 import datetime
 import asyncio
+
+
+# =====================================================================
+# ARABIC FONT + SHAPING
+# =====================================================================
+_FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
+_FONT_PATH = os.path.join(_FONT_DIR, "NotoSansArabic-Regular.ttf")
+_FONT_URLS = [
+    "https://github.com/notofonts/arabic/raw/main/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
+    "https://raw.githubusercontent.com/notofonts/arabic/main/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
+    "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansArabic/NotoSansArabic-Regular.ttf",
+]
+
+_FONT_NAME = "Helvetica"
+_FONT_BOLD = "Helvetica-Bold"
+
+
+def _download_arabic_font():
+    import urllib.request
+    try:
+        os.makedirs(_FONT_DIR, exist_ok=True)
+    except Exception:
+        pass
+    for url in _FONT_URLS:
+        try:
+            print("[defect] fetching font: " + url)
+            with urllib.request.urlopen(url, timeout=8) as r:
+                data = r.read()
+            if data and len(data) > 10000:
+                with open(_FONT_PATH, "wb") as f:
+                    f.write(data)
+                print("[defect] font saved: " + str(len(data) // 1024) + " KB")
+                return True
+        except Exception as e:
+            print("[defect] font fetch failed: " + repr(e))
+    return False
+
+
+def _ensure_arabic_font():
+    global _FONT_NAME, _FONT_BOLD
+    if _FONT_NAME != "Helvetica":
+        return
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except Exception as e:
+        print("[defect] reportlab font import failed: " + repr(e))
+        return
+    if not os.path.exists(_FONT_PATH):
+        _download_arabic_font()
+    if not os.path.exists(_FONT_PATH):
+        print("[defect] Arabic font unavailable; Arabic text in PDF will "
+              "not render. Latin text is unaffected.")
+        return
+    try:
+        pdfmetrics.registerFont(TTFont("NotoAr", _FONT_PATH))
+        _FONT_NAME = "NotoAr"
+        _FONT_BOLD = "NotoAr"
+        print("[defect] Arabic font registered: NotoAr")
+    except Exception as e:
+        print("[defect] font registration failed: " + repr(e))
+
+
+_ensure_arabic_font()
+
+
+def _fix(text):
+    """Shape Arabic and apply bidi. Safe for Latin-only text."""
+    if text is None:
+        return ""
+    s = str(text)
+    if not s:
+        return s
+    try:
+        has_ar = any('\u0600' <= ch <= '\u06FF' for ch in s)
+        if not has_ar:
+            return s
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        return get_display(arabic_reshaper.reshape(s))
+    except Exception as e:
+        print("[defect] arabic shaping failed: " + repr(e))
+        return s
 
 
 # =====================================================================
@@ -57,7 +141,7 @@ def _detect_image_type(data):
 
 
 # =====================================================================
-# DOCUMENT TEXT EXTRACTION (PDF, DOCX, TXT)
+# DOCUMENT TEXT EXTRACTION
 # =====================================================================
 def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
     try:
@@ -110,12 +194,10 @@ def extract_document_text(file_bytes, filename=None, max_chars=40000):
     if name.endswith(".docx"):
         return extract_docx_text(file_bytes, max_chars=max_chars)
     if name.endswith(".doc"):
-        print("[defect] .doc legacy format is not supported; "
-              "please save as .docx")
+        print("[defect] .doc legacy format is not supported; use .docx")
         return ""
     if name.endswith(".txt") or name.endswith(".md"):
         return extract_txt_text(file_bytes, max_chars=max_chars)
-    # Unknown extension: try PDF first, then TXT
     t = extract_pdf_text(file_bytes, max_chars=max_chars)
     if t and len(t) > 100:
         return t
@@ -461,6 +543,7 @@ def build_notice_pdf(project,
                      deadline_days,
                      raise_type="qc_internal",
                      logo_bytes=None):
+    _ensure_arabic_font()
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         Image as ReportLabImage, HRFlowable,
@@ -481,16 +564,16 @@ def build_notice_pdf(project,
     ORANGE = colors.HexColor("#B45309")
     GREY = colors.HexColor("#334155")
 
-    title_style = ParagraphStyle("Title", fontName="Helvetica-Bold",
+    title_style = ParagraphStyle("Title", fontName=_FONT_BOLD,
                                   fontSize=16, textColor=NAVY,
                                   spaceAfter=4, leading=20)
-    sub_style = ParagraphStyle("Sub", fontName="Helvetica-Bold",
+    sub_style = ParagraphStyle("Sub", fontName=_FONT_BOLD,
                                 fontSize=10, textColor=ORANGE, spaceAfter=8)
-    meta_style = ParagraphStyle("Meta", fontName="Helvetica", fontSize=9,
+    meta_style = ParagraphStyle("Meta", fontName=_FONT_NAME, fontSize=9,
                                  textColor=GREY, leading=13)
-    body_style = ParagraphStyle("Body", fontName="Helvetica", fontSize=9.5,
+    body_style = ParagraphStyle("Body", fontName=_FONT_NAME, fontSize=9.5,
                                  textColor=colors.black, leading=13)
-    label_style = ParagraphStyle("Label", fontName="Helvetica-Bold",
+    label_style = ParagraphStyle("Label", fontName=_FONT_BOLD,
                                   fontSize=9, textColor=NAVY)
 
     story = []
@@ -525,15 +608,15 @@ def build_notice_pdf(project,
 
     meta_rows = [
         [Paragraph("<b>Project:</b>", label_style),
-         Paragraph(project.get("name", ""), meta_style),
+         Paragraph(_fix(project.get("name", "")), meta_style),
          Paragraph("<b>Date:</b>", label_style),
          Paragraph(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
         [Paragraph("<b>Contractor:</b>", label_style),
-         Paragraph(project.get("contractor", ""), meta_style),
+         Paragraph(_fix(project.get("contractor", "")), meta_style),
          Paragraph("<b>Location:</b>", label_style),
-         Paragraph(project.get("location", ""), meta_style)],
+         Paragraph(_fix(project.get("location", "")), meta_style)],
         [Paragraph("<b>Consultant:</b>", label_style),
-         Paragraph(project.get("consultant", ""), meta_style),
+         Paragraph(_fix(project.get("consultant", "")), meta_style),
          Paragraph("<b>Raised as:</b>", label_style),
          Paragraph("QC Internal" if raise_type == "qc_internal"
                    else "Consultant / NCR", meta_style)],
@@ -549,7 +632,7 @@ def build_notice_pdf(project,
     story.append(t_meta)
     story.append(Spacer(1, 10))
 
-    story.append(Paragraph("<b>To:</b> " + subcontractor, body_style))
+    story.append(Paragraph("<b>To:</b> " + _fix(subcontractor), body_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
         "<b>Deadline:</b> " + str(deadline_days) + " working day" +
@@ -563,13 +646,13 @@ def build_notice_pdf(project,
     story.append(Spacer(1, 12))
 
     for idx, d in enumerate(defects, start=1):
-        name = d.get("name", "Defect")
-        zone = d.get("zone", "") or ""
-        loc = d.get("location_hint", "") or ""
+        name = _fix(d.get("name", "Defect"))
+        zone = _fix(d.get("zone", "") or "")
+        loc = _fix(d.get("location_hint", "") or "")
         severity = d.get("severity", "Medium")
-        ms_v = d.get("ms_violations") or []
-        ecp_v = d.get("code_violations") or []
-        repair = d.get("repair_action", "") or ""
+        ms_v = [_fix(v) for v in (d.get("ms_violations") or [])]
+        ecp_v = [_fix(v) for v in (d.get("code_violations") or [])]
+        repair = _fix(d.get("repair_action", "") or "")
 
         head = str(idx) + ". " + name
         if zone or loc:
@@ -596,7 +679,7 @@ def build_notice_pdf(project,
          Paragraph("<b>Acknowledged by (Subcontractor):</b>", label_style)],
         [Paragraph("_" * 30, body_style),
          Paragraph("_" * 30, body_style)],
-        [Paragraph(project.get("engineer_name", ""), meta_style),
+        [Paragraph(_fix(project.get("engineer_name", "")), meta_style),
          Paragraph("Name / Date / Signature", meta_style)],
     ]
     t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
@@ -641,6 +724,7 @@ def build_notice_pdf(project,
 # REGISTER PDF
 # =====================================================================
 def build_register_pdf(project, rows, logo_bytes=None):
+    _ensure_arabic_font()
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         HRFlowable,
@@ -661,19 +745,19 @@ def build_register_pdf(project, rows, logo_bytes=None):
     ORANGE = colors.HexColor("#B45309")
     GREY = colors.HexColor("#334155")
 
-    title_style = ParagraphStyle("Title", fontName="Helvetica-Bold",
+    title_style = ParagraphStyle("Title", fontName=_FONT_BOLD,
                                   fontSize=15, textColor=NAVY, spaceAfter=4)
-    sub_style = ParagraphStyle("Sub", fontName="Helvetica-Bold",
+    sub_style = ParagraphStyle("Sub", fontName=_FONT_BOLD,
                                 fontSize=9, textColor=ORANGE, spaceAfter=8)
-    cell_style = ParagraphStyle("Cell", fontName="Helvetica", fontSize=8.5,
+    cell_style = ParagraphStyle("Cell", fontName=_FONT_NAME, fontSize=8.5,
                                  textColor=GREY, leading=11)
-    head_style = ParagraphStyle("Head", fontName="Helvetica-Bold",
+    head_style = ParagraphStyle("Head", fontName=_FONT_BOLD,
                                  fontSize=8.5, textColor=colors.white,
                                  leading=11)
 
     story = []
     story.append(Paragraph("DEFECT REGISTER", title_style))
-    story.append(Paragraph(project.get("name", ""), sub_style))
+    story.append(Paragraph(_fix(project.get("name", "")), sub_style))
     story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
                              spaceAfter=10))
 
@@ -681,10 +765,10 @@ def build_register_pdf(project, rows, logo_bytes=None):
     data = [[Paragraph(h, head_style) for h in head]]
     for r in rows:
         data.append([
-            Paragraph(str(r.get("uid", "")), cell_style),
-            Paragraph(str(r.get("zone", "")), cell_style),
+            Paragraph(_fix(r.get("uid", "")), cell_style),
+            Paragraph(_fix(r.get("zone", "")), cell_style),
             Paragraph("(" + str(r.get("count", 0)) + " defects)", cell_style),
-            Paragraph(str(r.get("subcontractor", "")), cell_style),
+            Paragraph(_fix(r.get("subcontractor", "")), cell_style),
             Paragraph(str(r.get("raise_type", "qc_internal")), cell_style),
             Paragraph(str(r.get("status", "")).upper(), cell_style),
             Paragraph(str(r.get("created_at", ""))[:10], cell_style),
@@ -717,6 +801,7 @@ def build_register_pdf(project, rows, logo_bytes=None):
 # CLOSURE REPORT PDF
 # =====================================================================
 def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
+    _ensure_arabic_font()
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         Image as ReportLabImage, HRFlowable,
@@ -742,17 +827,17 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     GREEN = colors.HexColor("#047857")
     RED = colors.HexColor("#B91C1C")
 
-    title_style = ParagraphStyle("Title", fontName="Helvetica-Bold",
+    title_style = ParagraphStyle("Title", fontName=_FONT_BOLD,
                                   fontSize=16, textColor=NAVY, spaceAfter=4)
-    sub_style = ParagraphStyle("Sub", fontName="Helvetica-Bold",
+    sub_style = ParagraphStyle("Sub", fontName=_FONT_BOLD,
                                 fontSize=10, textColor=ORANGE, spaceAfter=8)
-    meta_style = ParagraphStyle("Meta", fontName="Helvetica", fontSize=9,
+    meta_style = ParagraphStyle("Meta", fontName=_FONT_NAME, fontSize=9,
                                  textColor=GREY, leading=13)
-    body_style = ParagraphStyle("Body", fontName="Helvetica", fontSize=9.5,
+    body_style = ParagraphStyle("Body", fontName=_FONT_NAME, fontSize=9.5,
                                  textColor=colors.black, leading=13)
-    label_style = ParagraphStyle("Label", fontName="Helvetica-Bold",
+    label_style = ParagraphStyle("Label", fontName=_FONT_BOLD,
                                   fontSize=9, textColor=NAVY)
-    item_head_style = ParagraphStyle("ItemHead", fontName="Helvetica-Bold",
+    item_head_style = ParagraphStyle("ItemHead", fontName=_FONT_BOLD,
                                       fontSize=10, textColor=NAVY,
                                       spaceAfter=3)
 
@@ -790,13 +875,13 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
 
     meta_rows = [
         [Paragraph("<b>Project:</b>", label_style),
-         Paragraph(project.get("name", ""), meta_style),
+         Paragraph(_fix(project.get("name", "")), meta_style),
          Paragraph("<b>Date:</b>", label_style),
          Paragraph(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
         [Paragraph("<b>Contractor:</b>", label_style),
-         Paragraph(project.get("contractor", ""), meta_style),
+         Paragraph(_fix(project.get("contractor", "")), meta_style),
          Paragraph("<b>Consultant:</b>", label_style),
-         Paragraph(project.get("consultant", ""), meta_style)],
+         Paragraph(_fix(project.get("consultant", "")), meta_style)],
     ]
     t_meta = Table(meta_rows,
                    colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
@@ -832,13 +917,13 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
         for idx, r in enumerate(rows, start=1):
             status = str(r.get("status", "")).upper()
             color = GREEN if status == "CLOSED" else RED
-            head = (str(idx) + ". " + str(r.get("uid", "")) +
-                    "  ·  Zone " + str(r.get("zone", "")) +
-                    "  ·  " + str(r.get("subcontractor", "")))
+            head = (str(idx) + ". " + _fix(r.get("uid", "")) +
+                    "  ·  Zone " + _fix(r.get("zone", "")) +
+                    "  ·  " + _fix(r.get("subcontractor", "")))
             story.append(Paragraph(head, item_head_style))
 
             st_style = ParagraphStyle("St", parent=meta_style, textColor=color,
-                                       fontName="Helvetica-Bold")
+                                       fontName=_FONT_BOLD)
             story.append(Paragraph("Status: " + status, st_style))
             story.append(Paragraph(
                 "Raised as: " + str(r.get("raise_type", "qc_internal")),
@@ -859,7 +944,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
          Paragraph("<b>Consultant:</b>", label_style)],
         [Paragraph("_" * 30, body_style),
          Paragraph("_" * 30, body_style)],
-        [Paragraph(project.get("engineer_name", ""), meta_style),
+        [Paragraph(_fix(project.get("engineer_name", "")), meta_style),
          Paragraph("Name / Date / Signature", meta_style)],
     ]
     t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
