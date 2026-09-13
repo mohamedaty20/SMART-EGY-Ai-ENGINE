@@ -1,6 +1,6 @@
 """
 services/defect_service.py — Full file.
-Supports PDF / DOCX / TXT. Renders Arabic correctly in generated PDFs.
+Supports PDF / DOCX / TXT. Renders Arabic + Latin correctly in PDFs.
 """
 
 import io
@@ -13,38 +13,43 @@ import asyncio
 
 
 # =====================================================================
-# ARABIC FONT + SHAPING
+# ARABIC + LATIN FONT (Amiri has both scripts)
 # =====================================================================
 _FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
-_FONT_PATH = os.path.join(_FONT_DIR, "NotoSansArabic-Regular.ttf")
-_FONT_URLS = [
-    "https://github.com/notofonts/arabic/raw/main/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
-    "https://raw.githubusercontent.com/notofonts/arabic/main/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
-    "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansArabic/NotoSansArabic-Regular.ttf",
+_FONT_REG_PATH = os.path.join(_FONT_DIR, "Amiri-Regular.ttf")
+_FONT_BOLD_PATH = os.path.join(_FONT_DIR, "Amiri-Bold.ttf")
+_FONT_REG_URLS = [
+    "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf",
+    "https://github.com/aliftype/amiri/raw/main/Amiri-Regular.ttf",
+]
+_FONT_BOLD_URLS = [
+    "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf",
+    "https://github.com/aliftype/amiri/raw/main/Amiri-Bold.ttf",
 ]
 
 _FONT_NAME = "Helvetica"
 _FONT_BOLD = "Helvetica-Bold"
 
 
-def _download_arabic_font():
+def _download_font(url, dest):
     import urllib.request
     try:
         os.makedirs(_FONT_DIR, exist_ok=True)
     except Exception:
         pass
-    for url in _FONT_URLS:
-        try:
-            print("[defect] fetching font: " + url)
-            with urllib.request.urlopen(url, timeout=8) as r:
-                data = r.read()
-            if data and len(data) > 10000:
-                with open(_FONT_PATH, "wb") as f:
-                    f.write(data)
-                print("[defect] font saved: " + str(len(data) // 1024) + " KB")
-                return True
-        except Exception as e:
-            print("[defect] font fetch failed: " + repr(e))
+    try:
+        print("[defect] fetching font: " + url)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = r.read()
+        if data and len(data) > 10000:
+            with open(dest, "wb") as f:
+                f.write(data)
+            print("[defect] font saved: " + str(len(data) // 1024) +
+                  " KB -> " + dest)
+            return True
+    except Exception as e:
+        print("[defect] font fetch failed: " + repr(e))
     return False
 
 
@@ -58,26 +63,42 @@ def _ensure_arabic_font():
     except Exception as e:
         print("[defect] reportlab font import failed: " + repr(e))
         return
-    if not os.path.exists(_FONT_PATH):
-        _download_arabic_font()
-    if not os.path.exists(_FONT_PATH):
-        print("[defect] Arabic font unavailable; Arabic text in PDF will "
-              "not render. Latin text is unaffected.")
+    if not os.path.exists(_FONT_REG_PATH):
+        for u in _FONT_REG_URLS:
+            if _download_font(u, _FONT_REG_PATH):
+                break
+    if not os.path.exists(_FONT_BOLD_PATH):
+        for u in _FONT_BOLD_URLS:
+            if _download_font(u, _FONT_BOLD_PATH):
+                break
+    if not os.path.exists(_FONT_REG_PATH):
+        print("[defect] Arabic font unavailable; PDF will use Helvetica.")
         return
     try:
-        pdfmetrics.registerFont(TTFont("NotoAr", _FONT_PATH))
-        _FONT_NAME = "NotoAr"
-        _FONT_BOLD = "NotoAr"
-        print("[defect] Arabic font registered: NotoAr")
+        pdfmetrics.registerFont(TTFont("ArReg", _FONT_REG_PATH))
+        if os.path.exists(_FONT_BOLD_PATH):
+            pdfmetrics.registerFont(TTFont("ArBold", _FONT_BOLD_PATH))
+            _FONT_NAME = "ArReg"
+            _FONT_BOLD = "ArBold"
+        else:
+            _FONT_NAME = "ArReg"
+            _FONT_BOLD = "ArReg"
+        print("[defect] Arabic font registered: " + _FONT_NAME)
     except Exception as e:
         print("[defect] font registration failed: " + repr(e))
 
 
 _ensure_arabic_font()
 
+# Clean up the old Arabic-only font if it was previously downloaded
+try:
+    os.remove(os.path.join(_FONT_DIR, "NotoSansArabic-Regular.ttf"))
+except Exception:
+    pass
+
 
 def _fix(text):
-    """Shape Arabic and apply bidi. Safe for Latin-only text."""
+    """Shape Arabic and apply bidi. Latin-only text passes through."""
     if text is None:
         return ""
     s = str(text)
@@ -141,7 +162,7 @@ def _detect_image_type(data):
 
 
 # =====================================================================
-# DOCUMENT TEXT EXTRACTION
+# DOCUMENT TEXT EXTRACTION (PDF, DOCX, TXT)
 # =====================================================================
 def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
     try:
