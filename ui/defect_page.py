@@ -112,6 +112,8 @@ T = {
         "discipline_mep": "MEP",
         "zone_general": "General",
         "lang_button": "AR",
+        "upload_failed": "Upload failed: ",
+        "empty_file": "Empty file received.",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -213,6 +215,8 @@ T = {
         "discipline_mep": "كهروميكانيكي",
         "zone_general": "عام",
         "lang_button": "EN",
+        "upload_failed": "فشل التحميل: ",
+        "empty_file": "الملف فارغ.",
     },
 }
 
@@ -310,7 +314,6 @@ def _inject_theme():
     background: var(--bg) !important;
   }
 
-  /* ---- Buttons ---- */
   .q-btn {
     border-radius: 10px !important;
     text-transform: none !important;
@@ -344,7 +347,6 @@ def _inject_theme():
     color: #ffffff !important;
   }
 
-  /* ---- Inputs ---- */
   .q-field--outlined .q-field__control {
     border-radius: 10px !important;
     background: var(--surface-2) !important;
@@ -366,7 +368,6 @@ def _inject_theme():
     color: var(--muted-2) !important;
   }
 
-  /* ---- Cards ---- */
   .card {
     background: var(--surface);
     border-radius: var(--radius);
@@ -386,7 +387,6 @@ def _inject_theme():
     box-sizing: border-box;
   }
 
-  /* ---- Typography ---- */
   .h1 { font-size: 22px; font-weight: 800; color: var(--text);
         letter-spacing: -0.025em; }
   .h2 { font-size: 17px; font-weight: 700; color: var(--text);
@@ -395,13 +395,11 @@ def _inject_theme():
   .muted { color: var(--muted); font-size: 13px; }
   .soft { color: var(--text-soft); font-size: 13px; }
 
-  /* ---- Drawer ---- */
   .q-drawer {
     background: var(--bg) !important;
     border-right: 1px solid var(--border) !important;
   }
 
-  /* ---- Bottom nav ---- */
   .bottom-nav {
     position: fixed;
     bottom: 0; left: 0; right: 0;
@@ -443,7 +441,6 @@ def _inject_theme():
     box-sizing: border-box;
   }
 
-  /* Header */
   .app-header {
     position: sticky;
     top: 0;
@@ -466,7 +463,6 @@ def _inject_theme():
     color: var(--text);
   }
 
-  /* Drop zone */
   .drop-zone {
     border: 1.5px dashed #333;
     border-radius: 14px;
@@ -481,19 +477,6 @@ def _inject_theme():
     background: #1c1a1f;
   }
 
-  /* Badges */
-  .badge-live {
-    display: inline-block;
-    background: rgba(16,185,129,0.12);
-    color: #34d399;
-    border: 1px solid rgba(16,185,129,0.3);
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 20px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
   .badge-open {
     display: inline-block;
     background: rgba(245,158,11,0.12);
@@ -539,7 +522,6 @@ def _inject_theme():
     letter-spacing: 0.05em;
   }
 
-  /* Notification */
   .q-notification {
     border-radius: 10px !important;
     font-weight: 600 !important;
@@ -548,18 +530,12 @@ def _inject_theme():
     border: 1px solid var(--border) !important;
   }
 
-  /* Card title row */
-  .card-title-row {
-    display: flex; justify-content: space-between;
-    align-items: center; margin-bottom: 14px;
-  }
   .section-label {
     font-size: 11px; font-weight: 700; color: var(--muted-2);
     text-transform: uppercase; letter-spacing: 0.08em;
     margin-bottom: 6px;
   }
 
-  /* Make sure q-separator is subtle */
   .q-separator { background: var(--border) !important; }
   hr { border-color: var(--border) !important; }
 </style>
@@ -657,7 +633,6 @@ def _build_drawer(state, drawer):
         with holder:
             proj = state.get("project") or {}
 
-            # Logo + project header
             with ui.element('div').style(
                 "display:flex;align-items:center;gap:12px;"
                 "margin-bottom:18px;"
@@ -985,34 +960,51 @@ def _render_wizard(state, stage, render_fn):
             "margin-bottom:16px;"
         )
 
-        if not stage["photo"]:
-            with ui.element('div').classes("drop-zone"):
-                ui.icon("add_a_photo").style(
-                    "font-size:42px;color:#a855f7;display:block;"
-                    "margin-bottom:10px;"
-                )
-                ui.label(_t("choose_photo")).classes("h3")
-        else:
-            ui.image(io.BytesIO(stage["photo"])).style(
-                "width:100%;max-height:340px;object-fit:cover;"
-                "border-radius:12px;border:1px solid #262626;"
-            )
-
         async def handle_photo(e):
-            data = await e.file.read()
+            try:
+                data = await e.file.read()
+            except Exception as ex:
+                ui.notify(_t("upload_failed") + str(ex), type="negative")
+                return
+            if not data:
+                ui.notify(_t("empty_file"), type="warning")
+                return
             stage["photo"] = data
             stage["mime"] = ("image/jpeg"
                              if e.file.name.lower().endswith((".jpg", ".jpeg"))
                              else "image/png")
             stage["candidates"] = None
             stage["manual"] = []
-            render_fn()
+            ui.timer(0.05, render_fn, once=True)
 
-        ui.upload(on_upload=handle_photo, auto_upload=True).style(
-            "width:100%;margin-top:12px;"
-        ).props("flat bordered accept=image/* label='" +
-                (_t("change_photo") if stage["photo"]
-                 else _t("choose_photo")) + "'")
+        if not stage["photo"]:
+            with ui.element('div').classes("drop-zone").style(
+                "position:relative;overflow:hidden;"
+            ):
+                ui.icon("add_a_photo").style(
+                    "font-size:42px;color:#a855f7;display:block;"
+                    "margin-bottom:10px;"
+                )
+                ui.label(_t("choose_photo")).classes("h3")
+                ui.upload(on_upload=handle_photo, auto_upload=True).style(
+                    "position:absolute;top:0;left:0;width:100%;"
+                    "height:100%;opacity:0;cursor:pointer;"
+                ).props("flat bordered accept=image/*")
+        else:
+            ui.image(io.BytesIO(stage["photo"])).style(
+                "width:100%;max-height:340px;object-fit:cover;"
+                "border-radius:12px;border:1px solid #262626;"
+            )
+            with ui.element('div').style(
+                "position:relative;margin-top:12px;"
+            ):
+                ui.button(_t("change_photo"), icon="edit").classes(
+                    BTN_SOFT
+                ).style("width:100%;")
+                ui.upload(on_upload=handle_photo, auto_upload=True).style(
+                    "position:absolute;top:0;left:0;width:100%;"
+                    "height:100%;opacity:0;cursor:pointer;"
+                ).props("flat bordered accept=image/*")
 
     # ---- Stage 2: note + analyze ----
     if stage["photo"] and stage["candidates"] is None:
@@ -1060,7 +1052,7 @@ def _render_wizard(state, stage, render_fn):
                 for c in stage["candidates"]:
                     c["_sel"] = True
                     c["_manual"] = False
-                render_fn()
+                ui.timer(0.05, render_fn, once=True)
 
             analyze_btn.on("click", do_analyze)
             analyze_btn.classes(BTN_PRIMARY).style(
@@ -1179,7 +1171,7 @@ def _render_candidates(state, stage, render_fn):
             stage["mime"] = None
             stage["candidates"] = None
             stage["manual"] = []
-            render_fn()
+            ui.timer(0.05, render_fn, once=True)
 
         gen_btn.on("click", do_generate)
         gen_btn.classes(BTN_PRIMARY).style(
