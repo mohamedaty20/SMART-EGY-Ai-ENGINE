@@ -1,5 +1,5 @@
 """
-services/defect_db.py — Turso-compatible SQLite layer.
+services/defect_db.py — Turso-compatible. All row access is positional.
 """
 import os
 import re
@@ -42,8 +42,7 @@ def _conn():
             return c
         except Exception as e:
             print("[db] Turso failed, fallback local: " + repr(e))
-    c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
-    return c
+    return sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
 
 
 def _sync(c):
@@ -53,39 +52,72 @@ def _sync(c):
         pass
 
 
-def _rows(cur, fetchall=True):
-    """Return list of dicts (or one dict) regardless of driver."""
-    try:
-        cols = [d[0] for d in cur.description] if cur.description else []
-    except Exception:
-        cols = []
-    if fetchall:
-        out = []
-        for r in cur.fetchall():
-            if isinstance(r, dict):
-                out.append(r)
-            else:
-                out.append(dict(zip(cols, r)))
-        return out
-    r = cur.fetchone()
-    if r is None:
+def _to_dicts(rows, cols):
+    """Convert list of rows (tuples or Row) to list of dicts by position."""
+    out = []
+    for r in rows:
+        if r is None:
+            continue
+        if isinstance(r, dict):
+            out.append(r)
+            continue
+        d = {}
+        for i, name in enumerate(cols):
+            try:
+                d[name] = r[i]
+            except Exception:
+                d[name] = None
+        out.append(d)
+    return out
+
+
+def _to_dict(row, cols):
+    if row is None:
         return None
-    if isinstance(r, dict):
-        return r
-    return dict(zip(cols, r))
+    if isinstance(row, dict):
+        return row
+    d = {}
+    for i, name in enumerate(cols):
+        try:
+            d[name] = row[i]
+        except Exception:
+            d[name] = None
+    return d
+
+
+PROJECT_COLS = ["id", "name", "contractor", "subcontractor", "consultant",
+                "location", "engineer_name", "logo_bytes", "created_at"]
+
+MS_COLS = ["id", "ms_number", "title", "element_type", "discipline",
+           "clauses_json"]
+
+MS_LIST_COLS = ["id", "ms_number", "title", "element_type", "discipline",
+                "clauses_json"]
+
+DEFECT_LIST_COLS = ["id", "uid", "zone", "subcontractor", "status",
+                    "created_at", "closed_at", "raise_type",
+                    "selected_json", "deadline_days"]
+
+DEFECT_FULL_COLS = ["id", "project_id", "uid", "zone", "photo_bytes",
+                    "note", "ai_candidates_json", "selected_json",
+                    "subcontractor", "deadline_days", "raise_type",
+                    "status", "created_at", "closed_at", "notice_pdf",
+                    "consultant_ncr", "closure_photo"]
+
+SUB_COLS = ["id", "name", "trade", "phone", "notes"]
 
 
 def _ensure_columns(cur, table, wanted):
     cur.execute("PRAGMA table_info(" + table + ")")
     have = set()
     for r in cur.fetchall():
-        if isinstance(r, dict):
-            have.add(r.get("name"))
-        else:
-            try:
+        try:
+            if isinstance(r, dict):
+                have.add(r.get("name"))
+            else:
                 have.add(r[1])
-            except Exception:
-                pass
+        except Exception:
+            pass
     for name, ddl in wanted:
         if name not in have:
             try:
@@ -109,7 +141,6 @@ def init_db():
                 logo_bytes BLOB, created_at TEXT
             )
         """)
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS method_statements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,7 +149,6 @@ def init_db():
                 pdf_bytes BLOB, clauses_json TEXT, created_at TEXT
             )
         """)
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS defects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,7 +162,6 @@ def init_db():
                 closure_photo BLOB
             )
         """)
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS subcontractors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,18 +196,28 @@ def save_project(name, contractor, consultant, location,
         cur = c.cursor()
         cur.execute("SELECT id, subcontractor FROM projects "
                     "ORDER BY id LIMIT 1")
-        row = _rows(cur, fetchall=False)
-        if row:
+        row = cur.fetchone()
+        if row is not None:
+            try:
+                pid = row[0]
+                existing_sub = row[1]
+            except Exception:
+                pid = None
+                existing_sub = None
+            if pid is None:
+                # No usable row; fall through to insert
+                row = None
+        if row is not None:
             sub = (subcontractor if subcontractor is not None
-                   else (row.get("subcontractor") or ""))
+                   else (existing_sub or ""))
             cur.execute("""
                 UPDATE projects
                 SET name=?, contractor=?, consultant=?, location=?,
                     engineer_name=?, logo_bytes=?, subcontractor=?
                 WHERE id=?
             """, (name, contractor, consultant, location,
-                  engineer_name, logo_bytes, sub, row["id"]))
-            pid = row["id"]
+                  engineer_name, logo_bytes, sub, pid))
+            result_pid = pid
         else:
             cur.execute("""
                 INSERT INTO projects
@@ -187,20 +226,24 @@ def save_project(name, contractor, consultant, location,
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (name, contractor, subcontractor or "", consultant,
                   location, engineer_name, logo_bytes, _now()))
-            pid = cur.lastrowid
+            result_pid = cur.lastrowid
         c.commit()
         _sync(c)
         c.close()
-        return pid
+        return result_pid
 
 
 def get_project():
     c = _conn()
     cur = c.cursor()
-    cur.execute("SELECT * FROM projects ORDER BY id LIMIT 1")
-    row = _rows(cur, fetchall=False)
+    cur.execute("""
+        SELECT id, name, contractor, subcontractor, consultant,
+               location, engineer_name, logo_bytes, created_at
+        FROM projects ORDER BY id LIMIT 1
+    """)
+    row = cur.fetchone()
     c.close()
-    return row
+    return _to_dict(row, PROJECT_COLS)
 
 
 # =====================================================================
@@ -230,7 +273,7 @@ def list_ms(project_id):
         SELECT id, ms_number, title, element_type, discipline, clauses_json
         FROM method_statements WHERE project_id=? ORDER BY id DESC
     """, (project_id,))
-    rows = _rows(cur)
+    rows = _to_dicts(cur.fetchall(), MS_LIST_COLS)
     c.close()
     out = []
     for r in rows:
@@ -254,11 +297,11 @@ def get_clauses_for_element(project_id, element_type):
         SELECT clauses_json FROM method_statements
         WHERE project_id=? AND LOWER(element_type)=LOWER(?)
     """, (project_id, element_type))
-    rows = _rows(cur)
+    rows = _to_dicts(cur.fetchall(), ["clauses_json"])
     if not rows:
         cur.execute("SELECT clauses_json FROM method_statements "
                     "WHERE project_id=?", (project_id,))
-        rows = _rows(cur)
+        rows = _to_dicts(cur.fetchall(), ["clauses_json"])
     c.close()
     clauses = []
     for r in rows:
@@ -313,7 +356,7 @@ def list_defects(project_id, raise_filter=None):
             FROM defects
             WHERE project_id=? ORDER BY id DESC
         """, (project_id,))
-    raw = _rows(cur)
+    raw = _to_dicts(cur.fetchall(), DEFECT_LIST_COLS)
     c.close()
     out = []
     for r in raw:
@@ -339,9 +382,16 @@ def list_defects(project_id, raise_filter=None):
 def get_defect(defect_id):
     c = _conn()
     cur = c.cursor()
-    cur.execute("SELECT * FROM defects WHERE id=?", (defect_id,))
-    d = _rows(cur, fetchall=False)
+    cur.execute("""
+        SELECT id, project_id, uid, zone, photo_bytes, note,
+               ai_candidates_json, selected_json, subcontractor,
+               deadline_days, raise_type, status, created_at,
+               closed_at, notice_pdf, consultant_ncr, closure_photo
+        FROM defects WHERE id=?
+    """, (defect_id,))
+    row = cur.fetchone()
     c.close()
+    d = _to_dict(row, DEFECT_FULL_COLS)
     if not d:
         return None
     try:
@@ -406,7 +456,9 @@ def find_similar_defects(project_id, name, days=60, limit=5,
         FROM defects WHERE project_id=? AND created_at >= ?
         ORDER BY id DESC LIMIT 300
     """, (project_id, cutoff))
-    rows = _rows(cur)
+    rows = _to_dicts(cur.fetchall(),
+                     ["id", "uid", "zone", "created_at",
+                      "selected_json", "subcontractor"])
     c.close()
     matches = []
     for r in rows:
@@ -466,19 +518,19 @@ def list_subcontractors(project_id):
         SELECT id, name, trade, phone, notes
         FROM subcontractors WHERE project_id=? ORDER BY name ASC
     """, (project_id,))
-    master = _rows(cur)
+    master = _to_dicts(cur.fetchall(), SUB_COLS)
     cur.execute("""
         SELECT DISTINCT subcontractor FROM defects
         WHERE project_id=? AND subcontractor IS NOT NULL
               AND subcontractor != ''
     """, (project_id,))
-    used_rows = _rows(cur)
+    used_rows = _to_dicts(cur.fetchall(), ["subcontractor"])
     c.close()
     used = set()
     for r in used_rows:
-        name = r.get("subcontractor")
-        if name:
-            used.add(name)
+        n = r.get("subcontractor")
+        if n:
+            used.add(n)
     out = []
     seen = set()
     for r in master:
