@@ -1,5 +1,5 @@
 """
-ui/defect_page.py — Top nav, tabs, monospace, terminal-style.
+ui/defect_page.py — Full file with Edit + Delete defect.
 """
 import io
 import base64
@@ -15,10 +15,8 @@ LANG = {"code": "en"}
 T = {
     "en": {
         "app_title": "DEFECT NOTICES",
-        "new_defect": "NEW DEFECT",
-        "logs": "DEFECT LOGS",
-        "subs": "SUBS",
-        "dashboard": "DASHBOARD",
+        "new_defect": "NEW DEFECT", "logs": "DEFECT LOGS",
+        "subs": "SUBS", "dashboard": "DASHBOARD",
         "project": "PROJECT", "no_project": "NO PROJECT",
         "setup_project": "Set up project", "edit": "Edit",
         "contractor": "Contractor", "subcontractor": "Subcontractor",
@@ -141,9 +139,21 @@ T = {
         "confirm_close": "Confirm close",
         "close_without_photo": "Close without photo",
         "closure_photo_short": "CLOSURE",
-        "refresh": "REFRESH",
-        "week": "wk",
+        "refresh": "REFRESH", "week": "wk",
         "no_ms_uploaded": "no MS",
+        "edit_defect": "Edit",
+        "delete_defect": "Delete",
+        "edit_defect_title": "Edit notice",
+        "edit_defect_sub": "Change details. Notice PDF will be regenerated.",
+        "defect_items": "Defect items",
+        "add_item": "+ Add item",
+        "remove_item": "Remove",
+        "save_changes": "Save changes",
+        "saved_changes": "Notice updated.",
+        "confirm_delete_defect": "Delete this notice permanently?",
+        "delete_warning": "This cannot be undone.",
+        "deleted_defect": "Notice deleted.",
+        "no_items": "No defects in this notice.",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -270,9 +280,21 @@ T = {
         "confirm_close": "تأكيد الإغلاق",
         "close_without_photo": "إغلاق بدون صورة",
         "closure_photo_short": "إغلاق",
-        "refresh": "تحديث",
-        "week": "أسبوع",
+        "refresh": "تحديث", "week": "أسبوع",
         "no_ms_uploaded": "لا MS",
+        "edit_defect": "تعديل",
+        "delete_defect": "حذف",
+        "edit_defect_title": "تعديل الإشعار",
+        "edit_defect_sub": "عدّل التفاصيل. سيُعاد إنشاء PDF.",
+        "defect_items": "بنود العيوب",
+        "add_item": "+ إضافة بند",
+        "remove_item": "حذف",
+        "save_changes": "حفظ التعديلات",
+        "saved_changes": "تم تحديث الإشعار.",
+        "confirm_delete_defect": "حذف هذا الإشعار نهائياً؟",
+        "delete_warning": "لا يمكن التراجع.",
+        "deleted_defect": "تم حذف الإشعار.",
+        "no_items": "لا بنود في هذا الإشعار.",
     },
 }
 
@@ -321,32 +343,20 @@ def _inject_theme():
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0b0b0b;
-    --surface: #101010;
-    --surface-2: #161616;
-    --surface-3: #1c1c1c;
-    --border: #1e1e1e;
-    --border-2: #262626;
-    --text: #e8e8e8;
-    --text-soft: #b8b8b8;
-    --muted: #808080;
-    --muted-2: #5a5a5a;
-    --accent: #5eead4;
-    --accent-dim: #14b8a6;
-    --blue: #60a5fa;
-    --success: #4ade80;
-    --warn: #fbbf24;
+    --bg: #0b0b0b; --surface: #101010; --surface-2: #161616;
+    --surface-3: #1c1c1c; --border: #1e1e1e; --border-2: #262626;
+    --text: #e8e8e8; --text-soft: #b8b8b8; --muted: #808080;
+    --muted-2: #5a5a5a; --accent: #5eead4; --accent-dim: #14b8a6;
+    --blue: #60a5fa; --success: #4ade80; --warn: #fbbf24;
     --danger: #f87171;
   }
   * { font-variant-ligatures: none; }
   html, body {
-    background: var(--bg) !important;
-    color: var(--text) !important;
+    background: var(--bg) !important; color: var(--text) !important;
     font-family: 'JetBrains Mono', 'Amiri', 'Courier New', monospace !important;
     font-size: 13px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    letter-spacing: -0.01em;
-    overflow-x: hidden !important;
+    letter-spacing: -0.01em; overflow-x: hidden !important;
     direction: __DIR__;
   }
   .nicegui-content { padding: 0 !important; max-width: 100vw !important;
@@ -355,56 +365,38 @@ def _inject_theme():
     max-width: 100vw !important; overflow-x: hidden !important;
     background: var(--bg) !important;
   }
-
-  /* Hide NiceGUI default tab chrome */
   .q-tabs, .q-tab, .q-tab-panels, .q-tab-panel {
-    background: transparent !important;
+    background: transparent !important; padding: 0 !important;
   }
-  .q-tab-panels { padding: 0 !important; }
-  .q-tab-panel { padding: 0 !important; }
-
-  /* Buttons */
   .q-btn {
-    border-radius: 3px !important;
-    text-transform: none !important;
+    border-radius: 3px !important; text-transform: none !important;
     font-family: 'JetBrains Mono', monospace !important;
-    font-weight: 500 !important;
-    letter-spacing: -0.01em !important;
-    min-height: 32px !important;
-    padding: 0 12px !important;
-    font-size: 11px !important;
-    box-shadow: none !important;
+    font-weight: 500 !important; letter-spacing: -0.01em !important;
+    min-height: 32px !important; padding: 0 12px !important;
+    font-size: 11px !important; box-shadow: none !important;
   }
   .q-btn:hover { box-shadow: none !important; }
-  .btn-primary {
-    background: var(--accent) !important;
-    color: #0b0b0b !important;
-    font-weight: 700 !important;
-  }
+  .btn-primary { background: var(--accent) !important;
+                 color: #0b0b0b !important; font-weight: 700 !important; }
   .btn-primary:hover { background: var(--accent-dim) !important;
                        color: #0b0b0b !important; }
-  .btn-soft {
-    background: var(--surface-2) !important;
-    color: var(--text) !important;
-    border: 1px solid var(--border-2) !important;
-  }
+  .btn-soft { background: var(--surface-2) !important;
+              color: var(--text) !important;
+              border: 1px solid var(--border-2) !important; }
   .btn-soft:hover { background: var(--surface-3) !important;
                     border-color: #333 !important; }
   .btn-success { background: var(--success) !important;
                  color: #0b0b0b !important; font-weight: 700 !important; }
-  .btn-outline {
-    background: transparent !important;
-    color: var(--text) !important;
-    border: 1px dashed var(--border-2) !important;
-  }
+  .btn-danger { background: var(--danger) !important;
+                color: #0b0b0b !important; font-weight: 700 !important; }
+  .btn-outline { background: transparent !important;
+                 color: var(--text) !important;
+                 border: 1px dashed var(--border-2) !important; }
   .btn-outline:hover { border-color: var(--accent) !important;
                        color: var(--accent) !important;
                        background: rgba(94,234,212,0.04) !important; }
-
-  /* Inputs */
   .q-field--outlined .q-field__control {
-    border-radius: 3px !important;
-    background: var(--surface-2) !important;
+    border-radius: 3px !important; background: var(--surface-2) !important;
     font-family: 'JetBrains Mono', monospace !important;
     min-height: 36px !important;
   }
@@ -419,9 +411,9 @@ def _inject_theme():
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 12px !important;
   }
-  .q-field__label { color: var(--muted) !important; font-size: 11px !important; }
+  .q-field__label { color: var(--muted) !important;
+                    font-size: 11px !important; }
   .q-select__dropdown-icon { color: var(--muted) !important; }
-
   .q-menu { background: var(--surface-2) !important;
             border: 1px solid var(--border-2) !important;
             border-radius: 3px !important; }
@@ -429,27 +421,12 @@ def _inject_theme():
             font-family: 'JetBrains Mono', monospace !important;
             min-height: 32px !important; font-size: 12px !important; }
   .q-item--active { color: var(--accent) !important; }
-
-  /* Cards */
-  .card {
-    background: var(--surface);
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    padding: 16px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .item-box {
-    background: var(--surface-2);
-    border-radius: 3px;
-    border: 1px solid var(--border);
-    padding: 10px 12px;
-    margin-bottom: 6px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  /* Type */
+  .card { background: var(--surface); border-radius: 4px;
+          border: 1px solid var(--border); padding: 16px;
+          width: 100%; box-sizing: border-box; }
+  .item-box { background: var(--surface-2); border-radius: 3px;
+              border: 1px solid var(--border); padding: 10px 12px;
+              margin-bottom: 6px; width: 100%; box-sizing: border-box; }
   .h1 { font-size: 16px; font-weight: 700; color: var(--text);
         letter-spacing: -0.02em; }
   .h2 { font-size: 13px; font-weight: 600; color: var(--text); }
@@ -462,94 +439,61 @@ def _inject_theme():
              letter-spacing: 0.01em; }
   .label { font-size: 9px; font-weight: 700; color: var(--muted-2);
            text-transform: uppercase; letter-spacing: 0.14em; }
-
-  /* Drawer */
   .q-drawer { background: var(--bg) !important;
               border-right: 1px solid var(--border) !important; }
-
-  /* Header */
   .app-header {
     position: sticky; top: 0; z-index: 900; width: 100%;
     background: rgba(11,11,11,0.94);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--border);
-    padding: 8px 14px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border); padding: 8px 14px;
     display: flex; align-items: center; justify-content: space-between;
     box-sizing: border-box;
   }
-  .app-header .brand {
-    font-weight: 700; font-size: 12px; color: var(--text);
-    letter-spacing: -0.01em;
-  }
+  .app-header .brand { font-weight: 700; font-size: 12px;
+                       color: var(--text); letter-spacing: -0.01em; }
   .app-header .brand::before {
     content: '● '; color: var(--accent); font-size: 9px;
     vertical-align: middle; margin-right: 4px;
   }
-
-  /* TOP TAB BAR */
   .top-tabs {
-    display: flex; align-items: center; gap: 4px;
-    padding: 8px 14px;
+    display: flex; align-items: center; gap: 4px; padding: 8px 14px;
     background: rgba(11,11,11,0.94);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border);
     position: sticky; top: 0; z-index: 890;
     overflow-x: auto; overflow-y: hidden;
     width: 100%; box-sizing: border-box;
   }
   .top-tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    padding: 6px 10px;
-    border-radius: 2px;
-    cursor: pointer;
-    white-space: nowrap;
+    background: transparent; border: none; color: var(--muted);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    font-weight: 600; letter-spacing: 0.05em; padding: 6px 10px;
+    border-radius: 2px; cursor: pointer; white-space: nowrap;
     flex-shrink: 0;
     transition: color 0.12s ease, background 0.12s ease;
   }
   .top-tab-btn:hover { color: var(--text); background: var(--surface-2); }
   .top-tab-btn.active { color: var(--accent); background: var(--surface-2); }
-  .blink-cursor {
-    display: inline-block;
-    width: 7px; height: 12px;
-    background: #ffffff;
-    vertical-align: middle;
-    margin-left: 4px;
-    animation: blink 1.1s steps(2, start) infinite;
-  }
-  @keyframes blink {
-    to { visibility: hidden; }
-  }
-
-  /* Main */
-  .main-content {
-    padding: 14px; padding-bottom: 30px;
-    max-width: 760px; margin: 0 auto; width: 100%;
-    box-sizing: border-box;
-  }
-
-  /* Uploader */
+  .blink-cursor { display: inline-block; width: 7px; height: 12px;
+                  background: #ffffff; vertical-align: middle;
+                  margin-left: 4px;
+                  animation: blink 1.1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  .main-content { padding: 14px; padding-bottom: 30px;
+                  max-width: 760px; margin: 0 auto; width: 100%;
+                  box-sizing: border-box; }
   .q-uploader {
     background: var(--surface-2) !important;
     border: 1px dashed var(--border-2) !important;
-    border-radius: 4px !important;
-    width: 100% !important; max-width: 100% !important;
-    color: var(--text) !important;
+    border-radius: 4px !important; width: 100% !important;
+    max-width: 100% !important; color: var(--text) !important;
     box-shadow: none !important;
   }
-  .q-uploader__header {
-    background: transparent !important;
-    color: var(--text) !important;
-    min-height: 40px !important;
-  }
-  .q-uploader__title { color: var(--text) !important; font-size: 11px !important;
+  .q-uploader__header { background: transparent !important;
+                        color: var(--text) !important;
+                        min-height: 40px !important; }
+  .q-uploader__title { color: var(--text) !important;
+                       font-size: 11px !important;
                        font-weight: 500 !important;
                        font-family: inherit !important; }
   .q-uploader__subtitle { color: var(--muted) !important;
@@ -558,33 +502,23 @@ def _inject_theme():
   .q-uploader .q-btn { color: var(--muted) !important; }
   .q-uploader__list { background: transparent !important; }
   .q-uploader__list .q-item {
-    background: var(--surface) !important;
-    color: var(--text) !important;
-    border-radius: 2px !important;
-    margin: 3px !important;
+    background: var(--surface) !important; color: var(--text) !important;
+    border-radius: 2px !important; margin: 3px !important;
     min-height: 34px !important;
   }
-  .q-uploader__list .q-item__label { color: var(--text) !important;
-                                     font-size: 10px !important;
-                                     font-family: inherit !important; }
-  .q-uploader__list .q-item__label--caption {
-    color: var(--muted) !important;
+  .q-uploader__list .q-item__label {
+    color: var(--text) !important; font-size: 10px !important;
     font-family: inherit !important;
   }
-
-  /* Badges */
+  .q-uploader__list .q-item__label--caption {
+    color: var(--muted) !important; font-family: inherit !important;
+  }
   .badge-open, .badge-closed, .badge-overdue,
   .badge-ai, .badge-manual, .badge-nophoto, .badge-mismatch,
   .badge-seen, .badge-closure {
-    display: inline-block;
-    font-family: inherit;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 2px 6px;
-    border-radius: 2px;
-    text-transform: uppercase;
-    line-height: 1.3;
+    display: inline-block; font-family: inherit; font-size: 9px;
+    font-weight: 700; letter-spacing: 0.08em; padding: 2px 6px;
+    border-radius: 2px; text-transform: uppercase; line-height: 1.3;
   }
   .badge-open { color: var(--warn);
                 border: 1px solid rgba(251,191,36,0.35); }
@@ -604,51 +538,35 @@ def _inject_theme():
                 border: 1px solid var(--border); }
   .badge-closure { color: var(--success);
                    border: 1px solid rgba(74,222,128,0.3); }
-
   .q-notification {
-    border-radius: 3px !important;
-    font-weight: 500 !important;
+    border-radius: 3px !important; font-weight: 500 !important;
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 11px !important;
-    background: var(--surface-2) !important;
-    color: var(--text) !important;
+    background: var(--surface-2) !important; color: var(--text) !important;
     border: 1px solid var(--border-2) !important;
     min-height: 30px !important;
   }
-
   .q-separator { background: var(--border) !important; }
-
   .scroll-box {
     max-height: 220px; overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 6px; margin-top: 6px;
-    background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 6px; margin-top: 6px; background: var(--surface-2);
   }
-
   .or-divider {
     display: flex; align-items: center; gap: 8px;
-    color: var(--muted-2); font-size: 9px;
-    font-weight: 700; letter-spacing: 0.18em;
-    margin: 10px 0;
+    color: var(--muted-2); font-size: 9px; font-weight: 700;
+    letter-spacing: 0.18em; margin: 10px 0;
   }
   .or-divider::before, .or-divider::after {
     content: ''; flex: 1; height: 1px; background: var(--border);
   }
-
-  /* Dashboard */
   .metric-strip {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 12px;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; overflow: hidden; margin-bottom: 12px;
   }
   .metric-cell {
-    padding: 12px 14px;
-    border-right: 1px solid var(--border);
+    padding: 12px 14px; border-right: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
   }
   .metric-cell:nth-child(3n) { border-right: none; }
@@ -659,44 +577,36 @@ def _inject_theme():
     margin-bottom: 4px;
   }
   .metric-value {
-    font-size: 20px; font-weight: 700;
-    letter-spacing: -0.03em; color: var(--text);
-    line-height: 1.1;
+    font-size: 20px; font-weight: 700; letter-spacing: -0.03em;
+    color: var(--text); line-height: 1.1;
     font-variant-numeric: tabular-nums;
   }
   .metric-value.open { color: var(--warn); }
   .metric-value.closed { color: var(--success); }
   .metric-value.overdue { color: var(--danger); }
   .metric-value.accent { color: var(--accent); }
-
   .bar-row {
-    display: grid;
-    grid-template-columns: 60px 1fr 40px;
-    align-items: center; gap: 10px;
-    padding: 6px 0;
+    display: grid; grid-template-columns: 60px 1fr 40px;
+    align-items: center; gap: 10px; padding: 6px 0;
     border-bottom: 1px solid var(--border);
   }
   .bar-row:last-child { border-bottom: none; }
-  .bar-label { font-size: 11px; font-weight: 600; color: var(--text-soft); }
+  .bar-label { font-size: 11px; font-weight: 600;
+               color: var(--text-soft); }
   .bar-track { height: 4px; background: var(--surface-3);
                border-radius: 2px; overflow: hidden; }
-  .bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+  .bar-fill { height: 100%; background: var(--accent);
+              border-radius: 2px; }
   .bar-value { font-size: 11px; font-weight: 600; color: var(--text);
                text-align: right; font-variant-numeric: tabular-nums; }
-
   .week-chart {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: 4px;
-    align-items: end;
-    height: 90px;
-    padding: 8px 0 0;
-    border-bottom: 1px solid var(--border);
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    gap: 4px; align-items: end; height: 90px;
+    padding: 8px 0 0; border-bottom: 1px solid var(--border);
   }
   .week-cell {
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: flex-end;
-    height: 100%; gap: 4px;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-end; height: 100%; gap: 4px;
   }
   .week-bar { width: 100%; background: var(--accent);
               border-radius: 1px; min-height: 2px; opacity: 0.85; }
@@ -710,13 +620,9 @@ def _inject_theme():
     font-size: 8px; color: var(--muted-2); text-align: center;
     letter-spacing: -0.02em;
   }
-
   .sub-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 12px;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border);
+    display: grid; grid-template-columns: 1fr auto; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
     align-items: center;
   }
   .sub-row:last-child { border-bottom: none; }
@@ -727,37 +633,21 @@ def _inject_theme():
   .sub-badges {
     display: flex; gap: 4px; font-variant-numeric: tabular-nums;
   }
-
   .log-row {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 12px 14px;
-    margin-bottom: 6px;
-    cursor: pointer;
-    transition: border-color 0.12s;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 3px; padding: 12px 14px; margin-bottom: 6px;
+    cursor: pointer; transition: border-color 0.12s;
   }
   .log-row:hover { border-color: var(--border-2); }
-
-  .sub-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 14px;
-    margin-bottom: 8px;
-  }
-
+  .sub-card { background: var(--surface); border: 1px solid var(--border);
+              border-radius: 4px; padding: 14px; margin-bottom: 8px; }
   .chip {
     display: inline-flex; align-items: center; gap: 6px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-2);
-    color: var(--text);
-    font-size: 11px; font-weight: 500;
-    padding: 3px 8px; border-radius: 2px;
-    letter-spacing: 0.01em;
+    background: var(--surface-2); border: 1px solid var(--border-2);
+    color: var(--text); font-size: 11px; font-weight: 500;
+    padding: 3px 8px; border-radius: 2px; letter-spacing: 0.01em;
   }
   .chip .q-icon { font-size: 13px; color: var(--accent); }
-
   .photo-compare {
     display: grid; grid-template-columns: 1fr 1fr;
     gap: 8px; margin-bottom: 12px;
@@ -765,22 +655,17 @@ def _inject_theme():
   .photo-box { position: relative; }
   .photo-tag {
     position: absolute; top: 6px; left: 6px;
-    background: rgba(11,11,11,0.85);
-    color: var(--muted);
-    font-size: 9px; font-weight: 700;
-    padding: 2px 6px; border-radius: 2px;
-    letter-spacing: 0.1em; z-index: 2;
-    text-transform: uppercase;
+    background: rgba(11,11,11,0.85); color: var(--muted);
+    font-size: 9px; font-weight: 700; padding: 2px 6px;
+    border-radius: 2px; letter-spacing: 0.1em;
+    z-index: 2; text-transform: uppercase;
   }
   .photo-tag.closure { color: var(--success); }
-
   .q-dialog .q-card {
     background: var(--surface) !important;
     border: 1px solid var(--border-2) !important;
-    border-radius: 6px !important;
-    color: var(--text) !important;
+    border-radius: 6px !important; color: var(--text) !important;
   }
-
   .section-head {
     display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 10px; padding-bottom: 6px;
@@ -796,6 +681,7 @@ BTN_PRIMARY = "btn-primary"
 BTN_SOFT = "btn-soft"
 BTN_SUCCESS = "btn-success"
 BTN_OUTLINE = "btn-outline"
+BTN_DANGER = "btn-danger"
 
 
 # =====================================================================
@@ -803,15 +689,12 @@ BTN_OUTLINE = "btn-outline"
 # =====================================================================
 def build_defect_ui(user_id):
     _inject_theme()
-
     user = db.get_user(user_id)
 
     state = {
-        "user_id": user_id,
-        "user": user,
+        "user_id": user_id, "user": user,
         "project_id": app.storage.user.get("project_id"),
-        "project": None,
-        "tab": {"value": "new"},
+        "project": None, "tab": {"value": "new"},
         "sub_filter": None,
     }
 
@@ -836,7 +719,6 @@ def build_defect_ui(user_id):
     ) as drawer:
         _build_drawer(state, drawer)
 
-    # ---- Header ----
     with ui.element('div').classes("app-header"):
         with ui.element('div').style(
             "display:flex;align-items:center;gap:10px;"
@@ -844,18 +726,13 @@ def build_defect_ui(user_id):
             ui.button(icon="menu", on_click=drawer.toggle).props(
                 "flat round dense size=sm").style("color:#e8e8e8;")
             ui.label(_t("app_title")).classes("brand")
-        with ui.element('div').style(
-            "display:flex;align-items:center;gap:6px;"
-        ):
-            ui.button(_t("lang_button"), on_click=_toggle_lang).props(
-                "flat dense no-caps size=sm").style(
-                "color:#e8e8e8;font-weight:600;font-size:10px;"
-                "border:1px solid #262626;border-radius:2px;"
-                "padding:0 8px;min-height:26px;letter-spacing:0.06em;")
+        ui.button(_t("lang_button"), on_click=_toggle_lang).props(
+            "flat dense no-caps size=sm").style(
+            "color:#e8e8e8;font-weight:600;font-size:10px;"
+            "border:1px solid #262626;border-radius:2px;"
+            "padding:0 8px;min-height:26px;letter-spacing:0.06em;")
 
-    # ---- Top navigation (flat text tabs, no icons) ----
     nav_holder = ui.element('div').classes("top-tabs")
-
     content = ui.element('div').classes("main-content")
 
     def _render_tab():
@@ -878,24 +755,19 @@ def build_defect_ui(user_id):
         nav_holder.clear()
         with nav_holder:
             for key, label in [
-                ("new", _t("new_defect")),
-                ("logs", _t("logs")),
-                ("subs", _t("subs")),
-                ("dashboard", _t("dashboard")),
+                ("new", _t("new_defect")), ("logs", _t("logs")),
+                ("subs", _t("subs")), ("dashboard", _t("dashboard")),
             ]:
                 active = state["tab"]["value"] == key
                 cls = "top-tab-btn active" if active else "top-tab-btn"
                 btn = ui.element('button').classes(cls)
-
                 with btn:
                     ui.label(label).style(
                         "font-family:'JetBrains Mono',monospace;"
                         "font-size:11px;font-weight:600;"
-                        "letter-spacing:0.05em;"
-                        "color:inherit;background:transparent;"
-                    )
+                        "letter-spacing:0.05em;color:inherit;"
+                        "background:transparent;")
                     if key == "logs":
-                        # Blinking white cursor next to DEFECT LOGS
                         ui.element('span').classes("blink-cursor")
 
                 def _handler(k=key):
@@ -909,7 +781,6 @@ def build_defect_ui(user_id):
 
     state["render_main"] = _render_tab
     state["build_nav"] = _build_nav
-
     _build_nav()
     _render_tab()
 
@@ -927,7 +798,6 @@ def _render_no_project(state, refresh_fn):
         def _open():
             _open_setup_dialog(state, None, is_new=True,
                                 on_created=refresh_fn)
-
         ui.button(_t("new_project"), icon="add", on_click=_open).classes(
             BTN_PRIMARY).style("width:100%;max-width:280px;")
 
@@ -939,7 +809,6 @@ def _build_subs(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
         return
-
     pid = state["project_id"]
     masters = db.list_subcontractors(pid)
     scores = db.subcontractor_scores(pid)
@@ -968,7 +837,6 @@ def _build_subs(state):
         name = m.get("name") or ""
         score = scores_by_name.get(name) or {
             "open": 0, "closed": 0, "overdue": 0, "total": 0}
-
         with ui.element('div').classes("sub-card"):
             with ui.element('div').style(
                 "display:flex;justify-content:space-between;"
@@ -1031,12 +899,10 @@ def _open_add_sub_dialog(state, refresh_fn):
     if not state.get("project_id"):
         ui.notify(_t("setup_first"), type="warning")
         return
-
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:440px;"
     ):
         ui.label(_t("add_sub_title")).classes("h1").style("margin-bottom:14px;")
-
         name_in = ui.input(_t("sub_name")).style("width:100%;")
         trade_in = ui.input(_t("sub_trade")).style("width:100%;")
         phone_in = ui.input(_t("sub_phone")).style("width:100%;")
@@ -1057,9 +923,9 @@ def _open_add_sub_dialog(state, refresh_fn):
             ui.timer(0.03, refresh_fn, once=True)
 
         with ui.element('div').style("display:flex;gap:8px;margin-top:16px;"):
-            ui.button(_t("add"), on_click=_save).classes(BTN_PRIMARY).style("flex:1;")
+            ui.button(_t("add"), on_click=_save).classes(
+                BTN_PRIMARY).style("flex:1;")
             ui.button(_t("cancel"), on_click=dlg.close).classes(BTN_SOFT)
-
     dlg.open()
 
 
@@ -1067,7 +933,8 @@ def _confirm_delete_sub(state, sub_id, refresh_fn):
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:280px;max-width:95vw;width:380px;"
     ):
-        ui.label(_t("delete_sub_confirm")).classes("h3").style("margin-bottom:14px;")
+        ui.label(_t("delete_sub_confirm")).classes("h3").style(
+            "margin-bottom:14px;")
 
         def _yes():
             db.delete_subcontractor(sub_id)
@@ -1077,9 +944,8 @@ def _confirm_delete_sub(state, sub_id, refresh_fn):
 
         with ui.element('div').style("display:flex;gap:8px;"):
             ui.button(_t("delete_sub"), on_click=_yes).classes(
-                BTN_PRIMARY).style("flex:1;background:#f87171 !important;")
+                BTN_DANGER).style("flex:1;")
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
-
     dlg.open()
 
 
@@ -1090,7 +956,6 @@ def _build_dashboard(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
         return
-
     pid = state["project_id"]
 
     with ui.element('div').classes("section-head"):
@@ -1102,7 +967,6 @@ def _build_dashboard(state):
             "flat round dense size=sm").style("color:#808080;")
 
     ui.label(_t("dash_sub")).classes("muted").style("margin-bottom:14px;")
-
     kpis = db.kpi_summary(pid)
     if not kpis or kpis.get("total", 0) == 0:
         with ui.element('div').classes("card").style(
@@ -1118,8 +982,7 @@ def _build_dashboard(state):
         _metric_cell(_t("kpi_closed"), kpis["closed"], "closed")
         _metric_cell(_t("kpi_overdue"), kpis["overdue"], "overdue")
         _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
-        _metric_cell(_t("kpi_avg_days"),
-                      str(kpis["avg_days"]) + "d", "accent")
+        _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
 
     zones = db.kpi_per_zone(pid)
     if zones:
@@ -1206,8 +1069,8 @@ def _build_drawer(state, drawer):
                     with ui.element('div').style(
                         "width:36px;height:36px;border-radius:3px;"
                         "background:#161616;border:1px solid #1e1e1e;"
-                        "display:flex;align-items:center;justify-content:center;"
-                        "color:#5a5a5a;"
+                        "display:flex;align-items:center;"
+                        "justify-content:center;color:#5a5a5a;"
                     ):
                         ui.icon("business").style("font-size:16px;")
                 with ui.element('div').style("flex:1;min-width:0;"):
@@ -1224,7 +1087,6 @@ def _build_drawer(state, drawer):
 
             def _open_chooser():
                 _open_project_chooser(state, refresh, state["render_main"])
-
             ui.button(_t("switch_project"), icon="swap_horiz",
                       on_click=_open_chooser).classes(BTN_SOFT).style(
                 "width:100%;margin-bottom:10px;font-size:10px;"
@@ -1239,7 +1101,6 @@ def _build_drawer(state, drawer):
 
                 def open_setup():
                     _open_setup_dialog(state, refresh, is_new=False)
-
                 ui.button(_t("edit"), icon="settings",
                           on_click=open_setup).classes(BTN_SOFT).style(
                     "width:100%;margin-top:10px;font-size:10px;"
@@ -1305,12 +1166,10 @@ def _kv(label, value):
 # =====================================================================
 def _open_project_chooser(state, refresh_drawer, refresh_main):
     projects = db.list_projects(state["user_id"]) or []
-
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:460px;"
     ):
         ui.label(_t("projects_title")).classes("h1").style("margin-bottom:14px;")
-
         if not projects:
             ui.label(_t("no_projects_hint")).classes("muted").style(
                 "margin-bottom:14px;")
@@ -1344,7 +1203,6 @@ def _open_project_chooser(state, refresh_drawer, refresh_main):
             dlg.close()
             _open_setup_dialog(state, refresh_drawer, is_new=True,
                                 on_created=refresh_main)
-
         ui.button(_t("new_project"), icon="add", on_click=_new).classes(
             BTN_PRIMARY).style("width:100%;margin-top:6px;")
 
@@ -1352,10 +1210,9 @@ def _open_project_chooser(state, refresh_drawer, refresh_main):
             if not state.get("project_id"):
                 return
             _confirm_delete(state, dlg, refresh_drawer, refresh_main)
-
         ui.button(_t("delete_project"), icon="close", on_click=_delete).props(
-            "flat").style("width:100%;color:#f87171;margin-top:6px;font-size:10px;")
-
+            "flat").style("width:100%;color:#f87171;margin-top:6px;"
+                          "font-size:10px;")
     dlg.open()
 
 
@@ -1382,7 +1239,7 @@ def _confirm_delete(state, parent_dlg, refresh_drawer, refresh_main):
 
         with ui.element('div').style("display:flex;gap:8px;"):
             ui.button(_t("delete_project"), on_click=_yes).classes(
-                BTN_PRIMARY).style("flex:1;background:#f87171 !important;")
+                BTN_DANGER).style("flex:1;")
             ui.button(_t("cancel_btn"), on_click=dlg2.close).classes(BTN_SOFT)
     dlg2.open()
 
@@ -1392,12 +1249,10 @@ def _confirm_delete(state, parent_dlg, refresh_drawer, refresh_main):
 # =====================================================================
 def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
     proj = {} if is_new else (state.get("project") or {})
-
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:440px;"
     ):
         ui.label(_t("setup_title")).classes("h1").style("margin-bottom:14px;")
-
         name_in = ui.input(_t("project_name"),
                             value=proj.get("name", "")).style("width:100%;")
         contractor_in = ui.input(_t("contractor"),
@@ -1463,7 +1318,6 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
             ui.button(_t("save_project"), on_click=save).classes(
                 BTN_PRIMARY).style("flex:1;")
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
-
     dlg.open()
 
 
@@ -1474,12 +1328,10 @@ def _open_ms_dialog(state, refresh_drawer):
     if not state.get("project_id"):
         ui.notify(_t("setup_first"), type="warning")
         return
-
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:500px;"
     ):
         ui.label(_t("ms_dialog_title")).classes("h1").style("margin-bottom:14px;")
-
         holder = {"bytes": None, "name": ""}
         file_status = ui.label("").classes("mono-sm").style("margin-top:6px;")
 
@@ -1493,14 +1345,12 @@ def _open_ms_dialog(state, refresh_drawer):
             "width:100%;").props("flat bordered accept=.pdf,.docx,.doc,.txt,.md "
                                   "label='" + _t("ms_upload_file") + "'")
         file_status
-
         ms_num_in = ui.input(_t("ms_number"), value="MS-01").style("width:100%;")
         title_in = ui.input(_t("ms_title")).style("width:100%;")
         element_in = ui.select(_element_options(), value="column",
                                 label=_t("element_type")).style("width:100%;")
         disc_in = ui.select(_discipline_options(), value="Structural",
                              label=_t("discipline")).style("width:100%;")
-
         preview = ui.element('div').style("width:100%;margin-top:10px;")
 
         async def extract():
@@ -1559,9 +1409,7 @@ def _open_ms_dialog(state, refresh_drawer):
             ui.button(_t("extract"), on_click=extract).classes(
                 BTN_PRIMARY).style("flex:1;")
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
-
         preview
-
     dlg.open()
 
 
@@ -1572,10 +1420,8 @@ def _build_new_defect(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
         return
-
-    stage = {"photo": None, "mime": None,
-             "candidates": None, "manual": [],
-             "text_only": False, "text_desc": ""}
+    stage = {"photo": None, "mime": None, "candidates": None,
+             "manual": [], "text_only": False, "text_desc": ""}
 
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:3px;")
@@ -1604,13 +1450,11 @@ def _build_new_defect(state):
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
             "width:100%;").props("flat bordered accept=image/* label='" +
                                   _t("choose_photo") + "'")
-
         with ui.element('div').classes("or-divider"):
             ui.label(_t("or_divider"))
 
         def _open_nophoto():
             _open_no_photo_dialog(state, stage, rebuild_body)
-
         ui.button(_t("no_photo_btn"), icon="edit_note",
                   on_click=_open_nophoto).classes(BTN_OUTLINE).style(
             "width:100%;")
@@ -1629,27 +1473,23 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
     if not state.get("project_id"):
         ui.notify(_t("setup_first"), type="warning")
         return
-
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:500px;"
     ):
         ui.label(_t("no_photo_title")).classes("h1").style("margin-bottom:3px;")
         ui.label(_t("no_photo_sub")).classes("muted").style("margin-bottom:14px;")
-
         desc_in = ui.textarea(label=_t("defect_desc"),
                                 placeholder=_t("defect_desc_placeholder")).style(
             "width:100%;")
         note_in = ui.textarea(label=_t("extra_note"),
                                 placeholder=_t("extra_note_placeholder")).style(
             "width:100%;")
-
         with ui.element('div').style(
             "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"
         ):
             zone_in = ui.select(_zone_options(), value="A", label=_t("zone"))
             element_in = ui.select(_element_options(), value="column",
                                     label=_t("element"))
-
         btn = ui.button(_t("analyze"), icon="auto_awesome")
 
         async def do_analyze():
@@ -1671,7 +1511,6 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
             if result.get("error"):
                 ui.notify(result["error"], type="negative")
                 return
-
             stage["candidates"] = list(result["defects"])
             stage["manual"] = []
             stage["photo"] = None
@@ -1690,25 +1529,20 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
 
         btn.on("click", do_analyze)
         btn.classes(BTN_PRIMARY).style("width:100%;margin-top:12px;")
-
         with ui.element('div').style("margin-top:6px;"):
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
                 BTN_SOFT).style("width:100%;")
-
     dlg.open()
 
 
 def _render_body_contents(state, stage, refresh_fn):
     if not state.get("project_id"):
         return
-
     has_photo = bool(stage.get("photo"))
     has_text = bool(stage.get("text_only"))
     has_candidates = stage.get("candidates") is not None
-
     if not has_photo and not has_text:
         return
-
     if has_photo:
         with ui.element('div').classes("card").style("margin-bottom:12px;"):
             try:
@@ -1732,7 +1566,6 @@ def _render_body_contents(state, stage, refresh_fn):
                 zone_in = ui.select(_zone_options(), value="A", label=_t("zone"))
                 element_in = ui.select(_element_options(), value="column",
                                         label=_t("element"))
-
             analyze_btn = ui.button(_t("analyze"), icon="auto_awesome")
 
             async def do_analyze():
@@ -1763,16 +1596,13 @@ def _render_body_contents(state, stage, refresh_fn):
             analyze_btn.on("click", do_analyze)
             analyze_btn.classes(BTN_PRIMARY).style("width:100%;margin-top:12px;")
         return
-
     if has_text and not has_candidates:
         return
-
     _render_candidates(state, stage, refresh_fn)
 
 
 def _render_candidates(state, stage, refresh_fn):
     all_items = stage["candidates"] + stage["manual"]
-
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         if stage["candidates"]:
             ui.label(_t("ai_found")).classes("h3").style(
@@ -1780,24 +1610,20 @@ def _render_candidates(state, stage, refresh_fn):
         else:
             ui.label(_t("ai_found_none")).classes("h3").style(
                 "margin-bottom:10px;color:#b8b8b8;")
-
         for c in list(all_items):
             _render_defect_card(c, stage, refresh_fn)
 
         def _open_add():
             _open_add_dialog(stage, refresh_fn)
-
         ui.button(_t("add_manual"), icon="add", on_click=_open_add).classes(
             BTN_SOFT).style("width:100%;margin-top:4px;")
 
     with ui.element('div').classes("card"):
         ui.label(_t("notice_details")).classes("h1").style("margin-bottom:12px;")
-
         sub_in = ui.input(
             _t("send_to"),
             value=(state["project"] or {}).get("subcontractor", "") or "",
             placeholder=_t("send_to_placeholder")).style("width:100%;")
-
         with ui.element('div').style(
             "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"
         ):
@@ -1810,7 +1636,6 @@ def _render_candidates(state, stage, refresh_fn):
                 {"qc_internal": _t("qc_internal"),
                  "consultant": _t("consultant_ncr")},
                 value="qc_internal", label=_t("raised_as"))
-
         gen_btn = ui.button(_t("generate_pdf"), icon="picture_as_pdf")
 
         def do_generate():
@@ -1886,7 +1711,6 @@ def _render_defect_card(item, stage, refresh_fn):
                     if item.get("context_mismatch"):
                         ui.html('<span class="badge-mismatch">' +
                                 _t("mismatch_warn") + '</span>')
-
                 ui.label(str(item.get("name", ""))).classes("mono-lg").style(
                     "margin-bottom:5px;")
                 if item.get("location_hint"):
@@ -1914,7 +1738,6 @@ def _render_defect_card(item, stage, refresh_fn):
                 if item in stage["manual"]:
                     stage["manual"].remove(item)
                 ui.timer(0.03, refresh_fn, once=True)
-
             ui.button(icon="close", on_click=_remove).props(
                 "flat round dense size=sm").style("color:#5a5a5a;")
 
@@ -1963,7 +1786,6 @@ def _build_logs(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
         return
-
     with ui.element('div').classes("section-head"):
         ui.label(_t("logs_title")).classes("h1")
         ui.element('span').classes("blink-cursor")
@@ -1986,7 +1808,6 @@ def _build_logs(state):
             def _clear():
                 state["sub_filter"] = None
                 state["render_main"]()
-
             ui.button(_t("clear_filter"), on_click=_clear).props(
                 "flat dense no-caps size=sm").style(
                 "color:#5eead4;font-weight:600;font-size:10px;"
@@ -2070,7 +1891,6 @@ def _build_logs(state):
             ui.label(_t("no_logs")).classes("mono-sm").style(
                 "text-align:center;padding:32px 0;")
             return
-
         for r in rows:
             _render_log_card(r, log_list.refresh)
 
@@ -2104,19 +1924,17 @@ def _render_log_card(row, refresh_fn):
 
         def _click():
             _show_defect_dialog(row.get("id"), refresh_fn)
-
         card.on("click", _click)
 
 
 # =====================================================================
-# DEFECT DETAIL / CLOSE
+# DEFECT DETAIL / EDIT / DELETE
 # =====================================================================
 def _show_defect_dialog(defect_id, on_close_cb):
     d = db.get_defect(defect_id)
     if not d:
         ui.notify(_t("not_found"), type="negative")
         return
-
     is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
 
     with ui.dialog() as dialog, ui.card().style(
@@ -2187,6 +2005,25 @@ def _show_defect_dialog(defect_id, on_close_cb):
                               d["notice_pdf"], filename=d["uid"] + ".pdf")
                           ).classes(BTN_SOFT).style("width:100%;")
 
+            # Edit + Delete row
+            with ui.element('div').style(
+                "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+            ):
+                def _edit():
+                    dialog.close()
+                    _open_edit_defect_dialog(d, on_close_cb)
+
+                def _delete():
+                    dialog.close()
+                    _open_delete_defect_dialog(d, on_close_cb)
+
+                ui.button(_t("edit_defect"), icon="edit",
+                          on_click=_edit).classes(BTN_SOFT).style(
+                    "width:100%;")
+                ui.button(_t("delete_defect"), icon="delete",
+                          on_click=_delete).classes(BTN_DANGER).style(
+                    "width:100%;")
+
             if d["status"] == "open":
                 def _open_close():
                     _open_close_defect_dialog(d, is_consultant,
@@ -2224,7 +2061,6 @@ def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
             "margin-bottom:3px;")
         ui.label(_t("close_defect_sub")).classes("muted").style(
             "margin-bottom:12px;")
-
         ncr_in = None
         if is_consultant:
             ncr_in = ui.input(_t("ncr_input")).style("width:100%;")
@@ -2280,5 +2116,238 @@ def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
                 "width:100%;")
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
                 BTN_SOFT).style("width:100%;")
+    dlg.open()
 
+
+# =====================================================================
+# EDIT DEFECT DIALOG
+# =====================================================================
+def _open_edit_defect_dialog(d, on_close_cb):
+    items = []
+    for s in (d.get("selected") or []):
+        items.append({
+            "name": s.get("name", ""),
+            "location_hint": s.get("location_hint", ""),
+            "severity": s.get("severity", "Medium"),
+            "ms_violations": list(s.get("ms_violations") or []),
+            "code_violations": list(s.get("code_violations") or []),
+            "repair_action": s.get("repair_action", ""),
+            "context_mismatch": s.get("context_mismatch", False),
+        })
+
+    is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
+
+    with ui.dialog() as dialog, ui.card().style(
+        "padding:0;max-width:620px;width:95vw;overflow:hidden;"
+    ):
+        with ui.element('div').style(
+            "padding:16px 16px 12px;border-bottom:1px solid #1e1e1e;"
+        ):
+            ui.label(_t("edit_defect_title")).classes("h2")
+            ui.label(_t("edit_defect_sub")).classes("mono-sm").style(
+                "margin-top:4px;")
+
+        # Body
+        body = ui.element('div').style(
+            "padding:16px;max-height:65vh;overflow-y:auto;"
+        )
+
+        sub_in = ui.input(_t("send_to"),
+                           value=d.get("subcontractor", "")).style("width:100%;")
+        with ui.element('div').style(
+            "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"
+        ):
+            deadline_val = str(int(d.get("deadline_days") or 3))
+            deadline_in = ui.select(
+                {"1": "1 " + _t("days"), "2": "2 " + _t("days"),
+                 "3": "3 " + _t("days"), "5": "5 " + _t("days"),
+                 "7": "7 " + _t("days"), "14": "14 " + _t("days")},
+                value=deadline_val, label=_t("deadline"))
+            zone_in = ui.select(_zone_options(),
+                                 value=d.get("zone") or "A",
+                                 label=_t("zone"))
+        raise_in = ui.select(
+            {"qc_internal": _t("qc_internal"),
+             "consultant": _t("consultant_ncr")},
+            value=d.get("raise_type") or "qc_internal",
+            label=_t("raised_as")).style("width:100%;margin-top:8px;")
+
+        ncr_in = None
+        if is_consultant or (d.get("consultant_ncr")):
+            ncr_in = ui.input(_t("ncr_input"),
+                               value=d.get("consultant_ncr") or "").style(
+                "width:100%;margin-top:8px;")
+
+        note_in = ui.textarea(label=_t("note_label"),
+                               value=d.get("note") or "").style(
+            "width:100%;margin-top:8px;")
+
+        # Items section
+        items_holder = ui.element('div').style(
+            "width:100%;margin-top:14px;"
+        )
+
+        def render_items():
+            items_holder.clear()
+            with items_holder:
+                ui.label(_t("defect_items")).classes("label").style(
+                    "margin-bottom:8px;")
+                if not items:
+                    ui.label(_t("no_items")).classes("mono-sm")
+                    return
+                for idx, it in enumerate(items):
+                    with ui.element('div').classes("item-box"):
+                        name_i = ui.input(_t("name"),
+                                           value=it.get("name", "")).style(
+                            "width:100%;")
+                        loc_i = ui.input(_t("location_hint"),
+                                          value=it.get("location_hint", "")).style(
+                            "width:100%;")
+                        with ui.element('div').style(
+                            "display:grid;grid-template-columns:1fr 1fr;"
+                            "gap:8px;"
+                        ):
+                            sev_i = ui.select(_severity_options(),
+                                               value=it.get("severity", "Medium"),
+                                               label=_t("severity"))
+                            ms_i = ui.input(_t("ms_clause"),
+                                             value=", ".join(
+                                                 it.get("ms_violations") or []))
+                            ecp_i = ui.input(_t("ecp_code"),
+                                              value=", ".join(
+                                                  it.get("code_violations") or []))
+                        rep_i = ui.input(_t("repair"),
+                                          value=it.get("repair_action", "")).style(
+                            "width:100%;")
+
+                        def _bind(it=it, name_i=name_i, loc_i=loc_i,
+                                   sev_i=sev_i, ms_i=ms_i, ecp_i=ecp_i,
+                                   rep_i=rep_i):
+                            it["name"] = name_i.value or ""
+                            it["location_hint"] = loc_i.value or ""
+                            it["severity"] = sev_i.value or "Medium"
+                            it["ms_violations"] = [
+                                v.strip() for v in (ms_i.value or "").split(",")
+                                if v.strip()]
+                            it["code_violations"] = [
+                                v.strip() for v in (ecp_i.value or "").split(",")
+                                if v.strip()]
+                            it["repair_action"] = rep_i.value or ""
+
+                        for fld in (name_i, loc_i, sev_i, ms_i, ecp_i, rep_i):
+                            fld.on("blur", lambda e, _b=_bind: _b())
+
+                        def _rm(i=idx):
+                            items.pop(i)
+                            render_items()
+                        ui.button(_t("remove_item"), icon="close",
+                                  on_click=_rm).props("flat size=sm").style(
+                            "color:#f87171;font-size:10px;"
+                            "min-height:26px;margin-top:6px;")
+
+        render_items()
+
+        def _add_item():
+            items.append({
+                "name": "", "location_hint": "", "severity": "Medium",
+                "ms_violations": [], "code_violations": [],
+                "repair_action": "", "context_mismatch": False,
+            })
+            render_items()
+
+        ui.button(_t("add_item"), icon="add", on_click=_add_item).classes(
+            BTN_SOFT).style("width:100%;margin-top:6px;")
+
+        with body:
+            pass  # body is written top-down above
+
+        # Actions
+        with ui.element('div').style(
+            "padding:12px 16px 16px;border-top:1px solid #1e1e1e;"
+            "display:flex;flex-direction:column;gap:6px;"
+        ):
+            def _save_changes():
+                # Finalize any in-flight edits by reloading from inputs
+                for it, refs in zip(items, _item_refs):
+                    pass
+                if not items:
+                    ui.notify(_t("tick_one"), type="warning")
+                    return
+                if not sub_in.value.strip():
+                    ui.notify(_t("enter_sub"), type="warning")
+                    return
+                selected = []
+                for s in items:
+                    if not s.get("name", "").strip():
+                        continue
+                    selected.append({
+                        "name": s["name"].strip(),
+                        "location_hint": s.get("location_hint", ""),
+                        "severity": s.get("severity", "Medium"),
+                        "ms_violations": s.get("ms_violations", []),
+                        "code_violations": s.get("code_violations", []),
+                        "repair_action": s.get("repair_action", ""),
+                        "zone": zone_in.value,
+                        "context_mismatch": s.get("context_mismatch", False),
+                    })
+                if not selected:
+                    ui.notify(_t("name_required"), type="warning")
+                    return
+                pdf_bytes = svc.build_notice_pdf(
+                    project=None or db.get_project(d["project_id"]),
+                    defects=selected, notice_uid=d["uid"],
+                    subcontractor=sub_in.value.strip(),
+                    deadline_days=int(deadline_in.value),
+                    raise_type=raise_in.value,
+                    logo_bytes=(db.get_project(d["project_id"]) or {}).get(
+                        "logo_bytes"))
+                ncr_val = None
+                if ncr_in and ncr_in.value.strip():
+                    ncr_val = ncr_in.value.strip()
+                db.update_defect_notice(
+                    defect_id=d["id"],
+                    subcontractor=sub_in.value.strip(),
+                    deadline_days=int(deadline_in.value),
+                    zone=zone_in.value, note=note_in.value or "",
+                    raise_type=raise_in.value, selected=selected,
+                    notice_pdf=pdf_bytes, consultant_ncr=ncr_val)
+                ui.notify(_t("saved_changes"), type="positive")
+                dialog.close()
+                on_close_cb()
+
+            ui.button(_t("save_changes"), icon="check",
+                      on_click=_save_changes).classes(BTN_PRIMARY).style(
+                "width:100%;")
+            ui.button(_t("cancel_btn"), on_click=dialog.close).classes(
+                BTN_SOFT).style("width:100%;")
+
+    # Collect item input refs so we can read final values on save
+    _item_refs = []
+
+    dialog.open()
+
+
+# =====================================================================
+# DELETE DEFECT DIALOG
+# =====================================================================
+def _open_delete_defect_dialog(d, on_close_cb):
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:300px;max-width:95vw;width:400px;"
+    ):
+        ui.label(_t("confirm_delete_defect")).classes("h3").style(
+            "margin-bottom:6px;")
+        ui.label(_t("delete_warning")).classes("muted").style(
+            "margin-bottom:4px;")
+        ui.label(d["uid"]).classes("mono-sm").style("margin-bottom:14px;")
+
+        def _yes():
+            db.delete_defect(d["id"])
+            ui.notify(_t("deleted_defect"), type="positive")
+            dlg.close()
+            on_close_cb()
+
+        with ui.element('div').style("display:flex;gap:8px;"):
+            ui.button(_t("delete_defect"), on_click=_yes).classes(
+                BTN_DANGER).style("flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
     dlg.open()
