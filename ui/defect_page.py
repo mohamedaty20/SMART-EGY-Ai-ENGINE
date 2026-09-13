@@ -355,6 +355,16 @@ def _inject_theme():
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b0b0b">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js').catch(function(){});
+  }
+</script>
 <style>
   :root {
     --bg: #0b0b0b; --surface: #101010; --surface-2: #161616;
@@ -814,6 +824,18 @@ def build_defect_ui(user_id):
     _build_nav()
     _render_tab()
 
+    # Toast if there are overdue defects on load
+    if state.get("project_id"):
+        try:
+            from services import alert_service as al
+            overdue_items = al.get_overdue(state["project_id"],
+                                            min_days_overdue=1)
+            ui.timer(0.8, lambda: _notify_overdue_on_load(state,
+                                                            overdue_items),
+                     once=True)
+        except Exception as e:
+            print("[ui] overdue toast failed: " + repr(e))
+
 
 def _render_no_project(state, refresh_fn):
     with ui.element('div').classes("card").style(
@@ -1018,6 +1040,15 @@ def _build_dashboard(state):
             "flat round dense size=sm").style("color:#808080;")
 
     ui.label(_t("dash_sub")).classes("muted").style("margin-bottom:14px;")
+
+    try:
+        from services import alert_service as al
+        overdue_items = al.get_overdue(pid, min_days_overdue=1)
+        if overdue_items:
+            _open_overdue_banner(state, overdue_items)
+    except Exception as e:
+        print("[ui] overdue banner failed: " + repr(e))
+
     kpis = db.kpi_summary(pid)
     if not kpis or kpis.get("total", 0) == 0:
         with ui.element('div').classes("card").style(
@@ -1082,16 +1113,6 @@ def _build_dashboard(state):
                                     str(s["overdue"]) + '</span>')
                         ui.html('<span class="badge-closed">' +
                                 str(s["closed"]) + '</span>')
-
-
-def _metric_cell(label, value, variant):
-    with ui.element('div').classes("metric-cell"):
-        ui.label(label).classes("metric-label")
-        cls = "metric-value"
-        if variant:
-            cls += " " + variant
-        ui.label(str(value)).classes(cls)
-
 
 # =====================================================================
 # DRAWER
@@ -2534,3 +2555,58 @@ def _open_change_password_dialog(state):
         err_holder
 
     dlg.open()
+    
+
+# =====================================================================
+# OVERDUE ALERTS
+# =====================================================================
+def _open_overdue_banner(state, overdue_items):
+    try:
+        from services import alert_service as al
+    except Exception:
+        return
+    with ui.element('div').style(
+        "background:rgba(248,113,113,0.08);"
+        "border:1px solid rgba(248,113,113,0.35);"
+        "border-radius:4px;padding:12px 14px;margin-bottom:12px;"
+    ):
+        with ui.element('div').style(
+            "display:flex;align-items:flex-start;gap:10px;"
+        ):
+            ui.icon("warning").style("color:#f87171;font-size:20px;")
+            with ui.element('div').style("flex:1;min-width:0;"):
+                ui.label(
+                    str(len(overdue_items)) + " OVERDUE DEFECT(S)"
+                ).style(
+                    "font-family:'JetBrains Mono',monospace;"
+                    "font-size:11px;font-weight:700;letter-spacing:0.08em;"
+                    "color:#f87171;margin-bottom:6px;")
+                for r in overdue_items[:5]:
+                    ui.label(
+                        "> " + str(r.get("uid", "")) + "  " +
+                        str(r.get("first_defect", ""))[:50] + "  (" +
+                        str(r.get("_days_overdue", 0)) + "d late, " +
+                        str(r.get("subcontractor", "")) + ")"
+                    ).style(
+                        "font-family:'JetBrains Mono',monospace;"
+                        "font-size:10px;color:#b8b8b8;"
+                        "margin-bottom:3px;word-break:break-word;")
+                if len(overdue_items) > 5:
+                    ui.label("+ " + str(len(overdue_items) - 5) + " more"
+                              ).style(
+                        "font-family:'JetBrains Mono',monospace;"
+                        "font-size:10px;color:#808080;margin-top:2px;")
+
+
+def _notify_overdue_on_load(state, overdue_items):
+    """Fire a toast if there are overdue defects."""
+    if not overdue_items:
+        return
+    n = len(overdue_items)
+    ui.notify(
+        str(n) + " overdue defect" + ("s" if n != 1 else "") +
+        " — open the Dashboard",
+        type="warning",
+        position="top",
+        timeout=8000,
+    )
