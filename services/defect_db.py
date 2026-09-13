@@ -163,10 +163,21 @@ def _ensure_columns(cur, table, wanted):
     have = set()
     for r in cur.fetchall():
         try:
+            nm = None
             if isinstance(r, dict):
-                have.add(r.get("name"))
+                nm = r.get("name")
+            elif hasattr(r, "keys"):
+                try:
+                    nm = r["name"]
+                except Exception:
+                    nm = None
             else:
-                have.add(r[1])
+                try:
+                    nm = r[1]
+                except Exception:
+                    nm = None
+            if nm:
+                have.add(str(nm))
         except Exception:
             pass
     for name, ddl in wanted:
@@ -176,8 +187,9 @@ def _ensure_columns(cur, table, wanted):
                             name + " " + ddl)
                 print("[db] added " + table + "." + name)
             except Exception as e:
+                if "duplicate column" in str(e).lower():
+                    continue
                 print("[db] add col failed: " + repr(e))
-
 
 def init_db():
     with _LOCK:
