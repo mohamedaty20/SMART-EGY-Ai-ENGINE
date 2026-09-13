@@ -1,6 +1,6 @@
 """
 ui/defect_page.py — Dark theme, multi-user, project switcher,
-with "No photo" defect entry.
+no-photo defect entry, Dashboard tab.
 """
 import io
 import base64
@@ -17,6 +17,7 @@ T = {
     "en": {
         "app_title": "Defect Notices",
         "new_defect": "New Defect", "logs": "Logs",
+        "dashboard": "Dashboard",
         "project": "Project", "no_project": "No project yet",
         "setup_project": "Set up project", "edit": "Edit",
         "contractor": "Contractor", "subcontractor": "Subcontractor",
@@ -34,8 +35,7 @@ T = {
         "defect_desc_placeholder": "e.g. exposed rebar at column C3 base, Zone B",
         "extra_note": "Extra note (optional)",
         "extra_note_placeholder": "any additional context",
-        "analyze": "Analyze with AI",
-        "analyzing": "Analyzing...",
+        "analyze": "Analyze with AI", "analyzing": "Analyzing...",
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
         "zone": "Zone", "element": "Element",
@@ -101,12 +101,31 @@ T = {
         "no_projects_hint": "You haven't created any project yet.",
         "delete_project": "Delete project",
         "delete_confirm": "Delete this project and all its data?",
-        "logout": "Log out",
-        "signed_in_as": "Signed in as",
+        "logout": "Log out", "signed_in_as": "Signed in as",
         "or_divider": "— OR —",
+        "dash_title": "Dashboard",
+        "dash_sub": "Live view of your defect register.",
+        "kpi_total": "Total",
+        "kpi_open": "Open",
+        "kpi_closed": "Closed",
+        "kpi_overdue": "Overdue",
+        "kpi_closed_7d": "Closed 7d",
+        "kpi_avg_days": "Avg days",
+        "dash_zones": "Open by Zone",
+        "dash_weeks": "Raised per Week",
+        "dash_subs": "By Subcontractor",
+        "dash_empty": "No defects yet — raise one from the New Defect tab.",
+        "no_data": "No data yet.",
+        "col_name": "Name",
+        "col_open": "Open",
+        "col_overdue": "Overdue",
+        "col_closed": "Closed",
+        "col_total": "Total",
+        "unassigned": "(unassigned)",
     },
     "ar": {
         "app_title": "إشعارات العيوب", "new_defect": "عيب جديد", "logs": "السجل",
+        "dashboard": "الرئيسية",
         "project": "المشروع", "no_project": "لا يوجد مشروع بعد",
         "setup_project": "إعداد المشروع", "edit": "تعديل",
         "contractor": "المقاول", "subcontractor": "المقاول الفرعي",
@@ -124,8 +143,7 @@ T = {
         "defect_desc_placeholder": "مثال: حديد مكشوف عند قاعدة العمود C3، منطقة B",
         "extra_note": "ملاحظة إضافية (اختياري)",
         "extra_note_placeholder": "أي سياق إضافي",
-        "analyze": "تحليل بالذكاء الاصطناعي",
-        "analyzing": "جاري التحليل...",
+        "analyze": "تحليل بالذكاء الاصطناعي", "analyzing": "جاري التحليل...",
         "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة العمود C3",
         "zone": "المنطقة", "element": "العنصر",
@@ -187,6 +205,25 @@ T = {
         "delete_confirm": "حذف هذا المشروع وكل بياناته؟",
         "logout": "تسجيل الخروج", "signed_in_as": "مسجل الدخول كـ",
         "or_divider": "— أو —",
+        "dash_title": "الرئيسية",
+        "dash_sub": "عرض مباشر لسجل العيوب.",
+        "kpi_total": "الإجمالي",
+        "kpi_open": "مفتوح",
+        "kpi_closed": "مغلق",
+        "kpi_overdue": "متأخر",
+        "kpi_closed_7d": "أُغلق ٧ أيام",
+        "kpi_avg_days": "متوسط الأيام",
+        "dash_zones": "المفتوح حسب المنطقة",
+        "dash_weeks": "المُصدر أسبوعياً",
+        "dash_subs": "حسب المقاول الفرعي",
+        "dash_empty": "لا توجد عيوب بعد — أصدر واحداً من تاب عيب جديد.",
+        "no_data": "لا توجد بيانات بعد.",
+        "col_name": "الاسم",
+        "col_open": "مفتوح",
+        "col_overdue": "متأخر",
+        "col_closed": "مغلق",
+        "col_total": "الإجمالي",
+        "unassigned": "(غير معين)",
     },
 }
 
@@ -240,7 +277,7 @@ def _inject_theme():
     --text: #fafafa; --text-soft: #d4d4d4;
     --muted: #a3a3a3; --muted-2: #737373;
     --violet: #a855f7; --violet-soft: #7c3aed;
-    --green: #10b981; --amber: #f59e0b;
+    --green: #10b981; --amber: #f59e0b; --red: #ef4444;
   }
   html, body { background: var(--bg) !important; color: var(--text) !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
@@ -351,6 +388,42 @@ def _inject_theme():
   .or-divider::before, .or-divider::after {
     content: ''; flex: 1; height: 1px; background: var(--border);
   }
+  /* Dashboard */
+  .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr);
+              gap: 10px; margin-bottom: 14px; }
+  .kpi-card { background: var(--surface); border: 1px solid var(--border);
+              border-radius: 12px; padding: 16px;
+              display: flex; flex-direction: column; gap: 4px; }
+  .kpi-num { font-family: 'JetBrains Mono', monospace !important;
+             font-size: 28px; font-weight: 700; color: var(--text);
+             line-height: 1; letter-spacing: -0.03em; }
+  .kpi-lbl { font-size: 11px; font-weight: 700; color: var(--muted-2);
+             text-transform: uppercase; letter-spacing: 0.08em; }
+  .kpi-num.open { color: #fbbf24; }
+  .kpi-num.closed { color: #34d399; }
+  .kpi-num.overdue { color: #ef4444; }
+  .kpi-num.primary { color: var(--violet); }
+  .zone-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .zone-name { font-family: 'JetBrains Mono', monospace; font-weight: 600;
+               font-size: 13px; color: var(--text); width: 40px; }
+  .zone-bar-wrap { flex: 1; height: 8px; background: var(--surface-2);
+                   border-radius: 4px; overflow: hidden; }
+  .zone-bar { height: 100%; background: var(--violet);
+              border-radius: 4px; transition: width 0.3s ease; }
+  .zone-count { font-family: 'JetBrains Mono', monospace; font-size: 12px;
+                color: var(--muted); min-width: 24px; text-align: right; }
+  .week-bars { display: flex; align-items: flex-end; gap: 6px;
+               height: 100px; padding: 8px 0; margin-top: 8px; }
+  .week-col { flex: 1; display: flex; flex-direction: column;
+              align-items: center; gap: 6px; height: 100%;
+              justify-content: flex-end; }
+  .week-bar { width: 100%; background: linear-gradient(180deg,
+              #a855f7 0%, #7c3aed 100%); border-radius: 4px 4px 0 0;
+              min-height: 2px; transition: height 0.3s ease; }
+  .week-lbl { font-size: 10px; color: var(--muted-2);
+              font-family: 'JetBrains Mono', monospace; }
+  .week-count { font-size: 11px; font-weight: 700; color: var(--text);
+                font-family: 'JetBrains Mono', monospace; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -417,17 +490,24 @@ def build_defect_ui(user_id):
             if not state.get("project_id"):
                 _render_no_project(state, render_main)
                 return
-            if state["tab"]["value"] == "new":
+            tab = state["tab"]["value"]
+            if tab == "new":
                 _build_new_defect(state)
-            else:
+            elif tab == "logs":
                 _build_logs(state)
+            else:
+                _build_dashboard(state)
 
     state["render_main"] = render_main
     render_main()
 
     with ui.element('div').classes("bottom-nav"):
-        _nav_item("new", "add_a_photo", _t("new_defect"), state, render_main)
-        _nav_item("logs", "list_alt", _t("logs"), state, render_main)
+        _nav_item("new", "add_a_photo", _t("new_defect"),
+                  state, render_main)
+        _nav_item("logs", "list_alt", _t("logs"),
+                  state, render_main)
+        _nav_item("dashboard", "insights", _t("dashboard"),
+                  state, render_main)
 
 
 def _render_no_project(state, refresh_fn):
@@ -458,12 +538,115 @@ def _nav_item(key, icon, label, state, render_fn):
         state["tab"]["value"] = key
         render_fn()
         ui.run_javascript(
-            "document.querySelectorAll('.bottom-nav-item').forEach"
-            "(function(el,i){el.classList.remove('active');});"
-            "document.querySelectorAll('.bottom-nav-item')[" +
-            ("0" if key == "new" else "1") + "].classList.add('active');")
+            "var items=document.querySelectorAll('.bottom-nav-item');"
+            "items.forEach(function(el){el.classList.remove('active');});"
+            "var idx=" + ("0" if key == "new" else
+                          ("1" if key == "logs" else "2")) + ";"
+            "if(items[idx]){items[idx].classList.add('active');}")
 
     btn.on("click", _click)
+
+
+# =====================================================================
+# DASHBOARD
+# =====================================================================
+def _build_dashboard(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+
+    pid = state["project_id"]
+    kpis = db.kpi_summary(pid)
+    zones = db.kpi_per_zone(pid)
+    weeks = db.kpi_per_week(pid, weeks=8)
+    subs = db.subcontractor_scores(pid)
+
+    ui.label(_t("dash_title")).classes("h1").style("margin-bottom:4px;")
+    ui.label(_t("dash_sub")).classes("muted").style("margin-bottom:16px;")
+
+    if kpis.get("total", 0) == 0:
+        with ui.element('div').classes("card").style("text-align:center;"):
+            ui.icon("insights").style("font-size:40px;color:#737373;")
+            ui.label(_t("dash_empty")).classes("muted").style(
+                "margin-top:10px;")
+        return
+
+    # ---- KPI grid ----
+    with ui.element('div').classes("kpi-grid"):
+        _kpi_card(str(kpis["total"]), _t("kpi_total"), "")
+        _kpi_card(str(kpis["open"]), _t("kpi_open"), "open")
+        _kpi_card(str(kpis["closed"]), _t("kpi_closed"), "closed")
+        _kpi_card(str(kpis["overdue"]), _t("kpi_overdue"), "overdue")
+        _kpi_card(str(kpis["closed_7d"]), _t("kpi_closed_7d"), "closed")
+        _kpi_card(str(kpis["avg_days"]), _t("kpi_avg_days"), "primary")
+
+    # ---- Per zone ----
+    if zones:
+        with ui.element('div').classes("card").style("margin-bottom:14px;"):
+            ui.label(_t("dash_zones")).classes("h3").style("margin-bottom:14px;")
+            max_z = max(z["count"] for z in zones) or 1
+            for z in zones:
+                pct = int((z["count"] / float(max_z)) * 100)
+                with ui.element('div').classes("zone-row"):
+                    ui.label(str(z["zone"])).classes("zone-name")
+                    with ui.element('div').classes("zone-bar-wrap"):
+                        ui.element('div').classes("zone-bar").style(
+                            "width:" + str(pct) + "%;")
+                    ui.label(str(z["count"])).classes("zone-count")
+
+    # ---- Per week ----
+    with ui.element('div').classes("card").style("margin-bottom:14px;"):
+        ui.label(_t("dash_weeks")).classes("h3").style("margin-bottom:4px;")
+        max_w = max((w["count"] for w in weeks), default=0) or 1
+        with ui.element('div').classes("week-bars"):
+            for w in weeks:
+                pct = int((w["count"] / float(max_w)) * 100)
+                with ui.element('div').classes("week-col"):
+                    ui.label(str(w["count"])).classes("week-count")
+                    ui.element('div').classes("week-bar").style(
+                        "height:" + str(max(pct, 3)) + "%;")
+                    ui.label(w["label"]).classes("week-lbl")
+
+    # ---- Subcontractor mini table ----
+    if subs:
+        with ui.element('div').classes("card"):
+            ui.label(_t("dash_subs")).classes("h3").style("margin-bottom:14px;")
+            for s in subs[:8]:
+                name = s["name"] or _t("unassigned")
+                with ui.element('div').style(
+                    "display:flex;align-items:center;gap:10px;"
+                    "padding:10px 0;border-bottom:1px solid #1f1f1f;"
+                ):
+                    with ui.element('div').style("flex:1;min-width:0;"):
+                        ui.label(str(name)).classes("mono-lg").style(
+                            "white-space:nowrap;overflow:hidden;"
+                            "text-overflow:ellipsis;")
+                    ui.html(
+                        '<span class="badge-open">' + str(s["open"]) +
+                        ' ' + _t("col_open") + '</span>'
+                    )
+                    if s["overdue"]:
+                        ui.html(
+                            '<span style="background:rgba(239,68,68,0.15);'
+                            'color:#fca5a5;border:1px solid rgba(239,68,68,0.3);'
+                            'font-size:10px;font-weight:700;padding:2px 8px;'
+                            'border-radius:20px;text-transform:uppercase;">' +
+                            str(s["overdue"]) + ' ' + _t("col_overdue") +
+                            '</span>'
+                        )
+                    ui.html(
+                        '<span class="badge-closed">' + str(s["closed"]) +
+                        ' ' + _t("col_closed") + '</span>'
+                    )
+
+
+def _kpi_card(number, label, variant):
+    cls = "kpi-num"
+    if variant:
+        cls += " " + variant
+    with ui.element('div').classes("kpi-card"):
+        ui.label(str(number)).classes(cls)
+        ui.label(label).classes("kpi-lbl")
 
 
 # =====================================================================
@@ -895,12 +1078,10 @@ def _build_new_defect(state):
             "width:100%;").props("flat bordered accept=image/* label='" +
                                   _t("choose_photo") + "'")
 
-        # OR divider
         with ui.element('div').classes("or-divider"):
             ui.label(_t("or_divider")).style(
                 "font-size:11px;font-weight:700;letter-spacing:0.1em;")
 
-        # No-photo button
         def _open_nophoto():
             _open_no_photo_dialog(state, stage, rebuild_body)
 
@@ -1002,7 +1183,6 @@ def _render_body_contents(state, stage, refresh_fn):
     if not has_photo and not has_text:
         return
 
-    # Photo preview (only when we have one)
     if has_photo:
         with ui.element('div').classes("card").style("margin-bottom:14px;"):
             try:
@@ -1014,7 +1194,6 @@ def _render_body_contents(state, stage, refresh_fn):
             except Exception as ex:
                 print("[ui] image render failed: " + repr(ex))
 
-    # Stage 2 (photo path) — note + analyze
     if has_photo and not has_candidates:
         with ui.element('div').classes("card"):
             note_in = ui.textarea(label=_t("note_label"),
@@ -1058,11 +1237,9 @@ def _render_body_contents(state, stage, refresh_fn):
             analyze_btn.classes(BTN_PRIMARY).style("width:100%;margin-top:14px;")
         return
 
-    # Text-only path with no candidates yet — should not happen (dialog handles it)
     if has_text and not has_candidates:
         return
 
-    # Stage 3 — candidates + notice
     _render_candidates(state, stage, refresh_fn)
 
 
