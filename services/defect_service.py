@@ -1,6 +1,6 @@
 """
 services/defect_service.py — Full file.
-Supports PDF / DOCX / TXT. Renders Arabic + Latin correctly in PDFs.
+Arabic + monospace support. Context-mismatch aware defect analysis.
 """
 
 import io
@@ -13,9 +13,11 @@ import asyncio
 
 
 # =====================================================================
-# ARABIC + LATIN FONT (Amiri has both scripts)
+# FONTS
 # =====================================================================
 _FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
+
+# Amiri — Arabic + Latin
 _FONT_REG_PATH = os.path.join(_FONT_DIR, "Amiri-Regular.ttf")
 _FONT_BOLD_PATH = os.path.join(_FONT_DIR, "Amiri-Bold.ttf")
 _FONT_REG_URLS = [
@@ -27,8 +29,22 @@ _FONT_BOLD_URLS = [
     "https://github.com/aliftype/amiri/raw/main/Amiri-Bold.ttf",
 ]
 
+# JetBrains Mono — Latin monospace
+_MONO_REG_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Regular.ttf")
+_MONO_BOLD_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Bold.ttf")
+_MONO_REG_URLS = [
+    "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Regular.ttf",
+    "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSansMono.ttf",
+]
+_MONO_BOLD_URLS = [
+    "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Bold.ttf",
+    "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSansMono-Bold.ttf",
+]
+
 _FONT_NAME = "Helvetica"
 _FONT_BOLD = "Helvetica-Bold"
+_MONO_NAME = "Courier"
+_MONO_BOLD = "Courier-Bold"
 
 
 def _download_font(url, dest):
@@ -53,9 +69,9 @@ def _download_font(url, dest):
     return False
 
 
-def _ensure_arabic_font():
-    global _FONT_NAME, _FONT_BOLD
-    if _FONT_NAME != "Helvetica":
+def _ensure_fonts():
+    global _FONT_NAME, _FONT_BOLD, _MONO_NAME, _MONO_BOLD
+    if _FONT_NAME != "Helvetica" and _MONO_NAME != "Courier":
         return
     try:
         from reportlab.pdfbase import pdfmetrics
@@ -63,6 +79,8 @@ def _ensure_arabic_font():
     except Exception as e:
         print("[defect] reportlab font import failed: " + repr(e))
         return
+
+    # Amiri (Arabic + Latin)
     if not os.path.exists(_FONT_REG_PATH):
         for u in _FONT_REG_URLS:
             if _download_font(u, _FONT_REG_PATH):
@@ -71,42 +89,57 @@ def _ensure_arabic_font():
         for u in _FONT_BOLD_URLS:
             if _download_font(u, _FONT_BOLD_PATH):
                 break
-    if not os.path.exists(_FONT_REG_PATH):
-        print("[defect] Arabic font unavailable; PDF will use Helvetica.")
-        return
     try:
-        pdfmetrics.registerFont(TTFont("ArReg", _FONT_REG_PATH))
+        if os.path.exists(_FONT_REG_PATH):
+            pdfmetrics.registerFont(TTFont("ArReg", _FONT_REG_PATH))
+            _FONT_NAME = "ArReg"
         if os.path.exists(_FONT_BOLD_PATH):
             pdfmetrics.registerFont(TTFont("ArBold", _FONT_BOLD_PATH))
-            _FONT_NAME = "ArReg"
             _FONT_BOLD = "ArBold"
         else:
-            _FONT_NAME = "ArReg"
-            _FONT_BOLD = "ArReg"
-        print("[defect] Arabic font registered: " + _FONT_NAME)
+            _FONT_BOLD = _FONT_NAME
     except Exception as e:
-        print("[defect] font registration failed: " + repr(e))
+        print("[defect] Amiri registration failed: " + repr(e))
+
+    # JetBrains Mono (Latin monospace)
+    if not os.path.exists(_MONO_REG_PATH):
+        for u in _MONO_REG_URLS:
+            if _download_font(u, _MONO_REG_PATH):
+                break
+    if not os.path.exists(_MONO_BOLD_PATH):
+        for u in _MONO_BOLD_URLS:
+            if _download_font(u, _MONO_BOLD_PATH):
+                break
+    try:
+        if os.path.exists(_MONO_REG_PATH):
+            pdfmetrics.registerFont(TTFont("MonoReg", _MONO_REG_PATH))
+            _MONO_NAME = "MonoReg"
+        if os.path.exists(_MONO_BOLD_PATH):
+            pdfmetrics.registerFont(TTFont("MonoBold", _MONO_BOLD_PATH))
+            _MONO_BOLD = "MonoBold"
+        else:
+            _MONO_BOLD = _MONO_NAME
+    except Exception as e:
+        print("[defect] Mono registration failed: " + repr(e))
+
+    print("[defect] fonts ready: body=" + _FONT_NAME + " mono=" + _MONO_NAME)
 
 
-_ensure_arabic_font()
+_ensure_fonts()
 
-# Clean up the old Arabic-only font if it was previously downloaded
-try:
-    os.remove(os.path.join(_FONT_DIR, "NotoSansArabic-Regular.ttf"))
-except Exception:
-    pass
+
+def _has_arabic(text):
+    return any('\u0600' <= ch <= '\u06FF' for ch in str(text or ""))
 
 
 def _fix(text):
-    """Shape Arabic and apply bidi. Latin-only text passes through."""
     if text is None:
         return ""
     s = str(text)
     if not s:
         return s
     try:
-        has_ar = any('\u0600' <= ch <= '\u06FF' for ch in s)
-        if not has_ar:
+        if not _has_arabic(s):
             return s
         import arabic_reshaper
         from bidi.algorithm import get_display
@@ -114,6 +147,13 @@ def _fix(text):
     except Exception as e:
         print("[defect] arabic shaping failed: " + repr(e))
         return s
+
+
+def _mono_font(text, bold=False):
+    """Return mono font name, falling back to Amiri if text has Arabic."""
+    if _has_arabic(text):
+        return _FONT_BOLD if bold else _FONT_NAME
+    return _MONO_BOLD if bold else _MONO_NAME
 
 
 # =====================================================================
@@ -162,7 +202,7 @@ def _detect_image_type(data):
 
 
 # =====================================================================
-# DOCUMENT TEXT EXTRACTION (PDF, DOCX, TXT)
+# DOCUMENT TEXT EXTRACTION
 # =====================================================================
 def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
     try:
@@ -390,19 +430,42 @@ def get_ecp_excerpts(element_type):
 
 
 # =====================================================================
-# DEFECT ANALYSIS
+# DEFECT ANALYSIS — with strict context matching
 # =====================================================================
 _DEFECT_PROMPT = """You are a senior QC engineer inspecting a construction site photo.
 
-Your job: identify ALL visible defects in the photo, and cite ONLY the
-provided MS clauses and ECP codes. Never invent clause numbers.
+Your job: identify visible defects in the photo, and cite MS clauses / ECP
+codes ONLY when they truly apply to what the photo shows.
 
-IMPORTANT: A real site photo almost always contains at least one defect
-worth noting. Be thorough and observant. Look for:
+CRITICAL — MATCHING RULE (read this before citing anything):
+Before citing any MS clause, ask yourself: does this clause describe work
+that relates to the ACTUAL content of the photo?
+
+Examples of NON-matches (DO NOT cite any clause in these cases):
+- MS is about masonry walls but the photo shows an asphalt pavement crack
+- MS is about column reinforcement but the photo shows a floor slab
+- MS is about concrete works but the photo shows electrical conduit
+- MS is about steel structure but the photo shows plaster finishing
+
+When the MS clauses do NOT match the photo content:
+- STILL describe the defect(s) you see, in plain language
+- Set "ms_violations" to an empty array []
+- Set "code_violations" to an empty array []
+- Set "context_mismatch" to true on that defect
+
+When the MS clauses DO match the photo:
+- Cite 1-3 MS clause ids that appear in the provided list
+- Cite 1-3 ECP codes that appear in the provided list
+- Set "context_mismatch" to false
+
+NEVER invent a clause match. It is far better to return zero citations than
+a wrong one. Do not force-fit a clause onto an unrelated photo.
+
+OBSERVATION CHECKLIST — look for these in the photo:
 - Cracks (any pattern, direction, width)
 - Honeycombing / voids / poor compaction
 - Exposed or corroded reinforcement
-- Insufficient concrete cover (rebar close to surface)
+- Insufficient concrete cover
 - Poor formwork (bulging, misalignment, seepage marks)
 - Cold joints, segregation, aggregate exposure
 - Water stains, efflorescence, damp patches
@@ -410,14 +473,13 @@ worth noting. Be thorough and observant. Look for:
 - Poor finishing, uneven surfaces
 - Missing or misplaced spacers/chairs
 - Rust stains on concrete surface
+- Missing mortar joints, damaged masonry units
 
-If you genuinely see nothing wrong, return an empty list. But do not be
-overly cautious — any defect that a QC engineer would write in a notice
-must be reported.
+If the photo shows no construction defect at all, return an empty list.
 
 USER NOTE (may be empty): __NOTE__
 
-ELEMENT TYPE: __ELEMENT__
+ELEMENT TYPE (from the app): __ELEMENT__
 
 METHOD STATEMENT CLAUSES AVAILABLE (cite by id only):
 __MS_CLAUSES__
@@ -434,13 +496,14 @@ Return ONE JSON object with this exact shape:
       "severity": "Medium",
       "ms_violations": ["3.5"],
       "code_violations": ["ECP 203 §6.3.1"],
-      "repair_action": "Chip back to sound concrete, apply bonding agent, patch with non-shrink mortar."
+      "repair_action": "Chip back to sound concrete, apply bonding agent, patch with non-shrink mortar.",
+      "context_mismatch": false
     }
   ]
 }
 
 RULES:
-- Report 1-6 defects. Aim for at least 1 if any concrete surface is shown.
+- Report 1-6 defects. Aim for at least 1 if any structure is visible.
 - Only cite MS clause ids that appear in the list above.
 - Only cite ECP codes that appear in the list above.
 - Severity must be one of: Low, Medium, High, Critical.
@@ -529,6 +592,10 @@ async def analyze_defect_photo(photo_bytes,
         severity = str(d.get("severity", "Medium")).strip().title()
         if severity not in ("Low", "Medium", "High", "Critical"):
             severity = "Medium"
+        mismatch = bool(d.get("context_mismatch", False))
+        # If AI cited nothing, treat as mismatch (MS not covering this defect)
+        if not ms_v and not ecp_v:
+            mismatch = True
         defects.append({
             "name": name,
             "location_hint": str(d.get("location_hint", "")).strip()[:60],
@@ -536,6 +603,7 @@ async def analyze_defect_photo(photo_bytes,
             "ms_violations": ms_v,
             "code_violations": ecp_v,
             "repair_action": str(d.get("repair_action", "")).strip()[:180],
+            "context_mismatch": mismatch,
         })
 
     print("[defect] parsed " + str(len(defects)) + " valid defects")
@@ -564,7 +632,7 @@ def build_notice_pdf(project,
                      deadline_days,
                      raise_type="qc_internal",
                      logo_bytes=None):
-    _ensure_arabic_font()
+    _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         Image as ReportLabImage, HRFlowable,
@@ -596,6 +664,16 @@ def build_notice_pdf(project,
                                  textColor=colors.black, leading=13)
     label_style = ParagraphStyle("Label", fontName=_FONT_BOLD,
                                   fontSize=9, textColor=NAVY)
+    # Monospace styles for defect names + citations
+    mono_head_style = ParagraphStyle("MonoHead", fontName=_MONO_BOLD,
+                                      fontSize=10, textColor=NAVY,
+                                      leading=13, spaceAfter=2)
+    mono_cite_style = ParagraphStyle("MonoCite", fontName=_MONO_NAME,
+                                      fontSize=8.5, textColor=GREY,
+                                      leading=11)
+    mono_repair_style = ParagraphStyle("MonoRepair", fontName=_MONO_NAME,
+                                        fontSize=8.5, textColor=GREY,
+                                        leading=11)
 
     story = []
 
@@ -611,7 +689,6 @@ def build_notice_pdf(project,
         Paragraph("NOTICE TO SUBCONTRACTOR", title_style),
         Paragraph("Notice No: " + notice_uid, sub_style),
     ]
-
     if logo_img:
         t_head = Table([[logo_img, header_text]],
                        colWidths=[35 * mm, 145 * mm])
@@ -667,30 +744,40 @@ def build_notice_pdf(project,
     story.append(Spacer(1, 12))
 
     for idx, d in enumerate(defects, start=1):
-        name = _fix(d.get("name", "Defect"))
+        raw_name = d.get("name", "Defect")
+        name = _fix(raw_name)
         zone = _fix(d.get("zone", "") or "")
         loc = _fix(d.get("location_hint", "") or "")
         severity = d.get("severity", "Medium")
         ms_v = [_fix(v) for v in (d.get("ms_violations") or [])]
         ecp_v = [_fix(v) for v in (d.get("code_violations") or [])]
         repair = _fix(d.get("repair_action", "") or "")
+        mismatch = bool(d.get("context_mismatch", False))
 
-        head = str(idx) + ". " + name
+        head = str(idx) + ".  " + name
         if zone or loc:
-            head += "  (" + ", ".join(p for p in [zone, loc] if p) + ")"
-        story.append(Paragraph("<b>" + head + "</b>", body_style))
+            head += "   //  " + ", ".join(p for p in [zone, loc] if p)
+        head_style_use = ParagraphStyle(
+            "H" + str(idx), parent=mono_head_style,
+            fontName=_mono_font(raw_name, bold=True)
+        )
+        story.append(Paragraph(head, head_style_use))
 
         cit_bits = []
         if ms_v:
             cit_bits.append("MS: " + ", ".join(ms_v))
         if ecp_v:
-            cit_bits.append("Code: " + ", ".join(ecp_v))
+            cit_bits.append("ECP: " + ", ".join(ecp_v))
+        if mismatch and not cit_bits:
+            cit_bits.append("MS: (no matching clause in the uploaded MS)")
         if cit_bits:
-            story.append(Paragraph("  <i>" + "  |  ".join(cit_bits) + "</i>",
-                                    meta_style))
+            story.append(Paragraph("    " + "  |  ".join(cit_bits),
+                                    mono_cite_style))
         if repair:
-            story.append(Paragraph("  Repair: " + repair, meta_style))
-        story.append(Paragraph("  Severity: " + severity, meta_style))
+            story.append(Paragraph("    Repair: " + repair,
+                                    mono_repair_style))
+        story.append(Paragraph("    Severity: " + severity,
+                                mono_cite_style))
         story.append(Spacer(1, 8))
 
     story.append(Spacer(1, 20))
@@ -745,7 +832,7 @@ def build_notice_pdf(project,
 # REGISTER PDF
 # =====================================================================
 def build_register_pdf(project, rows, logo_bytes=None):
-    _ensure_arabic_font()
+    _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         HRFlowable,
@@ -772,6 +859,8 @@ def build_register_pdf(project, rows, logo_bytes=None):
                                 fontSize=9, textColor=ORANGE, spaceAfter=8)
     cell_style = ParagraphStyle("Cell", fontName=_FONT_NAME, fontSize=8.5,
                                  textColor=GREY, leading=11)
+    mono_cell = ParagraphStyle("MCell", fontName=_MONO_NAME, fontSize=8.5,
+                                textColor=GREY, leading=11)
     head_style = ParagraphStyle("Head", fontName=_FONT_BOLD,
                                  fontSize=8.5, textColor=colors.white,
                                  leading=11)
@@ -782,20 +871,20 @@ def build_register_pdf(project, rows, logo_bytes=None):
     story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
                              spaceAfter=10))
 
-    head = ["UID", "Zone", "Defect", "Subcontractor", "Source", "Status", "Created"]
+    head = ["UID", "Defect", "Zone", "Subcontractor", "Source", "Status", "Created"]
     data = [[Paragraph(h, head_style) for h in head]]
     for r in rows:
         data.append([
             Paragraph(_fix(r.get("uid", "")), cell_style),
+            Paragraph(_fix(r.get("first_defect", "") or "-"), mono_cell),
             Paragraph(_fix(r.get("zone", "")), cell_style),
-            Paragraph("(" + str(r.get("count", 0)) + " defects)", cell_style),
             Paragraph(_fix(r.get("subcontractor", "")), cell_style),
             Paragraph(str(r.get("raise_type", "qc_internal")), cell_style),
             Paragraph(str(r.get("status", "")).upper(), cell_style),
             Paragraph(str(r.get("created_at", ""))[:10], cell_style),
         ])
 
-    t = Table(data, colWidths=[36*mm, 15*mm, 32*mm, 55*mm, 32*mm, 24*mm, 26*mm])
+    t = Table(data, colWidths=[36*mm, 60*mm, 15*mm, 45*mm, 30*mm, 24*mm, 26*mm])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), NAVY),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -822,7 +911,7 @@ def build_register_pdf(project, rows, logo_bytes=None):
 # CLOSURE REPORT PDF
 # =====================================================================
 def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
-    _ensure_arabic_font()
+    _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         Image as ReportLabImage, HRFlowable,
@@ -858,7 +947,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
                                  textColor=colors.black, leading=13)
     label_style = ParagraphStyle("Label", fontName=_FONT_BOLD,
                                   fontSize=9, textColor=NAVY)
-    item_head_style = ParagraphStyle("ItemHead", fontName=_FONT_BOLD,
+    mono_head_style = ParagraphStyle("MonoHead", fontName=_MONO_BOLD,
                                       fontSize=10, textColor=NAVY,
                                       spaceAfter=3)
 
@@ -938,10 +1027,10 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
         for idx, r in enumerate(rows, start=1):
             status = str(r.get("status", "")).upper()
             color = GREEN if status == "CLOSED" else RED
-            head = (str(idx) + ". " + _fix(r.get("uid", "")) +
-                    "  ·  Zone " + _fix(r.get("zone", "")) +
-                    "  ·  " + _fix(r.get("subcontractor", "")))
-            story.append(Paragraph(head, item_head_style))
+            head = (str(idx) + ".  " + _fix(r.get("uid", "")) +
+                    "   //  " + _fix(r.get("first_defect", "") or "-") +
+                    "  ·  Zone " + _fix(r.get("zone", "")))
+            story.append(Paragraph(head, mono_head_style))
 
             st_style = ParagraphStyle("St", parent=meta_style, textColor=color,
                                        fontName=_FONT_BOLD)
