@@ -43,6 +43,7 @@ _FONT_NAME = "Helvetica"
 _FONT_BOLD = "Helvetica-Bold"
 _MONO_NAME = "Courier"
 _MONO_BOLD = "Courier-Bold"
+_FONTS_READY = [False]
 
 
 def _download_font(url, dest):
@@ -54,14 +55,19 @@ def _download_font(url, dest):
     try:
         print("[defect] fetching font: " + url)
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=15) as r:
             data = r.read()
-        if data and len(data) > 10000:
-            with open(dest, "wb") as f:
-                f.write(data)
-            print("[defect] font saved: " + str(len(data) // 1024) +
-                  " KB -> " + dest)
-            return True
+        if not data or len(data) < 5000:
+            return False
+        # TTF magic-byte check (protects against GitHub returning HTML)
+        if data[:4] not in (b"\x00\x01\x00\x00", b"OTTO", b"true", b"ttcf"):
+            print("[defect] not a TTF file: " + url)
+            return False
+        with open(dest, "wb") as f:
+            f.write(data)
+        print("[defect] font saved: " + str(len(data) // 1024) +
+              " KB -> " + dest)
+        return True
     except Exception as e:
         print("[defect] font fetch failed: " + repr(e))
     return False
@@ -69,7 +75,7 @@ def _download_font(url, dest):
 
 def _ensure_fonts():
     global _FONT_NAME, _FONT_BOLD, _MONO_NAME, _MONO_BOLD
-    if _FONT_NAME != "Helvetica" and _MONO_NAME != "Courier":
+    if _FONTS_READY[0]:
         return
     try:
         from reportlab.pdfbase import pdfmetrics
@@ -78,6 +84,7 @@ def _ensure_fonts():
         print("[defect] reportlab font import failed: " + repr(e))
         return
 
+    # ---- Amiri (Arabic + Latin fallback) ----
     if not os.path.exists(_FONT_REG_PATH):
         for u in _FONT_REG_URLS:
             if _download_font(u, _FONT_REG_PATH):
@@ -86,18 +93,33 @@ def _ensure_fonts():
         for u in _FONT_BOLD_URLS:
             if _download_font(u, _FONT_BOLD_PATH):
                 break
+
+    amiri_ok = False
     try:
         if os.path.exists(_FONT_REG_PATH):
             pdfmetrics.registerFont(TTFont("ArReg", _FONT_REG_PATH))
             _FONT_NAME = "ArReg"
+            amiri_ok = True
         if os.path.exists(_FONT_BOLD_PATH):
             pdfmetrics.registerFont(TTFont("ArBold", _FONT_BOLD_PATH))
             _FONT_BOLD = "ArBold"
         else:
             _FONT_BOLD = _FONT_NAME
+        if amiri_ok:
+            try:
+                pdfmetrics.registerFontFamily(
+                    "ArReg",
+                    normal="ArReg",
+                    bold=_FONT_BOLD,
+                    italic="ArReg",
+                    boldItalic=_FONT_BOLD,
+                )
+            except Exception:
+                pass
     except Exception as e:
         print("[defect] Amiri registration failed: " + repr(e))
 
+    # ---- JetBrains Mono ----
     if not os.path.exists(_MONO_REG_PATH):
         for u in _MONO_REG_URLS:
             if _download_font(u, _MONO_REG_PATH):
@@ -106,19 +128,35 @@ def _ensure_fonts():
         for u in _MONO_BOLD_URLS:
             if _download_font(u, _MONO_BOLD_PATH):
                 break
+
+    mono_ok = False
     try:
         if os.path.exists(_MONO_REG_PATH):
             pdfmetrics.registerFont(TTFont("MonoReg", _MONO_REG_PATH))
             _MONO_NAME = "MonoReg"
+            mono_ok = True
         if os.path.exists(_MONO_BOLD_PATH):
             pdfmetrics.registerFont(TTFont("MonoBold", _MONO_BOLD_PATH))
             _MONO_BOLD = "MonoBold"
         else:
             _MONO_BOLD = _MONO_NAME
+        if mono_ok:
+            try:
+                pdfmetrics.registerFontFamily(
+                    "MonoReg",
+                    normal="MonoReg",
+                    bold=_MONO_BOLD,
+                    italic="MonoReg",
+                    boldItalic=_MONO_BOLD,
+                )
+            except Exception:
+                pass
     except Exception as e:
         print("[defect] Mono registration failed: " + repr(e))
 
-    print("[defect] fonts ready: body=" + _FONT_NAME + " mono=" + _MONO_NAME)
+    _FONTS_READY[0] = True
+    print("[defect] fonts ready: arabic=" + _FONT_NAME +
+          " latin=" + _MONO_NAME)
 
 
 _ensure_fonts()
@@ -128,7 +166,16 @@ def _has_arabic(text):
     return any('\u0600' <= ch <= '\u06FF' for ch in str(text or ""))
 
 
+def _esc_xml(s):
+    """Escape XML special chars so ReportLab doesn't interpret them."""
+    return (str(s or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;"))
+
+
 def _fix(text):
+    """Reshape Arabic to presentation forms. No XML escaping here."""
     if text is None:
         return ""
     s = str(text)
@@ -151,25 +198,19 @@ def _font_for(text, bold=False):
     return _MONO_BOLD if bold else _MONO_NAME
 
 
-_style_counter = [0]
-
-
-def _style_for(text, base_style, bold=False):
-    _style_counter[0] += 1
-    try:
-        from reportlab.lib.styles import ParagraphStyle
-    except Exception:
-        return base_style
-    return ParagraphStyle(
-        "s" + str(_style_counter[0]),
-        parent=base_style,
-        fontName=_font_for(text, bold=bold))
-
-
 def _para(text, base_style, bold=False):
+    """
+    Build a Paragraph that is guaranteed to render in the right font.
+    Uses inline <font name="..."> tag — the one mechanism ReportLab
+    always honors, regardless of ParagraphStyle parent behaviour.
+    """
     from reportlab.platypus import Paragraph
-    t = _fix(text or "")
-    return Paragraph(t, _style_for(t, base_style, bold=bold))
+    raw = str(text or "")
+    shaped = _fix(raw)
+    escaped = _esc_xml(shaped)
+    font = _font_for(raw, bold=bold)
+    wrapped = '<font name="' + font + '">' + escaped + '</font>'
+    return Paragraph(wrapped, base_style)
 
 
 # =====================================================================
