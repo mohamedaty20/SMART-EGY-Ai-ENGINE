@@ -1,9 +1,10 @@
 """
-services/defect_db.py — Turso-compatible SQLite layer.
+services/defect_db.py — Turso-compatible SQLite layer with multi-photos.
 """
 import os
 import re
 import json
+import base64
 import sqlite3
 import datetime
 import threading
@@ -84,6 +85,33 @@ def _to_dict(row, cols):
     return d
 
 
+def _encode_photos(photos):
+    if not photos:
+        return None
+    try:
+        arr = [base64.b64encode(p).decode("ascii") for p in photos]
+        return json.dumps(arr)
+    except Exception as e:
+        print("[db] encode photos failed: " + repr(e))
+        return None
+
+
+def _decode_photos(json_str):
+    if not json_str:
+        return []
+    try:
+        arr = json.loads(json_str)
+        out = []
+        for s in arr:
+            try:
+                out.append(base64.b64decode(s))
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
+
+
 USER_COLS = ["id", "email", "password_hash", "name", "created_at"]
 
 PROJECT_COLS = ["id", "user_id", "name", "contractor", "subcontractor",
@@ -101,7 +129,7 @@ DEFECT_FULL_COLS = ["id", "project_id", "uid", "zone", "photo_bytes",
                     "note", "ai_candidates_json", "selected_json",
                     "subcontractor", "deadline_days", "raise_type",
                     "status", "created_at", "closed_at", "notice_pdf",
-                    "consultant_ncr", "closure_photo"]
+                    "consultant_ncr", "closure_photo", "photos_json"]
 
 SUB_COLS = ["id", "name", "trade", "phone", "notes"]
 
@@ -131,7 +159,6 @@ def init_db():
     with _LOCK:
         c = _conn()
         cur = c.cursor()
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,7 +190,7 @@ def init_db():
                 subcontractor TEXT, deadline_days INTEGER,
                 raise_type TEXT, status TEXT, created_at TEXT,
                 closed_at TEXT, notice_pdf BLOB, consultant_ncr TEXT,
-                closure_photo BLOB
+                closure_photo BLOB, photos_json TEXT
             )
         """)
         cur.execute("""
@@ -173,16 +200,14 @@ def init_db():
                 created_at TEXT
             )
         """)
-
         _ensure_columns(cur, "projects", [
             ("user_id", "INTEGER"), ("subcontractor", "TEXT"),
         ])
         _ensure_columns(cur, "defects", [
             ("raise_type", "TEXT"), ("closed_at", "TEXT"),
             ("notice_pdf", "BLOB"), ("consultant_ncr", "TEXT"),
-            ("closure_photo", "BLOB"),
+            ("closure_photo", "BLOB"), ("photos_json", "TEXT"),
         ])
-
         c.commit()
         _sync(c)
         c.close()
@@ -244,6 +269,17 @@ def get_user(user_id):
     row = cur.fetchone()
     c.close()
     return _to_dict(row, USER_COLS)
+
+
+def update_user_password(user_id, password_hash):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("UPDATE users SET password_hash=? WHERE id=?",
+                    (password_hash, user_id))
+        c.commit()
+        _sync(c)
+        c.close()
 
 
 # =====================================================================
@@ -398,7 +434,7 @@ def get_clauses_for_element(project_id, element_type):
 # =====================================================================
 def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                 raise_type, photo_bytes, note, selected, notice_pdf,
-                ai_candidates=None):
+                ai_candidates=None, extra_photos=None):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -407,13 +443,14 @@ def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                 (project_id, uid, zone, photo_bytes, note,
                  ai_candidates_json, selected_json, subcontractor,
                  deadline_days, raise_type, status, created_at,
-                 notice_pdf)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+                 notice_pdf, photos_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
         """, (project_id, uid, zone, photo_bytes, note,
               json.dumps(ai_candidates or []),
               json.dumps(selected or []),
               subcontractor, int(deadline_days or 3),
-              raise_type or "qc_internal", _now(), notice_pdf))
+              raise_type or "qc_internal", _now(), notice_pdf,
+              _encode_photos(extra_photos)))
         c.commit()
         _sync(c)
         c.close()
@@ -466,7 +503,8 @@ def get_defect(defect_id):
         SELECT id, project_id, uid, zone, photo_bytes, note,
                ai_candidates_json, selected_json, subcontractor,
                deadline_days, raise_type, status, created_at,
-               closed_at, notice_pdf, consultant_ncr, closure_photo
+               closed_at, notice_pdf, consultant_ncr, closure_photo,
+               photos_json
         FROM defects WHERE id=?
     """, (defect_id,))
     row = cur.fetchone()
@@ -482,6 +520,7 @@ def get_defect(defect_id):
         d["ai_candidates"] = json.loads(d.get("ai_candidates_json") or "[]")
     except Exception:
         d["ai_candidates"] = []
+    d["extra_photos"] = _decode_photos(d.get("photos_json"))
     return d
 
 
@@ -515,29 +554,33 @@ def close_defect(defect_id, consultant_ncr=None, closure_photo=None):
 
 def update_defect_notice(defect_id, subcontractor, deadline_days, zone,
                           note, raise_type, selected, notice_pdf,
-                          consultant_ncr=None):
+                          consultant_ncr=None, extra_photos=None):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
+        photos_json = None
+        if extra_photos is not None:
+            photos_json = _encode_photos(extra_photos)
         if consultant_ncr:
             cur.execute("""
                 UPDATE defects
                 SET subcontractor=?, deadline_days=?, zone=?, note=?,
                     raise_type=?, selected_json=?, notice_pdf=?,
-                    consultant_ncr=?
+                    consultant_ncr=?, photos_json=?
                 WHERE id=?
             """, (subcontractor, int(deadline_days or 3), zone, note,
                   raise_type or "qc_internal", json.dumps(selected),
-                  notice_pdf, consultant_ncr, defect_id))
+                  notice_pdf, consultant_ncr, photos_json, defect_id))
         else:
             cur.execute("""
                 UPDATE defects
                 SET subcontractor=?, deadline_days=?, zone=?, note=?,
-                    raise_type=?, selected_json=?, notice_pdf=?
+                    raise_type=?, selected_json=?, notice_pdf=?,
+                    photos_json=?
                 WHERE id=?
             """, (subcontractor, int(deadline_days or 3), zone, note,
                   raise_type or "qc_internal", json.dumps(selected),
-                  notice_pdf, defect_id))
+                  notice_pdf, photos_json, defect_id))
         c.commit()
         _sync(c)
         c.close()
@@ -629,6 +672,19 @@ def delete_subcontractor(sub_id):
         c.commit()
         _sync(c)
         c.close()
+
+
+def get_subcontractor(project_id, name):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, name, trade, phone, notes FROM subcontractors
+        WHERE project_id=? AND LOWER(name)=LOWER(?)
+        LIMIT 1
+    """, (project_id, (name or "").strip()))
+    row = cur.fetchone()
+    c.close()
+    return _to_dict(row, SUB_COLS)
 
 
 def list_subcontractors(project_id):
