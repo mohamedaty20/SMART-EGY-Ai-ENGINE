@@ -1,5 +1,5 @@
 """
-ui/defect_page.py — Full file. Robust edit dialog.
+ui/defect_page.py — Full file. Multi-photos, per-sub PDF, search, duplicate badge.
 """
 import io
 import base64
@@ -27,6 +27,8 @@ T = {
         "photo_title": "Take a photo of the defect",
         "photo_sub": "Tap below to pick a site photo.",
         "choose_photo": "Choose photo",
+        "add_photos": "Add more photos",
+        "photos_count": "photo(s)",
         "no_photo_btn": "Raise defect without photo",
         "no_photo_title": "Defect without photo",
         "no_photo_sub": "Describe the defect. AI will match it to the MS.",
@@ -60,8 +62,11 @@ T = {
         "desc_required": "Description required.",
         "tag_ai": "AI", "tag_manual": "MANUAL",
         "tag_nophoto": "NO PHOTO", "mismatch_warn": "NO MS MATCH",
+        "tag_dup": "SEEN {n}\u00d7",
         "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
+        "no_match": "No matches.",
+        "search_placeholder": "Search UID, defect, sub...",
         "filter_all": "All", "filter_qc": "QC Internal",
         "filter_consultant": "Consultant / NCR",
         "export_register": "REGISTER PDF", "closure_report": "CLOSURE PDF",
@@ -93,6 +98,7 @@ T = {
         "zone_general": "General", "lang_button": "AR",
         "upload_failed": "Upload failed: ", "empty_file": "Empty file.",
         "photo_received": "Photo received", "file_loaded": "Loaded: ",
+        "photos_received": "photos",
         "projects_title": "Your Projects", "switch_project": "Switch project",
         "new_project": "New project", "create_first": "Create your first project",
         "no_projects_hint": "No projects yet.",
@@ -124,6 +130,7 @@ T = {
         "no_subs": "No subcontractors yet.",
         "no_subs_hint": "Add one to track performance.",
         "view_defects": "View defects",
+        "download_sub_pdf": "Performance PDF",
         "filtered_by": "FILTER", "clear_filter": "Clear",
         "from_defects": "from notices",
         "sub_open": "OPEN", "sub_overdue": "OVERDUE",
@@ -169,6 +176,8 @@ T = {
         "photo_title": "التقط صورة للعيب",
         "photo_sub": "اضغط لاختيار صورة الموقع.",
         "choose_photo": "اختر صورة",
+        "add_photos": "إضافة صور أخرى",
+        "photos_count": "صورة",
         "no_photo_btn": "عيب بدون صورة",
         "no_photo_title": "عيب بدون صورة",
         "no_photo_sub": "صف العيب. سيطابقه الذكاء الاصطناعي.",
@@ -201,8 +210,11 @@ T = {
         "desc_required": "الوصف مطلوب.",
         "tag_ai": "AI", "tag_manual": "يدوي",
         "tag_nophoto": "بدون صورة", "mismatch_warn": "لا بند مطابق",
+        "tag_dup": "سُبق {n}\u00d7",
         "logs_sub": "كل إشعار صدر.",
         "no_logs": "لا توجد إشعارات.",
+        "no_match": "لا نتائج.",
+        "search_placeholder": "ابحث برقم الإشعار أو العيب...",
         "filter_all": "الكل", "filter_qc": "داخلي QC",
         "filter_consultant": "استشاري / NCR",
         "export_register": "السجل PDF", "closure_report": "الإغلاق PDF",
@@ -234,6 +246,7 @@ T = {
         "lang_button": "EN",
         "upload_failed": "فشل: ", "empty_file": "ملف فارغ.",
         "photo_received": "تم استلام الصورة", "file_loaded": "تم التحميل: ",
+        "photos_received": "صور",
         "projects_title": "مشاريعك", "switch_project": "تبديل المشروع",
         "new_project": "مشروع جديد", "create_first": "أنشئ مشروعك الأول",
         "no_projects_hint": "لا مشاريع بعد.",
@@ -265,6 +278,7 @@ T = {
         "no_subs": "لا مقاولون بعد.",
         "no_subs_hint": "أضف واحداً لتتبع أدائه.",
         "view_defects": "عرض العيوب",
+        "download_sub_pdf": "تقرير الأداء PDF",
         "filtered_by": "فلتر", "clear_filter": "مسح",
         "from_defects": "من الإشعارات",
         "sub_open": "مفتوح", "sub_overdue": "متأخر",
@@ -512,7 +526,7 @@ def _inject_theme():
   }
   .badge-open, .badge-closed, .badge-overdue,
   .badge-ai, .badge-manual, .badge-nophoto, .badge-mismatch,
-  .badge-seen, .badge-closure {
+  .badge-seen, .badge-closure, .badge-dup {
     display: inline-block; font-family: inherit; font-size: 9px;
     font-weight: 700; letter-spacing: 0.08em; padding: 2px 6px;
     border-radius: 2px; text-transform: uppercase; line-height: 1.3;
@@ -535,6 +549,8 @@ def _inject_theme():
                 border: 1px solid var(--border); }
   .badge-closure { color: var(--success);
                    border: 1px solid rgba(74,222,128,0.3); }
+  .badge-dup { color: #c4b5fd;
+               border: 1px solid rgba(196,181,253,0.4); }
   .q-notification {
     border-radius: 3px !important; font-weight: 500 !important;
     font-family: 'JetBrains Mono', monospace !important;
@@ -649,7 +665,24 @@ def _inject_theme():
     display: grid; grid-template-columns: 1fr 1fr;
     gap: 8px; margin-bottom: 12px;
   }
-  .photo-box { position: relative; }
+  .photo-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 6px; margin-bottom: 12px;
+  }
+  .photo-cell { position: relative; }
+  .photo-cell .q-img {
+    width: 100%; height: 100px; object-fit: cover;
+    border-radius: 3px; border: 1px solid var(--border-2);
+  }
+  .photo-remove {
+    position: absolute; top: 3px; right: 3px;
+    background: rgba(11,11,11,0.85);
+    color: var(--danger); border: 1px solid rgba(248,113,113,0.5);
+    width: 20px; height: 20px; border-radius: 2px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    z-index: 3;
+  }
   .photo-tag {
     position: absolute; top: 6px; left: 6px;
     background: rgba(11,11,11,0.85); color: var(--muted);
@@ -879,17 +912,38 @@ def _build_subs(state):
                     ui.label(_t("no_data")).classes("mono-sm")
 
             if score["total"]:
-                def _view(nm=name):
-                    state["sub_filter"] = nm
-                    state["tab"]["value"] = "logs"
-                    if state.get("build_nav"):
-                        state["build_nav"]()
-                    state["render_main"]()
+                with ui.element('div').style(
+                    "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+                    "margin-top:10px;"
+                ):
+                    def _view(nm=name):
+                        state["sub_filter"] = nm
+                        state["tab"]["value"] = "logs"
+                        if state.get("build_nav"):
+                            state["build_nav"]()
+                        state["render_main"]()
 
-                ui.button(_t("view_defects"), icon="arrow_forward",
-                          on_click=_view).classes(BTN_SOFT).style(
-                    "width:100%;margin-top:10px;font-size:10px;"
-                    "min-height:30px;")
+                    def _pdf(nm=name, sc=score):
+                        try:
+                            rows = [r for r in db.list_defects(pid)
+                                    if (r.get("subcontractor") or "") == nm]
+                            pdf = svc.build_sub_pdf(
+                                state["project"], nm, sc, rows,
+                                logo_bytes=state["project"].get("logo_bytes"))
+                            ui.download(pdf, filename="sub_" +
+                                        nm.replace(" ", "_") + ".pdf")
+                        except Exception as ex:
+                            import traceback
+                            traceback.print_exc()
+                            ui.notify("PDF failed: " + str(ex),
+                                       type="negative")
+
+                    ui.button(_t("view_defects"), icon="list_alt",
+                              on_click=_view).classes(BTN_SOFT).style(
+                        "width:100%;font-size:10px;min-height:30px;")
+                    ui.button(_t("download_sub_pdf"), icon="picture_as_pdf",
+                              on_click=_pdf).classes(BTN_SOFT).style(
+                        "width:100%;font-size:10px;min-height:30px;")
 
 
 def _open_add_sub_dialog(state, refresh_fn):
@@ -1411,18 +1465,41 @@ def _open_ms_dialog(state, refresh_drawer):
 
 
 # =====================================================================
-# NEW DEFECT
+# NEW DEFECT (multi-photo)
 # =====================================================================
 def _build_new_defect(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
         return
-    stage = {"photo": None, "mime": None, "candidates": None,
-             "manual": [], "text_only": False, "text_desc": ""}
+    stage = {"photos": [], "mime": "image/jpeg",
+             "candidates": None, "manual": [],
+             "text_only": False, "text_desc": ""}
 
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:3px;")
         ui.label(_t("photo_sub")).classes("muted").style("margin-bottom:12px;")
+
+        photos_holder = ui.element('div').style("width:100%;")
+
+        def render_photos():
+            photos_holder.clear()
+            with photos_holder:
+                if not stage["photos"]:
+                    return
+                with ui.element('div').classes("photo-grid"):
+                    for i, p in enumerate(stage["photos"]):
+                        with ui.element('div').classes("photo-cell"):
+                            def _rm(idx=i):
+                                stage["photos"].pop(idx)
+                                render_photos()
+                                rebuild_body()
+                            ui.html('<div class="photo-remove">\u00d7</div>'
+                                    ).on("click", _rm)
+                            try:
+                                b64 = base64.b64encode(p).decode("ascii")
+                                ui.image("data:image/jpeg;base64," + b64)
+                            except Exception:
+                                pass
 
         async def handle_photo(e):
             try:
@@ -1433,20 +1510,28 @@ def _build_new_defect(state):
             if not data:
                 ui.notify(_t("empty_file"), type="warning")
                 return
-            stage["photo"] = data
-            stage["mime"] = ("image/jpeg"
-                             if e.file.name.lower().endswith((".jpg", ".jpeg"))
-                             else "image/png")
+            stage["photos"].append(data)
+            if e.file.name.lower().endswith((".jpg", ".jpeg")):
+                stage["mime"] = "image/jpeg"
+            else:
+                stage["mime"] = "image/png"
             stage["candidates"] = None
             stage["manual"] = []
             stage["text_only"] = False
-            ui.notify(_t("photo_received") + " (" +
-                       str(len(data) // 1024) + " KB)", type="positive")
+            ui.notify(_t("photo_received") + " — " +
+                       str(len(stage["photos"])) + " " +
+                       _t("photos_count"), type="positive")
+            render_photos()
             ui.timer(0.2, rebuild_body, once=True)
 
+        render_photos()
+
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
-            "width:100%;").props("flat bordered accept=image/* label='" +
-                                  _t("choose_photo") + "'")
+            "width:100%;").props("flat bordered accept=image/* multiple "
+                                  "label='" +
+                                  (_t("add_photos") if stage["photos"]
+                                   else _t("choose_photo")) + "'")
+
         with ui.element('div').classes("or-divider"):
             ui.label(_t("or_divider"))
 
@@ -1510,8 +1595,7 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
                 return
             stage["candidates"] = list(result["defects"])
             stage["manual"] = []
-            stage["photo"] = None
-            stage["mime"] = None
+            stage["photos"] = []
             stage["text_only"] = True
             stage["text_desc"] = desc_in.value.strip()
             stage["note"] = note_in.value or ""
@@ -1535,23 +1619,13 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
 def _render_body_contents(state, stage, refresh_fn):
     if not state.get("project_id"):
         return
-    has_photo = bool(stage.get("photo"))
+    has_photos = bool(stage.get("photos"))
     has_text = bool(stage.get("text_only"))
     has_candidates = stage.get("candidates") is not None
-    if not has_photo and not has_text:
+    if not has_photos and not has_text:
         return
-    if has_photo:
-        with ui.element('div').classes("card").style("margin-bottom:12px;"):
-            try:
-                b64 = base64.b64encode(stage["photo"]).decode("ascii")
-                mime = stage.get("mime") or "image/jpeg"
-                ui.image("data:" + mime + ";base64," + b64).style(
-                    "width:100%;max-height:320px;object-fit:cover;"
-                    "border-radius:3px;border:1px solid #1e1e1e;")
-            except Exception as ex:
-                print("[ui] image render failed: " + repr(ex))
 
-    if has_photo and not has_candidates:
+    if has_photos and not has_candidates:
         with ui.element('div').classes("card"):
             note_in = ui.textarea(label=_t("note_label"),
                                     placeholder=_t("note_placeholder")).style(
@@ -1571,7 +1645,7 @@ def _render_body_contents(state, stage, refresh_fn):
                 analyze_btn.props("loading")
                 analyze_btn.set_text(_t("analyzing"))
                 result = await svc.analyze_defect_photo(
-                    photo_bytes=stage["photo"], mime_type=stage["mime"],
+                    photo_bytes=stage["photos"][0], mime_type=stage["mime"],
                     note=note_in.value or "", ms_clauses=ms_clauses,
                     element_type=element_in.value,
                     call_gemini_json_fn=call_gemini_json)
@@ -1598,6 +1672,16 @@ def _render_body_contents(state, stage, refresh_fn):
     _render_candidates(state, stage, refresh_fn)
 
 
+def _duplicate_count(state, name):
+    try:
+        if not state.get("project_id") or not name:
+            return 0
+        return len(db.find_similar_defects(state["project_id"], name,
+                                            days=60, limit=5))
+    except Exception:
+        return 0
+
+
 def _render_candidates(state, stage, refresh_fn):
     all_items = stage["candidates"] + stage["manual"]
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
@@ -1608,7 +1692,7 @@ def _render_candidates(state, stage, refresh_fn):
             ui.label(_t("ai_found_none")).classes("h3").style(
                 "margin-bottom:10px;color:#b8b8b8;")
         for c in list(all_items):
-            _render_defect_card(c, stage, refresh_fn)
+            _render_defect_card(c, stage, refresh_fn, state)
 
         def _open_add():
             _open_add_dialog(stage, refresh_fn)
@@ -1655,24 +1739,33 @@ def _render_candidates(state, stage, refresh_fn):
                     "zone": stage.get("zone", "A"),
                     "context_mismatch": s.get("context_mismatch", False)})
             notice_uid = svc.generate_uid("NTC")
-            pdf_bytes = svc.build_notice_pdf(
-                project=state["project"], defects=clean_selected,
-                notice_uid=notice_uid, subcontractor=sub_in.value.strip(),
-                deadline_days=int(deadline_in.value), raise_type=raise_in.value,
-                logo_bytes=state["project"].get("logo_bytes"))
+            photos_list = stage.get("photos") or []
+            try:
+                pdf_bytes = svc.build_notice_pdf(
+                    project=state["project"], defects=clean_selected,
+                    notice_uid=notice_uid, subcontractor=sub_in.value.strip(),
+                    deadline_days=int(deadline_in.value),
+                    raise_type=raise_in.value,
+                    logo_bytes=state["project"].get("logo_bytes"),
+                    photos=photos_list)
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("PDF failed: " + str(ex), type="negative")
+                return
             db.save_defect(
                 project_id=state["project_id"], uid=notice_uid,
                 zone=stage.get("zone", "A"),
                 subcontractor=sub_in.value.strip(),
                 deadline_days=int(deadline_in.value),
                 raise_type=raise_in.value,
-                photo_bytes=stage.get("photo"),
+                photo_bytes=(photos_list[0] if photos_list else None),
                 note=stage.get("note", ""), selected=clean_selected,
-                notice_pdf=pdf_bytes)
+                notice_pdf=pdf_bytes,
+                extra_photos=photos_list[1:] if len(photos_list) > 1 else [])
             ui.notify(_t("notice_saved") + " " + notice_uid, type="positive")
             ui.download(pdf_bytes, filename=notice_uid + ".pdf")
-            stage["photo"] = None
-            stage["mime"] = None
+            stage["photos"] = []
             stage["candidates"] = None
             stage["manual"] = []
             stage["text_only"] = False
@@ -1683,7 +1776,7 @@ def _render_candidates(state, stage, refresh_fn):
         gen_btn.classes(BTN_PRIMARY).style("width:100%;margin-top:14px;")
 
 
-def _render_defect_card(item, stage, refresh_fn):
+def _render_defect_card(item, stage, refresh_fn, state=None):
     with ui.element('div').classes("item-box"):
         with ui.element('div').style(
             "display:flex;gap:10px;align-items:flex-start;"
@@ -1708,6 +1801,13 @@ def _render_defect_card(item, stage, refresh_fn):
                     if item.get("context_mismatch"):
                         ui.html('<span class="badge-mismatch">' +
                                 _t("mismatch_warn") + '</span>')
+                    # Duplicate badge
+                    if state:
+                        n = _duplicate_count(state, item.get("name", ""))
+                        if n > 0:
+                            ui.html('<span class="badge-dup">' +
+                                    _t("tag_dup").replace("{n}", str(n)) +
+                                    '</span>')
                 ui.label(str(item.get("name", ""))).classes("mono-lg").style(
                     "margin-bottom:5px;")
                 if item.get("location_hint"):
@@ -1777,7 +1877,7 @@ def _open_add_dialog(stage, refresh_fn):
 
 
 # =====================================================================
-# LOGS
+# LOGS (with search)
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
@@ -1810,7 +1910,16 @@ def _build_logs(state):
                 "color:#5eead4;font-weight:600;font-size:10px;"
                 "min-height:26px;")
 
-    fstate = {"filter": "all"}
+    fstate = {"filter": "all", "query": ""}
+
+    search_in = ui.input(placeholder=_t("search_placeholder")).style(
+        "width:100%;margin-bottom:10px;").props("dense clearable")
+
+    def _on_search(e):
+        fstate["query"] = (e.value or "").strip().lower()
+        log_list.refresh()
+
+    search_in.on("update:model-value", _on_search)
 
     @ui.refreshable
     def log_list():
@@ -1821,6 +1930,18 @@ def _build_logs(state):
         if state.get("sub_filter"):
             rows = [r for r in rows
                     if (r.get("subcontractor") or "") == state["sub_filter"]]
+        if fstate["query"]:
+            q = fstate["query"]
+            def _match(r):
+                hay = " ".join([
+                    str(r.get("uid", "")),
+                    str(r.get("zone", "")),
+                    str(r.get("subcontractor", "")),
+                    str(r.get("first_defect", "")),
+                    str(r.get("status", "")),
+                ]).lower()
+                return q in hay
+            rows = [r for r in rows if _match(r)]
 
         with ui.element('div').style("margin-bottom:12px;"):
             filt = ui.select(
@@ -1885,7 +2006,8 @@ def _build_logs(state):
                 BTN_SOFT).style("width:100%;font-size:10px;")
 
         if not rows:
-            ui.label(_t("no_logs")).classes("mono-sm").style(
+            msg = _t("no_match") if fstate["query"] else _t("no_logs")
+            ui.label(msg).classes("mono-sm").style(
                 "text-align:center;padding:32px 0;")
             return
         for r in rows:
@@ -1953,23 +2075,23 @@ def _show_defect_dialog(defect_id, on_close_cb):
         with ui.element('div').style(
             "padding:16px;max-height:60vh;overflow-y:auto;"
         ):
-            has_before = bool(d.get("photo_bytes"))
-            has_after = bool(d.get("closure_photo"))
-            if has_before and has_after:
-                with ui.element('div').classes("photo-compare"):
-                    _photo_box(d["photo_bytes"], _t("notice"))
-                    _photo_box(d["closure_photo"],
-                                _t("closure_photo_short"), is_closure=True)
-            elif has_before:
-                try:
-                    b64 = base64.b64encode(d["photo_bytes"]).decode("ascii")
-                    ui.image("data:image/jpeg;base64," + b64).style(
-                        "width:100%;max-height:240px;object-fit:cover;"
-                        "border-radius:3px;margin-bottom:12px;"
-                        "border:1px solid #1e1e1e;")
-                except Exception:
-                    pass
-            elif has_after:
+            # Assemble all photos: primary + extras + closure
+            photos = []
+            if d.get("photo_bytes"):
+                photos.append(d["photo_bytes"])
+            for p in (d.get("extra_photos") or []):
+                photos.append(p)
+
+            if photos:
+                with ui.element('div').classes("photo-grid"):
+                    for p in photos[:6]:
+                        try:
+                            b64 = base64.b64encode(p).decode("ascii")
+                            ui.image("data:image/jpeg;base64," + b64)
+                        except Exception:
+                            pass
+
+            if d.get("closure_photo"):
                 _photo_box(d["closure_photo"],
                             _t("closure_photo_short"), is_closure=True)
 
@@ -2116,10 +2238,9 @@ def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
 
 
 # =====================================================================
-# EDIT DEFECT DIALOG  (with real bind_value)
+# EDIT DEFECT DIALOG
 # =====================================================================
 def _open_edit_defect_dialog(d, on_close_cb):
-    # Working copies (edits are made on these dicts via bind_value)
     meta = {
         "subcontractor": d.get("subcontractor", "") or "",
         "deadline_days": str(int(d.get("deadline_days") or 3)),
@@ -2128,7 +2249,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
         "consultant_ncr": d.get("consultant_ncr") or "",
         "note": d.get("note") or "",
     }
-
     items = []
     for s in (d.get("selected") or []):
         items.append({
@@ -2140,7 +2260,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
             "repair_action": s.get("repair_action", ""),
             "context_mismatch": s.get("context_mismatch", False),
         })
-
     is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
 
     with ui.dialog() as dialog, ui.card().style(
@@ -2155,7 +2274,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
         with ui.element('div').style(
             "padding:16px;max-height:66vh;overflow-y:auto;"
         ):
-            # ---- Notice header fields ----
             ui.label(_t("notice_details")).classes("label").style(
                 "margin-bottom:8px;")
             ui.input(_t("send_to")).style("width:100%;").bind_value(
@@ -2171,26 +2289,21 @@ def _open_edit_defect_dialog(d, on_close_cb):
                     label=_t("deadline")).bind_value(meta, "deadline_days")
                 ui.select(_zone_options(),
                            label=_t("zone")).bind_value(meta, "zone")
-
             ui.select(
                 {"qc_internal": _t("qc_internal"),
                  "consultant": _t("consultant_ncr")},
                 label=_t("raised_as")).style("width:100%;margin-top:8px;"
                 ).bind_value(meta, "raise_type")
-
             ncr_in = None
             if is_consultant or d.get("consultant_ncr"):
                 ncr_in = ui.input(_t("ncr_input")).style(
                     "width:100%;margin-top:8px;").bind_value(
                     meta, "consultant_ncr")
-
             ui.textarea(label=_t("note_label")).style(
                 "width:100%;margin-top:8px;").bind_value(meta, "note")
 
-            # ---- Items section ----
             ui.label(_t("defect_items")).classes("label").style(
                 "margin-top:16px;margin-bottom:8px;")
-
             items_holder = ui.element('div').style("width:100%;")
 
             def render_items():
@@ -2200,7 +2313,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
                         ui.label(_t("no_items")).classes("mono-sm")
                     for idx, it in enumerate(items):
                         with ui.element('div').classes("item-box"):
-                            # Header row
                             with ui.element('div').style(
                                 "display:flex;justify-content:space-between;"
                                 "align-items:center;margin-bottom:6px;"
@@ -2214,7 +2326,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
                                 ui.button(icon="close", on_click=_rm).props(
                                     "flat round dense size=sm").style(
                                     "color:#f87171;")
-
                             ui.input(_t("name")).style(
                                 "width:100%;").bind_value(it, "name")
                             ui.input(_t("location_hint")).style(
@@ -2248,7 +2359,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
             ui.button(_t("add_item"), icon="add", on_click=_add_item).classes(
                 BTN_SOFT).style("width:100%;margin-top:6px;")
 
-        # ---- Actions ----
         with ui.element('div').style(
             "padding:12px 16px 16px;border-top:1px solid #1e1e1e;"
             "display:flex;flex-direction:column;gap:6px;"
@@ -2257,7 +2367,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
                 if not meta["subcontractor"].strip():
                     ui.notify(_t("enter_sub"), type="warning")
                     return
-
                 selected = []
                 for it in items:
                     nm = (it.get("name") or "").strip()
@@ -2279,11 +2388,9 @@ def _open_edit_defect_dialog(d, on_close_cb):
                         "zone": meta["zone"],
                         "context_mismatch": it.get("context_mismatch", False),
                     })
-
                 if not selected:
                     ui.notify(_t("name_required"), type="warning")
                     return
-
                 project = db.get_project(d["project_id"])
                 try:
                     pdf_bytes = svc.build_notice_pdf(
@@ -2299,11 +2406,9 @@ def _open_edit_defect_dialog(d, on_close_cb):
                     ui.notify("PDF build failed: " + str(ex),
                                type="negative")
                     return
-
                 ncr_val = None
                 if ncr_in and meta.get("consultant_ncr", "").strip():
                     ncr_val = meta["consultant_ncr"].strip()
-
                 try:
                     db.update_defect_notice(
                         defect_id=d["id"],
@@ -2320,7 +2425,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
                     traceback.print_exc()
                     ui.notify("Save failed: " + str(ex), type="negative")
                     return
-
                 ui.notify(_t("saved_changes"), type="positive")
                 dialog.close()
                 on_close_cb()
@@ -2330,7 +2434,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
                 "width:100%;")
             ui.button(_t("cancel_btn"), on_click=dialog.close).classes(
                 BTN_SOFT).style("width:100%;")
-
     dialog.open()
 
 
