@@ -1,5 +1,5 @@
 """
-ui/defect_page.py — Full file with Edit + Delete defect.
+ui/defect_page.py — Full file. Robust edit dialog.
 """
 import io
 import base64
@@ -364,9 +364,6 @@ def _inject_theme():
   .q-page, .q-layout, .q-page-container {
     max-width: 100vw !important; overflow-x: hidden !important;
     background: var(--bg) !important;
-  }
-  .q-tabs, .q-tab, .q-tab-panels, .q-tab-panel {
-    background: transparent !important; padding: 0 !important;
   }
   .q-btn {
     border-radius: 3px !important; text-transform: none !important;
@@ -2005,7 +2002,6 @@ def _show_defect_dialog(defect_id, on_close_cb):
                               d["notice_pdf"], filename=d["uid"] + ".pdf")
                           ).classes(BTN_SOFT).style("width:100%;")
 
-            # Edit + Delete row
             with ui.element('div').style(
                 "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
             ):
@@ -2120,17 +2116,27 @@ def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
 
 
 # =====================================================================
-# EDIT DEFECT DIALOG
+# EDIT DEFECT DIALOG  (with real bind_value)
 # =====================================================================
 def _open_edit_defect_dialog(d, on_close_cb):
+    # Working copies (edits are made on these dicts via bind_value)
+    meta = {
+        "subcontractor": d.get("subcontractor", "") or "",
+        "deadline_days": str(int(d.get("deadline_days") or 3)),
+        "zone": d.get("zone") or "A",
+        "raise_type": d.get("raise_type") or "qc_internal",
+        "consultant_ncr": d.get("consultant_ncr") or "",
+        "note": d.get("note") or "",
+    }
+
     items = []
     for s in (d.get("selected") or []):
         items.append({
             "name": s.get("name", ""),
             "location_hint": s.get("location_hint", ""),
             "severity": s.get("severity", "Medium"),
-            "ms_violations": list(s.get("ms_violations") or []),
-            "code_violations": list(s.get("code_violations") or []),
+            "ms_violations": ", ".join(s.get("ms_violations") or []),
+            "code_violations": ", ".join(s.get("code_violations") or []),
             "repair_action": s.get("repair_action", ""),
             "context_mismatch": s.get("context_mismatch", False),
         })
@@ -2138,179 +2144,183 @@ def _open_edit_defect_dialog(d, on_close_cb):
     is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
 
     with ui.dialog() as dialog, ui.card().style(
-        "padding:0;max-width:620px;width:95vw;overflow:hidden;"
+        "padding:0;max-width:640px;width:95vw;overflow:hidden;"
     ):
         with ui.element('div').style(
             "padding:16px 16px 12px;border-bottom:1px solid #1e1e1e;"
         ):
             ui.label(_t("edit_defect_title")).classes("h2")
-            ui.label(_t("edit_defect_sub")).classes("mono-sm").style(
-                "margin-top:4px;")
+            ui.label(d["uid"]).classes("mono-sm").style("margin-top:4px;")
 
-        # Body
-        body = ui.element('div').style(
-            "padding:16px;max-height:65vh;overflow-y:auto;"
-        )
-
-        sub_in = ui.input(_t("send_to"),
-                           value=d.get("subcontractor", "")).style("width:100%;")
         with ui.element('div').style(
-            "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"
+            "padding:16px;max-height:66vh;overflow-y:auto;"
         ):
-            deadline_val = str(int(d.get("deadline_days") or 3))
-            deadline_in = ui.select(
-                {"1": "1 " + _t("days"), "2": "2 " + _t("days"),
-                 "3": "3 " + _t("days"), "5": "5 " + _t("days"),
-                 "7": "7 " + _t("days"), "14": "14 " + _t("days")},
-                value=deadline_val, label=_t("deadline"))
-            zone_in = ui.select(_zone_options(),
-                                 value=d.get("zone") or "A",
-                                 label=_t("zone"))
-        raise_in = ui.select(
-            {"qc_internal": _t("qc_internal"),
-             "consultant": _t("consultant_ncr")},
-            value=d.get("raise_type") or "qc_internal",
-            label=_t("raised_as")).style("width:100%;margin-top:8px;")
+            # ---- Notice header fields ----
+            ui.label(_t("notice_details")).classes("label").style(
+                "margin-bottom:8px;")
+            ui.input(_t("send_to")).style("width:100%;").bind_value(
+                meta, "subcontractor")
+            with ui.element('div').style(
+                "display:grid;grid-template-columns:1fr 1fr;gap:8px;"
+                "margin-top:8px;"
+            ):
+                ui.select(
+                    {"1": "1 " + _t("days"), "2": "2 " + _t("days"),
+                     "3": "3 " + _t("days"), "5": "5 " + _t("days"),
+                     "7": "7 " + _t("days"), "14": "14 " + _t("days")},
+                    label=_t("deadline")).bind_value(meta, "deadline_days")
+                ui.select(_zone_options(),
+                           label=_t("zone")).bind_value(meta, "zone")
 
-        ncr_in = None
-        if is_consultant or (d.get("consultant_ncr")):
-            ncr_in = ui.input(_t("ncr_input"),
-                               value=d.get("consultant_ncr") or "").style(
-                "width:100%;margin-top:8px;")
+            ui.select(
+                {"qc_internal": _t("qc_internal"),
+                 "consultant": _t("consultant_ncr")},
+                label=_t("raised_as")).style("width:100%;margin-top:8px;"
+                ).bind_value(meta, "raise_type")
 
-        note_in = ui.textarea(label=_t("note_label"),
-                               value=d.get("note") or "").style(
-            "width:100%;margin-top:8px;")
+            ncr_in = None
+            if is_consultant or d.get("consultant_ncr"):
+                ncr_in = ui.input(_t("ncr_input")).style(
+                    "width:100%;margin-top:8px;").bind_value(
+                    meta, "consultant_ncr")
 
-        # Items section
-        items_holder = ui.element('div').style(
-            "width:100%;margin-top:14px;"
-        )
+            ui.textarea(label=_t("note_label")).style(
+                "width:100%;margin-top:8px;").bind_value(meta, "note")
 
-        def render_items():
-            items_holder.clear()
-            with items_holder:
-                ui.label(_t("defect_items")).classes("label").style(
-                    "margin-bottom:8px;")
-                if not items:
-                    ui.label(_t("no_items")).classes("mono-sm")
-                    return
-                for idx, it in enumerate(items):
-                    with ui.element('div').classes("item-box"):
-                        name_i = ui.input(_t("name"),
-                                           value=it.get("name", "")).style(
-                            "width:100%;")
-                        loc_i = ui.input(_t("location_hint"),
-                                          value=it.get("location_hint", "")).style(
-                            "width:100%;")
-                        with ui.element('div').style(
-                            "display:grid;grid-template-columns:1fr 1fr;"
-                            "gap:8px;"
-                        ):
-                            sev_i = ui.select(_severity_options(),
-                                               value=it.get("severity", "Medium"),
-                                               label=_t("severity"))
-                            ms_i = ui.input(_t("ms_clause"),
-                                             value=", ".join(
-                                                 it.get("ms_violations") or []))
-                            ecp_i = ui.input(_t("ecp_code"),
-                                              value=", ".join(
-                                                  it.get("code_violations") or []))
-                        rep_i = ui.input(_t("repair"),
-                                          value=it.get("repair_action", "")).style(
-                            "width:100%;")
+            # ---- Items section ----
+            ui.label(_t("defect_items")).classes("label").style(
+                "margin-top:16px;margin-bottom:8px;")
 
-                        def _bind(it=it, name_i=name_i, loc_i=loc_i,
-                                   sev_i=sev_i, ms_i=ms_i, ecp_i=ecp_i,
-                                   rep_i=rep_i):
-                            it["name"] = name_i.value or ""
-                            it["location_hint"] = loc_i.value or ""
-                            it["severity"] = sev_i.value or "Medium"
-                            it["ms_violations"] = [
-                                v.strip() for v in (ms_i.value or "").split(",")
-                                if v.strip()]
-                            it["code_violations"] = [
-                                v.strip() for v in (ecp_i.value or "").split(",")
-                                if v.strip()]
-                            it["repair_action"] = rep_i.value or ""
+            items_holder = ui.element('div').style("width:100%;")
 
-                        for fld in (name_i, loc_i, sev_i, ms_i, ecp_i, rep_i):
-                            fld.on("blur", lambda e, _b=_bind: _b())
+            def render_items():
+                items_holder.clear()
+                with items_holder:
+                    if not items:
+                        ui.label(_t("no_items")).classes("mono-sm")
+                    for idx, it in enumerate(items):
+                        with ui.element('div').classes("item-box"):
+                            # Header row
+                            with ui.element('div').style(
+                                "display:flex;justify-content:space-between;"
+                                "align-items:center;margin-bottom:6px;"
+                            ):
+                                ui.label("#" + str(idx + 1)).classes(
+                                    "label").style("font-size:9px;")
 
-                        def _rm(i=idx):
-                            items.pop(i)
-                            render_items()
-                        ui.button(_t("remove_item"), icon="close",
-                                  on_click=_rm).props("flat size=sm").style(
-                            "color:#f87171;font-size:10px;"
-                            "min-height:26px;margin-top:6px;")
+                                def _rm(i=idx):
+                                    items.pop(i)
+                                    render_items()
+                                ui.button(icon="close", on_click=_rm).props(
+                                    "flat round dense size=sm").style(
+                                    "color:#f87171;")
 
-        render_items()
+                            ui.input(_t("name")).style(
+                                "width:100%;").bind_value(it, "name")
+                            ui.input(_t("location_hint")).style(
+                                "width:100%;").bind_value(it, "location_hint")
+                            with ui.element('div').style(
+                                "display:grid;grid-template-columns:1fr 1fr;"
+                                "gap:8px;"
+                            ):
+                                ui.select(_severity_options(),
+                                           label=_t("severity")).bind_value(
+                                    it, "severity")
+                                ui.input(_t("ms_clause")).bind_value(
+                                    it, "ms_violations")
+                            ui.input(_t("ecp_code")).style(
+                                "width:100%;").bind_value(
+                                it, "code_violations")
+                            ui.input(_t("repair")).style(
+                                "width:100%;").bind_value(
+                                it, "repair_action")
 
-        def _add_item():
-            items.append({
-                "name": "", "location_hint": "", "severity": "Medium",
-                "ms_violations": [], "code_violations": [],
-                "repair_action": "", "context_mismatch": False,
-            })
             render_items()
 
-        ui.button(_t("add_item"), icon="add", on_click=_add_item).classes(
-            BTN_SOFT).style("width:100%;margin-top:6px;")
+            def _add_item():
+                items.append({
+                    "name": "", "location_hint": "", "severity": "Medium",
+                    "ms_violations": "", "code_violations": "",
+                    "repair_action": "", "context_mismatch": False,
+                })
+                render_items()
 
-        with body:
-            pass  # body is written top-down above
+            ui.button(_t("add_item"), icon="add", on_click=_add_item).classes(
+                BTN_SOFT).style("width:100%;margin-top:6px;")
 
-        # Actions
+        # ---- Actions ----
         with ui.element('div').style(
             "padding:12px 16px 16px;border-top:1px solid #1e1e1e;"
             "display:flex;flex-direction:column;gap:6px;"
         ):
             def _save_changes():
-                # Finalize any in-flight edits by reloading from inputs
-                for it, refs in zip(items, _item_refs):
-                    pass
-                if not items:
-                    ui.notify(_t("tick_one"), type="warning")
-                    return
-                if not sub_in.value.strip():
+                if not meta["subcontractor"].strip():
                     ui.notify(_t("enter_sub"), type="warning")
                     return
+
                 selected = []
-                for s in items:
-                    if not s.get("name", "").strip():
+                for it in items:
+                    nm = (it.get("name") or "").strip()
+                    if not nm:
                         continue
+                    ms_list = [v.strip() for v in
+                               (it.get("ms_violations") or "").split(",")
+                               if v.strip()]
+                    ecp_list = [v.strip() for v in
+                                (it.get("code_violations") or "").split(",")
+                                if v.strip()]
                     selected.append({
-                        "name": s["name"].strip(),
-                        "location_hint": s.get("location_hint", ""),
-                        "severity": s.get("severity", "Medium"),
-                        "ms_violations": s.get("ms_violations", []),
-                        "code_violations": s.get("code_violations", []),
-                        "repair_action": s.get("repair_action", ""),
-                        "zone": zone_in.value,
-                        "context_mismatch": s.get("context_mismatch", False),
+                        "name": nm,
+                        "location_hint": (it.get("location_hint") or "").strip(),
+                        "severity": it.get("severity") or "Medium",
+                        "ms_violations": ms_list,
+                        "code_violations": ecp_list,
+                        "repair_action": (it.get("repair_action") or "").strip(),
+                        "zone": meta["zone"],
+                        "context_mismatch": it.get("context_mismatch", False),
                     })
+
                 if not selected:
                     ui.notify(_t("name_required"), type="warning")
                     return
-                pdf_bytes = svc.build_notice_pdf(
-                    project=None or db.get_project(d["project_id"]),
-                    defects=selected, notice_uid=d["uid"],
-                    subcontractor=sub_in.value.strip(),
-                    deadline_days=int(deadline_in.value),
-                    raise_type=raise_in.value,
-                    logo_bytes=(db.get_project(d["project_id"]) or {}).get(
-                        "logo_bytes"))
+
+                project = db.get_project(d["project_id"])
+                try:
+                    pdf_bytes = svc.build_notice_pdf(
+                        project=project, defects=selected,
+                        notice_uid=d["uid"],
+                        subcontractor=meta["subcontractor"].strip(),
+                        deadline_days=int(meta["deadline_days"]),
+                        raise_type=meta["raise_type"],
+                        logo_bytes=(project or {}).get("logo_bytes"))
+                except Exception as ex:
+                    import traceback
+                    traceback.print_exc()
+                    ui.notify("PDF build failed: " + str(ex),
+                               type="negative")
+                    return
+
                 ncr_val = None
-                if ncr_in and ncr_in.value.strip():
-                    ncr_val = ncr_in.value.strip()
-                db.update_defect_notice(
-                    defect_id=d["id"],
-                    subcontractor=sub_in.value.strip(),
-                    deadline_days=int(deadline_in.value),
-                    zone=zone_in.value, note=note_in.value or "",
-                    raise_type=raise_in.value, selected=selected,
-                    notice_pdf=pdf_bytes, consultant_ncr=ncr_val)
+                if ncr_in and meta.get("consultant_ncr", "").strip():
+                    ncr_val = meta["consultant_ncr"].strip()
+
+                try:
+                    db.update_defect_notice(
+                        defect_id=d["id"],
+                        subcontractor=meta["subcontractor"].strip(),
+                        deadline_days=int(meta["deadline_days"]),
+                        zone=meta["zone"],
+                        note=meta["note"] or "",
+                        raise_type=meta["raise_type"],
+                        selected=selected,
+                        notice_pdf=pdf_bytes,
+                        consultant_ncr=ncr_val)
+                except Exception as ex:
+                    import traceback
+                    traceback.print_exc()
+                    ui.notify("Save failed: " + str(ex), type="negative")
+                    return
+
                 ui.notify(_t("saved_changes"), type="positive")
                 dialog.close()
                 on_close_cb()
@@ -2320,9 +2330,6 @@ def _open_edit_defect_dialog(d, on_close_cb):
                 "width:100%;")
             ui.button(_t("cancel_btn"), on_click=dialog.close).classes(
                 BTN_SOFT).style("width:100%;")
-
-    # Collect item input refs so we can read final values on save
-    _item_refs = []
 
     dialog.open()
 
