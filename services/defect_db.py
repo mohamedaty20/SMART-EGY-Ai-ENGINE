@@ -1,8 +1,9 @@
 """
-services/defect_db.py — Turso-compatible. Adds engineer_name, place, chat.
+services/defect_db.py — Turso. Fast reads. Profile fields. Chat.
 """
 import os
 import re
+import time
 import json
 import base64
 import sqlite3
@@ -17,6 +18,7 @@ LOCAL_CACHE = "/tmp/defects_cache.db"
 _LOCK = threading.Lock()
 _LIST_CACHE = {}
 _LIST_CACHE_LOCK = threading.Lock()
+_LAST_SYNC = [0.0]
 
 
 def _bump_list_cache():
@@ -43,10 +45,13 @@ def _conn():
                 c = libsql.connect(database=LOCAL_CACHE,
                                     sync_url=TURSO_URL,
                                     auth_token=TURSO_TOKEN)
-            try:
-                c.sync()
-            except Exception:
-                pass
+            now = time.time()
+            if now - _LAST_SYNC[0] > 30:
+                try:
+                    c.sync()
+                    _LAST_SYNC[0] = now
+                except Exception:
+                    pass
             return c
         except Exception as e:
             print("[db] Turso failed: " + repr(e))
@@ -56,6 +61,7 @@ def _conn():
 def _sync(c):
     try:
         c.sync()
+        _LAST_SYNC[0] = time.time()
     except Exception:
         pass
 
@@ -118,7 +124,8 @@ def _decode_photos(json_str):
         return []
 
 
-USER_COLS = ["id", "email", "password_hash", "name", "created_at"]
+USER_COLS = ["id", "email", "password_hash", "name", "title",
+             "photo_bytes", "created_at"]
 
 PROJECT_COLS = ["id", "user_id", "name", "contractor", "subcontractor",
                 "consultant", "location", "engineer_name",
@@ -175,7 +182,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE, password_hash TEXT, name TEXT,
-                created_at TEXT
+                title TEXT, photo_bytes BLOB, created_at TEXT
             )
         """)
         cur.execute("""
@@ -222,6 +229,9 @@ def init_db():
             )
         """)
 
+        _ensure_columns(cur, "users", [
+            ("title", "TEXT"), ("photo_bytes", "BLOB"),
+        ])
         _ensure_columns(cur, "projects", [
             ("user_id", "INTEGER"), ("subcontractor", "TEXT"),
         ])
@@ -281,7 +291,6 @@ def create_user(email, password_hash, name):
         if count == 1:
             cur.execute("UPDATE projects SET user_id=? WHERE user_id IS NULL",
                         (uid,))
-            print("[db] first user claimed orphans")
         c.commit()
         _sync(c)
         c.close()
@@ -292,7 +301,8 @@ def get_user_by_email(email):
     c = _conn()
     cur = c.cursor()
     cur.execute("""
-        SELECT id, email, password_hash, name, created_at
+        SELECT id, email, password_hash, name, title, photo_bytes,
+               created_at
         FROM users WHERE LOWER(email)=?
     """, ((email or "").strip().lower(),))
     row = cur.fetchone()
@@ -304,7 +314,8 @@ def get_user(user_id):
     c = _conn()
     cur = c.cursor()
     cur.execute("""
-        SELECT id, email, password_hash, name, created_at
+        SELECT id, email, password_hash, name, title, photo_bytes,
+               created_at
         FROM users WHERE id=?
     """, (user_id,))
     row = cur.fetchone()
@@ -318,6 +329,24 @@ def update_user_password(user_id, password_hash):
         cur = c.cursor()
         cur.execute("UPDATE users SET password_hash=? WHERE id=?",
                     (password_hash, user_id))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def update_user_profile(user_id, name, title, photo_bytes=None):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        if photo_bytes is not None:
+            cur.execute("""
+                UPDATE users SET name=?, title=?, photo_bytes=?
+                WHERE id=?
+            """, (name, title, photo_bytes, user_id))
+        else:
+            cur.execute("""
+                UPDATE users SET name=?, title=? WHERE id=?
+            """, (name, title, user_id))
         c.commit()
         _sync(c)
         c.close()
@@ -663,7 +692,7 @@ def delete_defect(defect_id):
 
 
 # =====================================================================
-# DUPLICATE DETECTION
+# DUPLICATE
 # =====================================================================
 def _keywords(text):
     if not text:
@@ -714,7 +743,7 @@ def find_similar_defects(project_id, name, days=60, limit=5,
 
 
 # =====================================================================
-# SUBCONTRACTORS
+# SUBS
 # =====================================================================
 def add_subcontractor(project_id, name, trade="", phone="", notes=""):
     with _LOCK:
