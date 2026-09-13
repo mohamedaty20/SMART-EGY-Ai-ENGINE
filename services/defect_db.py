@@ -1,5 +1,5 @@
 """
-services/defect_db.py — Turso-compatible. All row access is positional.
+services/defect_db.py — Multi-user, Turso-compatible.
 """
 import os
 import re
@@ -53,7 +53,6 @@ def _sync(c):
 
 
 def _to_dicts(rows, cols):
-    """Convert list of rows (tuples or Row) to list of dicts by position."""
     out = []
     for r in rows:
         if r is None:
@@ -85,11 +84,11 @@ def _to_dict(row, cols):
     return d
 
 
-PROJECT_COLS = ["id", "name", "contractor", "subcontractor", "consultant",
-                "location", "engineer_name", "logo_bytes", "created_at"]
+USER_COLS = ["id", "email", "password_hash", "name", "created_at"]
 
-MS_COLS = ["id", "ms_number", "title", "element_type", "discipline",
-           "clauses_json"]
+PROJECT_COLS = ["id", "user_id", "name", "contractor", "subcontractor",
+                "consultant", "location", "engineer_name",
+                "logo_bytes", "created_at"]
 
 MS_LIST_COLS = ["id", "ms_number", "title", "element_type", "discipline",
                 "clauses_json"]
@@ -134,13 +133,25 @@ def init_db():
         cur = c.cursor()
 
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE,
+                password_hash TEXT,
+                name TEXT,
+                created_at TEXT
+            )
+        """)
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
                 name TEXT, contractor TEXT, subcontractor TEXT,
                 consultant TEXT, location TEXT, engineer_name TEXT,
                 logo_bytes BLOB, created_at TEXT
             )
         """)
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS method_statements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +160,7 @@ def init_db():
                 pdf_bytes BLOB, clauses_json TEXT, created_at TEXT
             )
         """)
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS defects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,6 +174,7 @@ def init_db():
                 closure_photo BLOB
             )
         """)
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS subcontractors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +183,10 @@ def init_db():
             )
         """)
 
-        _ensure_columns(cur, "projects", [("subcontractor", "TEXT")])
+        _ensure_columns(cur, "projects", [
+            ("user_id", "INTEGER"),
+            ("subcontractor", "TEXT"),
+        ])
         _ensure_columns(cur, "defects", [
             ("raise_type", "TEXT"), ("closed_at", "TEXT"),
             ("notice_pdf", "BLOB"), ("consultant_ncr", "TEXT"),
@@ -187,60 +203,139 @@ init_db()
 
 
 # =====================================================================
-# PROJECTS
+# USERS
 # =====================================================================
-def save_project(name, contractor, consultant, location,
-                 engineer_name, logo_bytes=None, subcontractor=None):
+def create_user(email, password_hash, name):
+    """Return (user_id, error). Claims orphan projects for first user."""
+    email = (email or "").strip().lower()
     with _LOCK:
         c = _conn()
         cur = c.cursor()
-        cur.execute("SELECT id, subcontractor FROM projects "
-                    "ORDER BY id LIMIT 1")
+        cur.execute("SELECT id FROM users WHERE LOWER(email)=?", (email,))
+        if cur.fetchone():
+            c.close()
+            return None, "Email already registered."
+        cur.execute("""
+            INSERT INTO users (email, password_hash, name, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (email, password_hash, name, _now()))
+        uid = cur.lastrowid
+        # First user claims any orphan projects
+        cur.execute("SELECT COUNT(*) FROM users")
         row = cur.fetchone()
-        if row is not None:
-            try:
-                pid = row[0]
-                existing_sub = row[1]
-            except Exception:
-                pid = None
-                existing_sub = None
-            if pid is None:
-                # No usable row; fall through to insert
-                row = None
-        if row is not None:
-            sub = (subcontractor if subcontractor is not None
-                   else (existing_sub or ""))
-            cur.execute("""
-                UPDATE projects
-                SET name=?, contractor=?, consultant=?, location=?,
-                    engineer_name=?, logo_bytes=?, subcontractor=?
-                WHERE id=?
-            """, (name, contractor, consultant, location,
-                  engineer_name, logo_bytes, sub, pid))
-            result_pid = pid
-        else:
-            cur.execute("""
-                INSERT INTO projects
-                    (name, contractor, subcontractor, consultant, location,
-                     engineer_name, logo_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (name, contractor, subcontractor or "", consultant,
-                  location, engineer_name, logo_bytes, _now()))
-            result_pid = cur.lastrowid
+        count = row[0] if row else 1
+        if count == 1:
+            cur.execute("UPDATE projects SET user_id=? "
+                        "WHERE user_id IS NULL", (uid,))
+            print("[db] first user claimed orphan projects")
         c.commit()
         _sync(c)
         c.close()
-        return result_pid
+        return uid, None
 
 
-def get_project():
+def get_user_by_email(email):
     c = _conn()
     cur = c.cursor()
     cur.execute("""
-        SELECT id, name, contractor, subcontractor, consultant,
+        SELECT id, email, password_hash, name, created_at
+        FROM users WHERE LOWER(email)=?
+    """, ((email or "").strip().lower(),))
+    row = cur.fetchone()
+    c.close()
+    return _to_dict(row, USER_COLS)
+
+
+def get_user(user_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, email, password_hash, name, created_at
+        FROM users WHERE id=?
+    """, (user_id,))
+    row = cur.fetchone()
+    c.close()
+    return _to_dict(row, USER_COLS)
+
+
+# =====================================================================
+# PROJECTS (per-user)
+# =====================================================================
+def list_projects(user_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, user_id, name, contractor, subcontractor, consultant,
                location, engineer_name, logo_bytes, created_at
-        FROM projects ORDER BY id LIMIT 1
-    """)
+        FROM projects WHERE user_id=? ORDER BY id DESC
+    """, (user_id,))
+    rows = _to_dicts(cur.fetchall(), PROJECT_COLS)
+    c.close()
+    return rows
+
+
+def create_project(user_id, name, contractor="", subcontractor="",
+                   consultant="", location="", engineer_name="",
+                   logo_bytes=None):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            INSERT INTO projects
+                (user_id, name, contractor, subcontractor, consultant,
+                 location, engineer_name, logo_bytes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, name, contractor, subcontractor, consultant,
+              location, engineer_name, logo_bytes, _now()))
+        pid = cur.lastrowid
+        c.commit()
+        _sync(c)
+        c.close()
+        return pid
+
+
+def update_project(project_id, name, contractor="", subcontractor="",
+                   consultant="", location="", engineer_name="",
+                   logo_bytes=None):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            UPDATE projects
+            SET name=?, contractor=?, subcontractor=?, consultant=?,
+                location=?, engineer_name=?, logo_bytes=?
+            WHERE id=?
+        """, (name, contractor, subcontractor, consultant,
+              location, engineer_name, logo_bytes, project_id))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def delete_project(project_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("DELETE FROM method_statements WHERE project_id=?",
+                    (project_id,))
+        cur.execute("DELETE FROM defects WHERE project_id=?",
+                    (project_id,))
+        cur.execute("DELETE FROM subcontractors WHERE project_id=?",
+                    (project_id,))
+        cur.execute("DELETE FROM projects WHERE id=?", (project_id,))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def get_project(project_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, user_id, name, contractor, subcontractor, consultant,
+               location, engineer_name, logo_bytes, created_at
+        FROM projects WHERE id=?
+    """, (project_id,))
     row = cur.fetchone()
     c.close()
     return _to_dict(row, PROJECT_COLS)
