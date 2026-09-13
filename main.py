@@ -1,8 +1,10 @@
 """
-main.py — Entry with auth, billing, admin, password reset.
+main.py — Entry with auth, billing, admin, reset, PWA.
 """
 import os
+import io
 from nicegui import ui, app
+from fastapi import Response
 
 from services import auth_service as auth
 from services import billing_db as bdb
@@ -23,6 +25,93 @@ def _current_user_id():
     if not token:
         return None
     return auth.read_session(token)
+
+
+# =====================================================================
+# PWA — manifest, service worker, icons
+# =====================================================================
+MANIFEST = {
+    "name": "Defect Notices",
+    "short_name": "Defects",
+    "description": "AI-powered defect notices for QC engineers",
+    "start_url": "/app",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#0b0b0b",
+    "theme_color": "#0b0b0b",
+    "icons": [
+        {"src": "/icon-192.png", "sizes": "192x192",
+         "type": "image/png", "purpose": "any maskable"},
+        {"src": "/icon-512.png", "sizes": "512x512",
+         "type": "image/png", "purpose": "any maskable"},
+    ],
+}
+
+
+SERVICE_WORKER = """
+self.addEventListener('install', function(e) {
+  self.skipWaiting();
+});
+self.addEventListener('activate', function(e) {
+  e.waitUntil(self.clients.claim());
+});
+self.addEventListener('fetch', function(e) {
+  // Pass-through
+});
+"""
+
+
+def _make_icon(size):
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        img = Image.new("RGB", (size, size), "#0b0b0b")
+        d = ImageDraw.Draw(img)
+        pad = int(size * 0.14)
+        d.rounded_rectangle(
+            [pad, pad, size - pad, size - pad],
+            radius=int(size * 0.14), fill="#5eead4")
+        try:
+            font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                int(size * 0.34))
+        except Exception:
+            font = ImageFont.load_default()
+        txt = "DN"
+        bbox = d.textbbox((0, 0), txt, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        d.text(((size - tw) / 2 - bbox[0], (size - th) / 2 - bbox[1]),
+               txt, fill="#0b0b0b", font=font)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf.read()
+    except Exception as e:
+        print("[pwa] icon gen failed: " + repr(e))
+        return b""
+
+
+@app.get('/manifest.json')
+def manifest_route():
+    import json as _json
+    return Response(content=_json.dumps(MANIFEST),
+                     media_type="application/manifest+json")
+
+
+@app.get('/service-worker.js')
+def sw_route():
+    return Response(content=SERVICE_WORKER,
+                     media_type="application/javascript")
+
+
+@app.get('/icon-192.png')
+def icon_192():
+    return Response(content=_make_icon(192), media_type="image/png")
+
+
+@app.get('/icon-512.png')
+def icon_512():
+    return Response(content=_make_icon(512), media_type="image/png")
 
 
 # =====================================================================
@@ -112,7 +201,6 @@ def payment_ok(provider: str = "", plan: str = "", uid: str = ""):
     except Exception:
         ui.navigate.to('/pricing')
         return
-
     if provider == "demo":
         pay.complete_demo_payment(user_id, plan, months=1)
         _render_paid("Demo", plan)
