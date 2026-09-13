@@ -1,5 +1,5 @@
 """
-main.py — Entry point with auth + billing + public pages.
+main.py — Entry with auth, billing, admin, password reset.
 """
 import os
 from nicegui import ui, app
@@ -10,6 +10,8 @@ from services import payment_service as pay
 from ui.auth_page import login_page, signup_page
 from ui.landing_page import landing_page
 from ui.pricing_page import pricing_page
+from ui.reset_page import reset_request_page, reset_confirm_page
+from ui.admin_page import admin_page
 
 
 BASE_URL = os.environ.get("APP_BASE_URL",
@@ -61,6 +63,16 @@ def logout_route():
     ui.navigate.to('/')
 
 
+@ui.page('/reset')
+def reset_route():
+    reset_request_page()
+
+
+@ui.page('/reset/confirm')
+def reset_confirm_route(token: str = ""):
+    reset_confirm_page(token)
+
+
 # =====================================================================
 # APP
 # =====================================================================
@@ -70,10 +82,21 @@ def app_route():
     if not uid:
         ui.navigate.to('/login')
         return
-    # Refresh billing status (auto-downgrade expired trials/plans)
     active, plan, _ = bdb.is_active(uid)
     from ui.defect_page import build_defect_ui
     build_defect_ui(uid)
+
+
+# =====================================================================
+# ADMIN
+# =====================================================================
+@ui.page('/admin')
+def admin_route():
+    uid = _current_user_id()
+    if not uid:
+        ui.navigate.to('/login')
+        return
+    admin_page(uid)
 
 
 # =====================================================================
@@ -90,25 +113,19 @@ def payment_ok(provider: str = "", plan: str = "", uid: str = ""):
         ui.navigate.to('/pricing')
         return
 
-    # Demo payments apply immediately
     if provider == "demo":
         pay.complete_demo_payment(user_id, plan, months=1)
         _render_paid("Demo", plan)
         return
-
-    # Stripe: checkout completed successfully (Stripe already charged)
     if provider == "stripe":
         bdb.apply_payment(user_id, plan, provider="stripe",
                           provider_ref="checkout-" + str(user_id),
                           months=1, amount=0, currency="USD")
         _render_paid("Stripe", plan)
         return
-
-    # Paymob lands here after callback verification (see paymob_callback)
     if provider == "paymob":
         _render_paid("Paymob", plan)
         return
-
     _render_paid(provider, plan)
 
 
@@ -135,8 +152,7 @@ def _render_paid(provider, plan_id):
 
 
 @ui.page('/payment/demo')
-def payment_demo(plan: str = "", months: str = "1",
-                  uid: str = ""):
+def payment_demo(plan: str = "", months: str = "1", uid: str = ""):
     if not uid or not plan:
         ui.navigate.to('/pricing')
         return
@@ -155,9 +171,6 @@ def payment_demo(plan: str = "", months: str = "1",
 
 @ui.page('/payment/paymob/callback')
 def paymob_callback(request=None, **kwargs):
-    """Paymob redirects here after payment. Verify hmac then apply."""
-    from fastapi import Request
-    # NiceGUI gives us a request object
     try:
         params = dict(request.query_params)
     except Exception:
@@ -170,8 +183,6 @@ def paymob_callback(request=None, **kwargs):
     if not success:
         ui.navigate.to('/pricing?cancel=1')
         return
-
-    # Extract user + plan from merchant_order_id
     moid = str(params.get("merchant_order_id", ""))
     plan_id = ""
     user_id = None
@@ -187,14 +198,12 @@ def paymob_callback(request=None, **kwargs):
         return
     bdb.apply_payment(user_id, plan_id, provider="paymob",
                       provider_ref=str(params.get("id", "")),
-                      months=1, amount=float(params.get("amount_cents", 0))
-                      / 100.0, currency=str(params.get("currency", "EGP")))
+                      months=1,
+                      amount=float(params.get("amount_cents", 0)) / 100.0,
+                      currency=str(params.get("currency", "EGP")))
     _render_paid("Paymob", plan_id)
 
 
-# =====================================================================
-# RUN
-# =====================================================================
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
         host="0.0.0.0",
