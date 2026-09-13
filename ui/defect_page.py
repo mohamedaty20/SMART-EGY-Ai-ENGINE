@@ -1,6 +1,6 @@
 """
 ui/defect_page.py — Full file.
-Supports PDF / DOCX / TXT method statements.
+Supports PDF / DOCX / TXT method statements + manual defect add/remove.
 """
 import io
 from nicegui import ui
@@ -28,6 +28,7 @@ ITEM_BOX   = ("background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;"
 BTN_PRIMARY = "background:#2563eb;color:#ffffff;font-weight:600;"
 BTN_SUCCESS = "background:#059669;color:#ffffff;font-weight:600;"
 BTN_FLAT    = "background:#f1f5f9;color:#0f172a;font-weight:600;"
+BTN_DANGER  = "background:#fee2e2;color:#b91c1c;font-weight:700;min-width:36px;"
 
 
 def build_defect_ui():
@@ -35,7 +36,6 @@ def build_defect_ui():
         "project": db.get_project(),
         "photo_bytes": None,
         "photo_mime": None,
-        "selected_flags": [],
     }
 
     with ui.tabs().style("width:100%;") as tabs:
@@ -249,7 +249,7 @@ def _build_new_defect(state):
         ui.label("New Defect").style(TXT_TITLE)
         ui.label(
             "Take a photo, add a note, let AI propose the defects, "
-            "then tick the ones that are real."
+            "then tick the real ones. Add more manually if needed."
         ).style(TXT_SUB)
 
         photo_holder = {"bytes": None, "mime": None}
@@ -284,6 +284,108 @@ def _build_new_defect(state):
             "width:100%;margin-top:16px;"
         )
 
+        def _render_card(item, list_ref, refresh_fn):
+            with ui.element('div').style(ITEM_BOX):
+                with ui.element('div').style(
+                    "display:flex;gap:12px;align-items:flex-start;width:100%;"
+                ):
+                    def _make_toggle(it):
+                        def _h(e):
+                            it["_sel"] = bool(e.value)
+                        return _h
+                    ui.checkbox(value=item.get("_sel", True),
+                                 on_change=_make_toggle(item))
+                    with ui.element('div').style("flex:1;min-width:0;"):
+                        tag = "MANUAL" if item.get("_manual") else "AI"
+                        tag_color = "#059669" if tag == "MANUAL" else "#2563eb"
+                        ui.label(tag).style(
+                            "color:" + tag_color + ";font-size:10px;"
+                            "font-weight:700;display:inline-block;"
+                            "background:#f1f5f9;padding:1px 6px;"
+                            "border-radius:4px;margin-bottom:4px;"
+                        )
+                        ui.label(str(item.get("name", ""))).style(
+                            "color:#0f172a;font-weight:700;"
+                            "font-size:15px;display:block;"
+                            "margin-bottom:6px;"
+                        )
+                        if item.get("location_hint"):
+                            ui.label("Location: " + str(item["location_hint"])).style(
+                                "color:#475569;font-size:13px;"
+                                "display:block;margin-bottom:3px;"
+                            )
+                        cit = []
+                        if item.get("ms_violations"):
+                            cit.append("MS: " + ", ".join(item["ms_violations"]))
+                        if item.get("code_violations"):
+                            cit.append("Code: " + ", ".join(item["code_violations"]))
+                        if cit:
+                            ui.label(" | ".join(cit)).style(
+                                "color:#475569;font-size:13px;"
+                                "font-style:italic;display:block;"
+                                "margin-bottom:3px;"
+                            )
+                        if item.get("repair_action"):
+                            ui.label("Repair: " + str(item["repair_action"])).style(
+                                "color:#64748b;font-size:13px;"
+                                "display:block;margin-bottom:3px;"
+                            )
+                        ui.label("Severity: " + str(item.get("severity", ""))).style(
+                            "color:#64748b;font-size:12px;display:block;"
+                        )
+                    def _make_remove(it, lst, fn):
+                        def _do():
+                            if it in lst:
+                                lst.remove(it)
+                            fn()
+                        return _do
+                    ui.button("✕",
+                              on_click=_make_remove(item, list_ref, refresh_fn)
+                              ).style(BTN_DANGER)
+
+        def _open_add_dialog(manual_list, refresh_fn):
+            with ui.dialog() as dlg, ui.card().style(
+                "background:#ffffff;padding:22px;min-width:420px;max-width:95vw;"
+            ):
+                ui.label("Add defect manually").style(TXT_TITLE)
+                ui.label("AI missed something? Add it here.").style(TXT_SUB)
+
+                name_in = ui.input("Defect name").style("width:100%;")
+                loc_in = ui.input("Location hint (optional)").style("width:100%;")
+                sev_in = ui.select(
+                    ["Low", "Medium", "High", "Critical"],
+                    value="Medium", label="Severity"
+                ).style("width:100%;")
+                ms_in = ui.input("MS clause id (optional)").style("width:100%;")
+                ecp_in = ui.input("ECP code (optional)").style("width:100%;")
+                rep_in = ui.input("Repair action (optional)").style("width:100%;")
+
+                def _save():
+                    if not name_in.value.strip():
+                        ui.notify("Defect name required.", type="warning")
+                        return
+                    manual_list.append({
+                        "name": name_in.value.strip(),
+                        "location_hint": loc_in.value.strip(),
+                        "severity": sev_in.value,
+                        "ms_violations": ([ms_in.value.strip()]
+                                          if ms_in.value.strip() else []),
+                        "code_violations": ([ecp_in.value.strip()]
+                                            if ecp_in.value.strip() else []),
+                        "repair_action": rep_in.value.strip(),
+                        "_sel": True,
+                        "_manual": True,
+                    })
+                    dlg.close()
+                    refresh_fn()
+
+                with ui.element('div').style(
+                    "display:flex;gap:8px;margin-top:16px;"
+                ):
+                    ui.button("Add", on_click=_save).style(BTN_SUCCESS)
+                    ui.button("Cancel", on_click=dlg.close).style(BTN_FLAT)
+            dlg.open()
+
         async def analyze():
             if not photo_holder["bytes"]:
                 ui.notify("Upload a photo first.", type="warning")
@@ -310,9 +412,9 @@ def _build_new_defect(state):
                 element_type=element_in.value,
                 call_gemini_json_fn=call_gemini_json,
             )
-            candidates_container.clear()
 
             if result.get("error"):
+                candidates_container.clear()
                 with candidates_container:
                     ui.label("Error: " + str(result["error"])).style(
                         "color:#dc2626;font-size:13px;"
@@ -328,75 +430,37 @@ def _build_new_defect(state):
                         )
                 return
 
-            candidates = result["defects"]
-            state["selected_flags"] = [True] * len(candidates)
+            candidates = list(result["defects"])
+            for c in candidates:
+                c["_sel"] = True
+                c["_manual"] = False
+            manual_list = []
 
-            with candidates_container:
-                if not candidates:
-                    ui.label("AI found no defects in this photo.").style(TXT_MUTED)
-                    raw_txt = result.get("raw", "")
-                    if raw_txt:
-                        ui.label("Raw AI output (debug):").style(TXT_MUTED)
-                        ui.label(raw_txt).style(
-                            "color:#7c2d12;font-size:11px;"
-                            "font-family:monospace;white-space:pre-wrap;"
-                            "background:#fef3c7;padding:8px;"
-                            "border-radius:6px;width:100%;"
-                        )
-                else:
-                    ui.label(
-                        "AI found " + str(len(candidates)) +
-                        " candidate(s). Tick the ones that apply:"
-                    ).style(TXT_TITLE)
+            def render_all():
+                candidates_container.clear()
+                all_items = candidates + manual_list
+                with candidates_container:
+                    if not all_items:
+                        ui.label(
+                            "AI found no defects. Add one manually below."
+                        ).style(TXT_MUTED)
+                    else:
+                        ui.label(
+                            "AI found " + str(len(candidates)) +
+                            " candidate(s). Tick the real ones:"
+                        ).style(TXT_TITLE)
+                        for c in candidates:
+                            _render_card(c, candidates, render_all)
+                        for m in manual_list:
+                            _render_card(m, manual_list, render_all)
 
-                    for i, c in enumerate(candidates):
-                        with ui.element('div').style(ITEM_BOX):
-                            with ui.element('div').style(
-                                "display:flex;gap:12px;align-items:flex-start;"
-                                "width:100%;"
-                            ):
-                                def _on_check(e, idx=i):
-                                    state["selected_flags"][idx] = bool(e.value)
-                                cb = ui.checkbox(value=True, on_change=_on_check)
-                                with ui.element('div').style("flex:1;min-width:0;"):
-                                    ui.label(str(c.get("name", ""))).style(
-                                        "color:#0f172a;font-weight:700;"
-                                        "font-size:15px;display:block;"
-                                        "margin-bottom:6px;"
-                                    )
-                                    if c.get("location_hint"):
-                                        ui.label(
-                                            "Location: " + str(c["location_hint"])
-                                        ).style(
-                                            "color:#475569;font-size:13px;"
-                                            "display:block;margin-bottom:3px;"
-                                        )
-                                    cit = []
-                                    if c.get("ms_violations"):
-                                        cit.append("MS: " +
-                                                   ", ".join(c["ms_violations"]))
-                                    if c.get("code_violations"):
-                                        cit.append("Code: " +
-                                                   ", ".join(c["code_violations"]))
-                                    if cit:
-                                        ui.label(" | ".join(cit)).style(
-                                            "color:#475569;font-size:13px;"
-                                            "font-style:italic;display:block;"
-                                            "margin-bottom:3px;"
-                                        )
-                                    if c.get("repair_action"):
-                                        ui.label(
-                                            "Repair: " + str(c["repair_action"])
-                                        ).style(
-                                            "color:#64748b;font-size:13px;"
-                                            "display:block;margin-bottom:3px;"
-                                        )
-                                    ui.label(
-                                        "Severity: " + str(c.get("severity", ""))
-                                    ).style(
-                                        "color:#64748b;font-size:12px;"
-                                        "display:block;"
-                                    )
+                    def _add_click():
+                        _open_add_dialog(manual_list, render_all)
+
+                    ui.button("+ Add defect manually",
+                              on_click=_add_click).style(
+                        BTN_FLAT + "margin-top:8px;"
+                    )
 
                     ui.label("Notice details").style(
                         TXT_TITLE + "margin-top:24px;"
@@ -421,10 +485,8 @@ def _build_new_defect(state):
                         ).style("flex:1;")
 
                     def generate():
-                        selected = [
-                            c for j, c in enumerate(candidates)
-                            if state["selected_flags"][j]
-                        ]
+                        selected = [c for c in all_items
+                                    if c.get("_sel", True)]
                         if not selected:
                             ui.notify("Tick at least one defect.",
                                        type="warning")
@@ -434,20 +496,28 @@ def _build_new_defect(state):
                                        type="warning")
                             return
 
-                        notice_uid = svc.generate_uid("NTC")
+                        clean_selected = []
                         for s in selected:
-                            s["zone"] = zone_in.value
+                            clean_selected.append({
+                                "name": s.get("name", ""),
+                                "location_hint": s.get("location_hint", ""),
+                                "severity": s.get("severity", "Medium"),
+                                "ms_violations": s.get("ms_violations", []),
+                                "code_violations": s.get("code_violations", []),
+                                "repair_action": s.get("repair_action", ""),
+                                "zone": zone_in.value,
+                            })
 
+                        notice_uid = svc.generate_uid("NTC")
                         pdf_bytes = svc.build_notice_pdf(
                             project=state["project"],
-                            defects=selected,
+                            defects=clean_selected,
                             notice_uid=notice_uid,
                             subcontractor=sub_in.value.strip(),
                             deadline_days=int(deadline_in.value),
                             raise_type=raise_in.value,
                             logo_bytes=state["project"].get("logo_bytes"),
                         )
-
                         db.save_defect(
                             project_id=state["project"]["id"],
                             uid=notice_uid,
@@ -457,7 +527,7 @@ def _build_new_defect(state):
                             raise_type=raise_in.value,
                             photo_bytes=photo_holder["bytes"],
                             note=note_in.value or "",
-                            selected=selected,
+                            selected=clean_selected,
                             notice_pdf=pdf_bytes,
                         )
                         ui.notify("Notice " + notice_uid + " saved.",
@@ -468,6 +538,8 @@ def _build_new_defect(state):
                               on_click=generate).style(
                         BTN_SUCCESS + "margin-top:12px;"
                     )
+
+            render_all()
 
         ui.button("Analyze with AI", on_click=analyze).style(
             BTN_PRIMARY + "margin-top:12px;"
