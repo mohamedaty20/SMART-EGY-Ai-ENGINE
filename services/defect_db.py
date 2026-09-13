@@ -1,5 +1,7 @@
 """
 services/defect_db.py — SQLite layer.
+Uses Turso (libsql) when TURSO_URL + TURSO_TOKEN are set;
+falls back to a local file otherwise.
 """
 import os
 import json
@@ -8,17 +10,50 @@ import datetime
 import threading
 
 DB_PATH = os.environ.get("DEFECT_DB_PATH", "defects.db")
+TURSO_URL = os.environ.get("TURSO_URL", "").strip()
+TURSO_TOKEN = os.environ.get("TURSO_TOKEN", "").strip()
+LOCAL_CACHE = "/tmp/defects_cache.db"
+
 _LOCK = threading.Lock()
-
-
-def _conn():
-    c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
-    c.row_factory = sqlite3.Row
-    return c
 
 
 def _now():
     return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _use_turso():
+    return bool(TURSO_URL and TURSO_TOKEN)
+
+
+def _conn():
+    if _use_turso():
+        try:
+            import libsql
+            try:
+                c = libsql.connect(
+                    LOCAL_CACHE,
+                    sync_url=TURSO_URL,
+                    auth_token=TURSO_TOKEN,
+                )
+            except TypeError:
+                c = libsql.connect(database=LOCAL_CACHE,
+                                   sync_url=TURSO_URL,
+                                   auth_token=TURSO_TOKEN)
+            try:
+                c.row_factory = sqlite3.Row
+            except Exception:
+                pass
+            try:
+                c.sync()
+            except Exception:
+                pass
+            return c
+        except Exception as e:
+            print("[db] Turso connect failed, falling back to local: "
+                  + repr(e))
+    c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
+    c.row_factory = sqlite3.Row
+    return c
 
 
 def _ensure_columns(cur, table, wanted):
@@ -99,7 +134,13 @@ def init_db():
         ])
 
         c.commit()
+        try:
+            c.sync()
+        except Exception:
+            pass
         c.close()
+
+        print("[db] init complete — turso=" + str(_use_turso()))
 
 
 init_db()
@@ -137,6 +178,10 @@ def save_project(name, contractor, consultant, location,
                   location, engineer_name, logo_bytes, _now()))
             pid = cur.lastrowid
         c.commit()
+        try:
+            c.sync()
+        except Exception:
+            pass
         c.close()
         return pid
 
@@ -151,6 +196,10 @@ def save_subcontractor(name):
             cur.execute("UPDATE projects SET subcontractor=? WHERE id=?",
                         (name, row["id"]))
             c.commit()
+            try:
+                c.sync()
+            except Exception:
+                pass
         c.close()
 
 
@@ -181,6 +230,10 @@ def save_ms(project_id, ms_number, title, element_type, discipline,
         """, (project_id, ms_number, title, element_type, discipline,
               pdf_bytes, json.dumps(clauses), _now()))
         c.commit()
+        try:
+            c.sync()
+        except Exception:
+            pass
         c.close()
 
 
@@ -260,6 +313,10 @@ def save_defect(project_id, uid, zone, subcontractor, deadline_days,
             notice_pdf,
         ))
         c.commit()
+        try:
+            c.sync()
+        except Exception:
+            pass
         c.close()
 
 
@@ -345,4 +402,8 @@ def close_defect(defect_id, consultant_ncr=None):
                 WHERE id=?
             """, (_now(), defect_id))
         c.commit()
+        try:
+            c.sync()
+        except Exception:
+            pass
         c.close()
