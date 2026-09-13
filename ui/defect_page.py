@@ -669,23 +669,42 @@ def _open_setup_dialog(state, refresh_drawer):
                 _t("upload_logo") + "'")
 
         def save():
-            if not name_in.value.strip():
-                ui.notify(_t("project_name"), type="warning")
-                return
-            db.save_project(
-                name=name_in.value.strip(),
-                contractor=contractor_in.value.strip(),
-                consultant=consultant_in.value.strip(),
-                location=location_in.value.strip(),
-                engineer_name=engineer_in.value.strip(),
-                logo_bytes=logo_holder["bytes"],
-                subcontractor=sub_in.value.strip(),
-            )
-            state["project"] = db.get_project()
-            ui.notify(_t("save") + " ✓", type="positive")
-            dlg.close()
-            refresh_drawer()
-            state["render_main"]()
+            try:
+                if not name_in.value.strip():
+                    ui.notify(_t("project_name"), type="warning")
+                    return
+                print("[ui] save clicked, name=" +
+                      repr(name_in.value.strip())[:60])
+                pid = db.save_project(
+                    name=name_in.value.strip(),
+                    contractor=contractor_in.value.strip(),
+                    consultant=consultant_in.value.strip(),
+                    location=location_in.value.strip(),
+                    engineer_name=engineer_in.value.strip(),
+                    logo_bytes=logo_holder["bytes"],
+                    subcontractor=sub_in.value.strip(),
+                )
+                print("[ui] save_project returned pid=" + repr(pid))
+                state["project"] = db.get_project()
+                print("[ui] get_project returned=" +
+                      str(bool(state["project"])))
+                ui.notify(_t("save") + " ✓", type="positive")
+                try:
+                    dlg.close()
+                except Exception as e:
+                    print("[ui] dialog close err: " + repr(e))
+                try:
+                    refresh_drawer()
+                except Exception as e:
+                    print("[ui] drawer refresh err: " + repr(e))
+                try:
+                    state["render_main"]()
+                except Exception as e:
+                    print("[ui] main render err: " + repr(e))
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("Save failed: " + str(ex), type="negative")
 
         with ui.element('div').style(
             "display:flex;gap:8px;margin-top:18px;"
@@ -1080,7 +1099,6 @@ def _render_defect_card(item, stage, refresh_fn):
             ui.checkbox(value=item.get("_sel", True),
                          on_change=_toggle)
             with ui.element('div').style("flex:1;min-width:0;"):
-                # tags row
                 with ui.element('div').style(
                     "display:flex;gap:6px;margin-bottom:6px;"
                 ):
