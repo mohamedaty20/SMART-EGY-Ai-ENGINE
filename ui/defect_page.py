@@ -1,5 +1,6 @@
 """
-ui/defect_page.py — Dark theme, multi-user, project switcher.
+ui/defect_page.py — Dark theme, multi-user, project switcher,
+with "No photo" defect entry.
 """
 import io
 import base64
@@ -26,10 +27,18 @@ T = {
         "photo_title": "Take a photo of the defect",
         "photo_sub": "Tap below to pick a site photo.",
         "choose_photo": "Choose photo",
+        "no_photo_btn": "Raise defect without photo",
+        "no_photo_title": "Defect without photo",
+        "no_photo_sub": "Describe the defect you saw. AI will match it to the MS.",
+        "defect_desc": "Defect description",
+        "defect_desc_placeholder": "e.g. exposed rebar at column C3 base, Zone B",
+        "extra_note": "Extra note (optional)",
+        "extra_note_placeholder": "any additional context",
+        "analyze": "Analyze with AI",
+        "analyzing": "Analyzing...",
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
         "zone": "Zone", "element": "Element",
-        "analyze": "Analyze with AI", "analyzing": "Analyzing...",
         "ai_found": "AI found these defects. Untick false ones, add any missed:",
         "ai_found_none": "AI found no defects. Add one manually below.",
         "add_manual": "+ Add defect",
@@ -49,7 +58,9 @@ T = {
         "ecp_code": "ECP code", "repair": "Repair action",
         "add": "Add", "cancel": "Cancel",
         "name_required": "Defect name required.",
+        "desc_required": "Description required.",
         "tag_ai": "AI", "tag_manual": "MANUAL",
+        "tag_nophoto": "NO PHOTO",
         "mismatch_warn": "No matching MS clause",
         "logs_title": "Defect Logs", "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
@@ -92,6 +103,7 @@ T = {
         "delete_confirm": "Delete this project and all its data?",
         "logout": "Log out",
         "signed_in_as": "Signed in as",
+        "or_divider": "— OR —",
     },
     "ar": {
         "app_title": "إشعارات العيوب", "new_defect": "عيب جديد", "logs": "السجل",
@@ -104,10 +116,19 @@ T = {
         "clauses_count": "بند",
         "photo_title": "التقط صورة للعيب",
         "photo_sub": "اضغط أدناه لاختيار صورة الموقع.",
-        "choose_photo": "اختر صورة", "note_label": "ملاحظة (اختياري)",
+        "choose_photo": "اختر صورة",
+        "no_photo_btn": "إصدار عيب بدون صورة",
+        "no_photo_title": "عيب بدون صورة",
+        "no_photo_sub": "صف العيب الذي رأيته. سيطابقه الذكاء الاصطناعي مع الـ MS.",
+        "defect_desc": "وصف العيب",
+        "defect_desc_placeholder": "مثال: حديد مكشوف عند قاعدة العمود C3، منطقة B",
+        "extra_note": "ملاحظة إضافية (اختياري)",
+        "extra_note_placeholder": "أي سياق إضافي",
+        "analyze": "تحليل بالذكاء الاصطناعي",
+        "analyzing": "جاري التحليل...",
+        "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة العمود C3",
         "zone": "المنطقة", "element": "العنصر",
-        "analyze": "تحليل بالذكاء الاصطناعي", "analyzing": "جاري التحليل...",
         "ai_found": "وجد الذكاء الاصطناعي هذه العيوب. أزل غير الصحيحة وأضف أي مفقود:",
         "ai_found_none": "لم يجد الذكاء الاصطناعي عيوباً. أضف عيباً يدوياً أدناه.",
         "add_manual": "+ إضافة عيب", "notice_details": "تفاصيل الإشعار",
@@ -124,7 +145,9 @@ T = {
         "ms_clause": "رقم بند MS", "ecp_code": "كود ECP",
         "repair": "إجراء الإصلاح", "add": "إضافة", "cancel": "إلغاء",
         "name_required": "اسم العيب مطلوب.",
+        "desc_required": "الوصف مطلوب.",
         "tag_ai": "ذكاء اصطناعي", "tag_manual": "يدوي",
+        "tag_nophoto": "بدون صورة",
         "mismatch_warn": "لا يوجد بند MS مطابق",
         "logs_title": "سجل العيوب", "logs_sub": "كل إشعار صدر. اضغط للعرض.",
         "no_logs": "لا توجد إشعارات بعد.",
@@ -163,6 +186,7 @@ T = {
         "delete_project": "حذف المشروع",
         "delete_confirm": "حذف هذا المشروع وكل بياناته؟",
         "logout": "تسجيل الخروج", "signed_in_as": "مسجل الدخول كـ",
+        "or_divider": "— أو —",
     },
 }
 
@@ -234,6 +258,10 @@ def _inject_theme():
   .btn-soft { background: var(--surface-2) !important; color: var(--text) !important;
               border: 1px solid var(--border) !important; }
   .btn-success { background: var(--green) !important; color: #fff !important; }
+  .btn-outline { background: transparent !important; color: var(--text) !important;
+                 border: 1px dashed #3a3a3a !important; }
+  .btn-outline:hover { border-color: var(--violet) !important;
+                       background: #1c1a1f !important; }
   .q-field--outlined .q-field__control { border-radius: 10px !important;
     background: var(--surface-2) !important; }
   .q-field--outlined .q-field__control:before { border-color: var(--border) !important; }
@@ -301,6 +329,9 @@ def _inject_theme():
   .badge-manual { display: inline-block; background: rgba(16,185,129,0.15);
                   color: #6ee7b7; font-size: 9px; font-weight: 800;
                   padding: 2px 7px; border-radius: 6px; }
+  .badge-nophoto { display: inline-block; background: rgba(59,130,246,0.15);
+                   color: #93c5fd; font-size: 9px; font-weight: 800;
+                   padding: 2px 7px; border-radius: 6px; letter-spacing: 0.03em; }
   .badge-mismatch { display: inline-block; background: rgba(245,158,11,0.15);
                     color: #fbbf24; font-size: 9px; font-weight: 800;
                     padding: 2px 7px; border-radius: 6px; letter-spacing: 0.03em; }
@@ -313,6 +344,13 @@ def _inject_theme():
   .scroll-box { max-height: 280px; overflow-y: auto; border: 1px solid var(--border);
                 border-radius: 10px; padding: 8px; margin-top: 8px;
                 background: var(--surface-2); }
+  .or-divider { display: flex; align-items: center; gap: 10px;
+                color: var(--muted-2); font-size: 11px; font-weight: 700;
+                letter-spacing: 0.1em; text-transform: uppercase;
+                margin: 14px 0; }
+  .or-divider::before, .or-divider::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -321,6 +359,7 @@ def _inject_theme():
 BTN_PRIMARY = "btn-primary"
 BTN_SOFT = "btn-soft"
 BTN_SUCCESS = "btn-success"
+BTN_OUTLINE = "btn-outline"
 
 
 # =====================================================================
@@ -339,7 +378,6 @@ def build_defect_ui(user_id):
         "tab": {"value": "new"},
     }
 
-    # Validate stored project still belongs to user
     if state["project_id"]:
         p = db.get_project(state["project_id"])
         if not p or p.get("user_id") != user_id:
@@ -349,7 +387,6 @@ def build_defect_ui(user_id):
         else:
             state["project"] = p
 
-    # Auto-select the most recent if user has any and no active
     if not state["project_id"]:
         projects = db.list_projects(user_id)
         if projects:
@@ -388,7 +425,6 @@ def build_defect_ui(user_id):
     state["render_main"] = render_main
     render_main()
 
-    # Bottom nav — always shown so New Defect / Logs tabs remain accessible
     with ui.element('div').classes("bottom-nav"):
         _nav_item("new", "add_a_photo", _t("new_defect"), state, render_main)
         _nav_item("logs", "list_alt", _t("logs"), state, render_main)
@@ -634,7 +670,7 @@ def _confirm_delete(state, parent_dlg, refresh_drawer, refresh_main):
 
 
 # =====================================================================
-# SETUP DIALOG (new / edit project)
+# SETUP DIALOG
 # =====================================================================
 def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
     proj = {} if is_new else (state.get("project") or {})
@@ -674,37 +710,28 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
                     return
                 if is_new:
                     pid = db.create_project(
-                        state["user_id"],
-                        name_in.value.strip(),
-                        contractor_in.value.strip(),
-                        sub_in.value.strip(),
-                        consultant_in.value.strip(),
-                        location_in.value.strip(),
-                        engineer_in.value.strip(),
-                        logo_holder["bytes"])
+                        state["user_id"], name_in.value.strip(),
+                        contractor_in.value.strip(), sub_in.value.strip(),
+                        consultant_in.value.strip(), location_in.value.strip(),
+                        engineer_in.value.strip(), logo_holder["bytes"])
                     state["project_id"] = pid
                     app.storage.user["project_id"] = pid
                     state["project"] = db.get_project(pid)
                 else:
                     db.update_project(
-                        state["project_id"],
-                        name_in.value.strip(),
-                        contractor_in.value.strip(),
-                        sub_in.value.strip(),
-                        consultant_in.value.strip(),
-                        location_in.value.strip(),
-                        engineer_in.value.strip(),
-                        logo_holder["bytes"])
+                        state["project_id"], name_in.value.strip(),
+                        contractor_in.value.strip(), sub_in.value.strip(),
+                        consultant_in.value.strip(), location_in.value.strip(),
+                        engineer_in.value.strip(), logo_holder["bytes"])
                     state["project"] = db.get_project(state["project_id"])
                 ui.notify(_t("save") + " ✓", type="positive")
                 dlg.close()
-                # Refresh drawer (state-hook first, fallback arg)
-                try:
-                    hook = state.get("refresh_drawer")
-                    if hook:
+                hook = state.get("refresh_drawer")
+                if hook:
+                    try:
                         hook()
-                except Exception:
-                    pass
+                    except Exception:
+                        pass
                 if refresh_drawer:
                     try:
                         refresh_drawer()
@@ -837,7 +864,8 @@ def _build_new_defect(state):
         return
 
     stage = {"photo": None, "mime": None,
-             "candidates": None, "manual": []}
+             "candidates": None, "manual": [],
+             "text_only": False, "text_desc": ""}
 
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:4px;")
@@ -858,6 +886,7 @@ def _build_new_defect(state):
                              else "image/png")
             stage["candidates"] = None
             stage["manual"] = []
+            stage["text_only"] = False
             ui.notify(_t("photo_received") + " (" +
                        str(len(data) // 1024) + " KB)", type="positive")
             ui.timer(0.4, rebuild_body, once=True)
@@ -865,6 +894,19 @@ def _build_new_defect(state):
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
             "width:100%;").props("flat bordered accept=image/* label='" +
                                   _t("choose_photo") + "'")
+
+        # OR divider
+        with ui.element('div').classes("or-divider"):
+            ui.label(_t("or_divider")).style(
+                "font-size:11px;font-weight:700;letter-spacing:0.1em;")
+
+        # No-photo button
+        def _open_nophoto():
+            _open_no_photo_dialog(state, stage, rebuild_body)
+
+        ui.button(_t("no_photo_btn"), icon="edit_note",
+                  on_click=_open_nophoto).classes(BTN_OUTLINE).style(
+            "width:100%;")
 
     body = ui.element('div').style("width:100%;")
 
@@ -876,24 +918,104 @@ def _build_new_defect(state):
     rebuild_body()
 
 
+def _open_no_photo_dialog(state, stage, refresh_fn):
+    if not state.get("project_id"):
+        ui.notify(_t("setup_first"), type="warning")
+        return
+
+    with ui.dialog() as dlg, ui.card().style(
+        "background:#141414;padding:24px;min-width:320px;"
+        "max-width:95vw;width:520px;border-radius:16px;"
+        "border:1px solid #262626;"):
+        ui.label(_t("no_photo_title")).classes("h1").style("margin-bottom:4px;")
+        ui.label(_t("no_photo_sub")).classes("muted").style("margin-bottom:14px;")
+
+        desc_in = ui.textarea(label=_t("defect_desc"),
+                                placeholder=_t("defect_desc_placeholder")).style(
+            "width:100%;")
+        note_in = ui.textarea(label=_t("extra_note"),
+                                placeholder=_t("extra_note_placeholder")).style(
+            "width:100%;")
+
+        with ui.element('div').style(
+            "display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;"):
+            zone_in = ui.select(_zone_options(), value="A", label=_t("zone"))
+            element_in = ui.select(_element_options(), value="column",
+                                    label=_t("element"))
+
+        btn = ui.button(_t("analyze"), icon="auto_awesome")
+
+        async def do_analyze():
+            if not (desc_in.value or "").strip():
+                ui.notify(_t("desc_required"), type="warning")
+                return
+            btn.props("loading")
+            btn.set_text(_t("analyzing"))
+            ms_clauses = db.get_clauses_for_element(
+                state["project_id"], element_in.value)
+            result = await svc.analyze_defect_text(
+                description=desc_in.value.strip(),
+                note=note_in.value or "",
+                ms_clauses=ms_clauses,
+                element_type=element_in.value,
+                call_gemini_json_fn=call_gemini_json)
+            btn.props(remove="loading")
+            btn.set_text(_t("analyze"))
+            if result.get("error"):
+                ui.notify(result["error"], type="negative")
+                return
+
+            stage["candidates"] = list(result["defects"])
+            stage["manual"] = []
+            stage["photo"] = None
+            stage["mime"] = None
+            stage["text_only"] = True
+            stage["text_desc"] = desc_in.value.strip()
+            stage["note"] = note_in.value or ""
+            stage["zone"] = zone_in.value
+            stage["element"] = element_in.value
+            for c in stage["candidates"]:
+                c["_sel"] = True
+                c["_manual"] = False
+                c["_nophoto"] = True
+            dlg.close()
+            ui.timer(0.2, refresh_fn, once=True)
+
+        btn.on("click", do_analyze)
+        btn.classes(BTN_PRIMARY).style("width:100%;margin-top:14px;")
+
+        with ui.element('div').style("margin-top:8px;"):
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
+                BTN_SOFT).style("width:100%;")
+
+    dlg.open()
+
+
 def _render_body_contents(state, stage, refresh_fn):
     if not state.get("project_id"):
         return
 
-    if not stage.get("photo"):
+    has_photo = bool(stage.get("photo"))
+    has_text = bool(stage.get("text_only"))
+    has_candidates = stage.get("candidates") is not None
+
+    if not has_photo and not has_text:
         return
 
-    with ui.element('div').classes("card").style("margin-bottom:14px;"):
-        try:
-            b64 = base64.b64encode(stage["photo"]).decode("ascii")
-            mime = stage.get("mime") or "image/jpeg"
-            ui.image("data:" + mime + ";base64," + b64).style(
-                "width:100%;max-height:340px;object-fit:cover;"
-                "border-radius:12px;border:1px solid #262626;")
-        except Exception as ex:
-            print("[ui] image render failed: " + repr(ex))
+    # Photo preview (only when we have one)
+    if has_photo:
+        with ui.element('div').classes("card").style("margin-bottom:14px;"):
+            try:
+                b64 = base64.b64encode(stage["photo"]).decode("ascii")
+                mime = stage.get("mime") or "image/jpeg"
+                ui.image("data:" + mime + ";base64," + b64).style(
+                    "width:100%;max-height:340px;object-fit:cover;"
+                    "border-radius:12px;border:1px solid #262626;")
+            except Exception as ex:
+                print("[ui] image render failed: " + repr(ex))
 
-    if stage.get("candidates") is None:
+    # Stage 2 (photo path) — note + analyze
+    if has_photo and not has_candidates:
         with ui.element('div').classes("card"):
             note_in = ui.textarea(label=_t("note_label"),
                                     placeholder=_t("note_placeholder")).style(
@@ -936,6 +1058,11 @@ def _render_body_contents(state, stage, refresh_fn):
             analyze_btn.classes(BTN_PRIMARY).style("width:100%;margin-top:14px;")
         return
 
+    # Text-only path with no candidates yet — should not happen (dialog handles it)
+    if has_text and not has_candidates:
+        return
+
+    # Stage 3 — candidates + notice
     _render_candidates(state, stage, refresh_fn)
 
 
@@ -1011,7 +1138,8 @@ def _render_candidates(state, stage, refresh_fn):
                 zone=stage.get("zone", "A"),
                 subcontractor=sub_in.value.strip(),
                 deadline_days=int(deadline_in.value),
-                raise_type=raise_in.value, photo_bytes=stage["photo"],
+                raise_type=raise_in.value,
+                photo_bytes=stage.get("photo"),
                 note=stage.get("note", ""), selected=clean_selected,
                 notice_pdf=pdf_bytes)
             ui.notify(_t("notice_saved") + " " + notice_uid, type="positive")
@@ -1020,6 +1148,8 @@ def _render_candidates(state, stage, refresh_fn):
             stage["mime"] = None
             stage["candidates"] = None
             stage["manual"] = []
+            stage["text_only"] = False
+            stage["text_desc"] = ""
             ui.timer(0.3, refresh_fn, once=True)
 
         gen_btn.on("click", do_generate)
@@ -1033,9 +1163,11 @@ def _render_defect_card(item, stage, refresh_fn):
                 item["_sel"] = bool(e.value)
             ui.checkbox(value=item.get("_sel", True), on_change=_toggle)
             with ui.element('div').style("flex:1;min-width:0;"):
-                with ui.element('div').style("display:flex;gap:6px;margin-bottom:6px;"):
+                with ui.element('div').style("display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;"):
                     if item.get("_manual"):
                         ui.html('<span class="badge-manual">' + _t("tag_manual") + '</span>')
+                    elif item.get("_nophoto"):
+                        ui.html('<span class="badge-nophoto">' + _t("tag_nophoto") + '</span>')
                     else:
                         ui.html('<span class="badge-ai">' + _t("tag_ai") + '</span>')
                     if item.get("context_mismatch"):
