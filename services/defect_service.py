@@ -1,6 +1,5 @@
 """
-services/defect_service.py — Full file.
-PDFs use JetBrains Mono for all Latin text; Arabic uses Amiri.
+services/defect_service.py — Full file. Fonts + PDFs + Excel.
 """
 
 import io
@@ -20,10 +19,12 @@ _FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
 _FONT_REG_PATH = os.path.join(_FONT_DIR, "Amiri-Regular.ttf")
 _FONT_BOLD_PATH = os.path.join(_FONT_DIR, "Amiri-Bold.ttf")
 _FONT_REG_URLS = [
+    "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
     "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf",
     "https://github.com/aliftype/amiri/raw/main/Amiri-Regular.ttf",
 ]
 _FONT_BOLD_URLS = [
+    "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Bold.ttf",
     "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf",
     "https://github.com/aliftype/amiri/raw/main/Amiri-Bold.ttf",
 ]
@@ -31,11 +32,15 @@ _FONT_BOLD_URLS = [
 _MONO_REG_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Regular.ttf")
 _MONO_BOLD_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Bold.ttf")
 _MONO_REG_URLS = [
+    "https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/ttf/JetBrainsMono-Regular.ttf",
     "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Regular.ttf",
+    "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSansMono.ttf",
     "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSansMono.ttf",
 ]
 _MONO_BOLD_URLS = [
+    "https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/ttf/JetBrainsMono-Bold.ttf",
     "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Bold.ttf",
+    "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSansMono-Bold.ttf",
     "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSansMono-Bold.ttf",
 ]
 
@@ -43,7 +48,6 @@ _FONT_NAME = "Helvetica"
 _FONT_BOLD = "Helvetica-Bold"
 _MONO_NAME = "Courier"
 _MONO_BOLD = "Courier-Bold"
-_FONTS_READY = [False]
 
 
 def _download_font(url, dest):
@@ -53,113 +57,112 @@ def _download_font(url, dest):
     except Exception:
         pass
     try:
-        print("[defect] fetching font: " + url)
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=15) as r:
             data = r.read()
         if not data or len(data) < 5000:
             return False
-        # TTF magic-byte check (protects against GitHub returning HTML)
         if data[:4] not in (b"\x00\x01\x00\x00", b"OTTO", b"true", b"ttcf"):
-            print("[defect] not a TTF file: " + url)
+            print("[defect] not a TTF: " + url)
             return False
         with open(dest, "wb") as f:
             f.write(data)
-        print("[defect] font saved: " + str(len(data) // 1024) +
-              " KB -> " + dest)
+        print("[defect] saved " + str(len(data) // 1024) + " KB -> " + dest)
         return True
     except Exception as e:
-        print("[defect] font fetch failed: " + repr(e))
-    return False
+        print("[defect] fetch fail: " + repr(e))
+        return False
+
+
+def _registered():
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        return set(pdfmetrics.getRegisteredFontNames())
+    except Exception:
+        return set()
 
 
 def _ensure_fonts():
+    """Call before every PDF build. Retries if fonts aren't registered."""
     global _FONT_NAME, _FONT_BOLD, _MONO_NAME, _MONO_BOLD
-    if _FONTS_READY[0]:
-        return
     try:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
     except Exception as e:
-        print("[defect] reportlab font import failed: " + repr(e))
+        print("[defect] reportlab missing: " + repr(e))
         return
 
-    # ---- Amiri (Arabic + Latin fallback) ----
-    if not os.path.exists(_FONT_REG_PATH):
-        for u in _FONT_REG_URLS:
-            if _download_font(u, _FONT_REG_PATH):
-                break
-    if not os.path.exists(_FONT_BOLD_PATH):
-        for u in _FONT_BOLD_URLS:
-            if _download_font(u, _FONT_BOLD_PATH):
-                break
+    have = _registered()
 
-    amiri_ok = False
-    try:
-        if os.path.exists(_FONT_REG_PATH):
-            pdfmetrics.registerFont(TTFont("ArReg", _FONT_REG_PATH))
-            _FONT_NAME = "ArReg"
-            amiri_ok = True
-        if os.path.exists(_FONT_BOLD_PATH):
-            pdfmetrics.registerFont(TTFont("ArBold", _FONT_BOLD_PATH))
-            _FONT_BOLD = "ArBold"
-        else:
-            _FONT_BOLD = _FONT_NAME
-        if amiri_ok:
-            try:
-                pdfmetrics.registerFontFamily(
-                    "ArReg",
-                    normal="ArReg",
-                    bold=_FONT_BOLD,
-                    italic="ArReg",
-                    boldItalic=_FONT_BOLD,
-                )
-            except Exception:
-                pass
-    except Exception as e:
-        print("[defect] Amiri registration failed: " + repr(e))
+    # --- JetBrains Mono (Latin) ---
+    if "MonoReg" in have:
+        _MONO_NAME = "MonoReg"
+        _MONO_BOLD = "MonoBold" if "MonoBold" in have else "MonoReg"
+    else:
+        if not os.path.exists(_MONO_REG_PATH):
+            for u in _MONO_REG_URLS:
+                if _download_font(u, _MONO_REG_PATH):
+                    break
+        if not os.path.exists(_MONO_BOLD_PATH):
+            for u in _MONO_BOLD_URLS:
+                if _download_font(u, _MONO_BOLD_PATH):
+                    break
+        try:
+            if os.path.exists(_MONO_REG_PATH):
+                pdfmetrics.registerFont(TTFont("MonoReg", _MONO_REG_PATH))
+                _MONO_NAME = "MonoReg"
+            if os.path.exists(_MONO_BOLD_PATH):
+                pdfmetrics.registerFont(TTFont("MonoBold", _MONO_BOLD_PATH))
+                _MONO_BOLD = "MonoBold"
+            else:
+                _MONO_BOLD = _MONO_NAME
+            if _MONO_NAME == "MonoReg":
+                try:
+                    pdfmetrics.registerFontFamily(
+                        "MonoReg",
+                        normal="MonoReg", bold=_MONO_BOLD,
+                        italic="MonoReg", boldItalic=_MONO_BOLD)
+                except Exception:
+                    pass
+        except Exception as e:
+            print("[defect] Mono register failed: " + repr(e))
 
-    # ---- JetBrains Mono ----
-    if not os.path.exists(_MONO_REG_PATH):
-        for u in _MONO_REG_URLS:
-            if _download_font(u, _MONO_REG_PATH):
-                break
-    if not os.path.exists(_MONO_BOLD_PATH):
-        for u in _MONO_BOLD_URLS:
-            if _download_font(u, _MONO_BOLD_PATH):
-                break
+    # --- Amiri (Arabic) ---
+    if "ArReg" in have:
+        _FONT_NAME = "ArReg"
+        _FONT_BOLD = "ArBold" if "ArBold" in have else "ArReg"
+    else:
+        if not os.path.exists(_FONT_REG_PATH):
+            for u in _FONT_REG_URLS:
+                if _download_font(u, _FONT_REG_PATH):
+                    break
+        if not os.path.exists(_FONT_BOLD_PATH):
+            for u in _FONT_BOLD_URLS:
+                if _download_font(u, _FONT_BOLD_PATH):
+                    break
+        try:
+            if os.path.exists(_FONT_REG_PATH):
+                pdfmetrics.registerFont(TTFont("ArReg", _FONT_REG_PATH))
+                _FONT_NAME = "ArReg"
+            if os.path.exists(_FONT_BOLD_PATH):
+                pdfmetrics.registerFont(TTFont("ArBold", _FONT_BOLD_PATH))
+                _FONT_BOLD = "ArBold"
+            else:
+                _FONT_BOLD = _FONT_NAME
+            if _FONT_NAME == "ArReg":
+                try:
+                    pdfmetrics.registerFontFamily(
+                        "ArReg",
+                        normal="ArReg", bold=_FONT_BOLD,
+                        italic="ArReg", boldItalic=_FONT_BOLD)
+                except Exception:
+                    pass
+        except Exception as e:
+            print("[defect] Amiri register failed: " + repr(e))
 
-    mono_ok = False
-    try:
-        if os.path.exists(_MONO_REG_PATH):
-            pdfmetrics.registerFont(TTFont("MonoReg", _MONO_REG_PATH))
-            _MONO_NAME = "MonoReg"
-            mono_ok = True
-        if os.path.exists(_MONO_BOLD_PATH):
-            pdfmetrics.registerFont(TTFont("MonoBold", _MONO_BOLD_PATH))
-            _MONO_BOLD = "MonoBold"
-        else:
-            _MONO_BOLD = _MONO_NAME
-        if mono_ok:
-            try:
-                pdfmetrics.registerFontFamily(
-                    "MonoReg",
-                    normal="MonoReg",
-                    bold=_MONO_BOLD,
-                    italic="MonoReg",
-                    boldItalic=_MONO_BOLD,
-                )
-            except Exception:
-                pass
-    except Exception as e:
-        print("[defect] Mono registration failed: " + repr(e))
-
-    _FONTS_READY[0] = True
-    print("[defect] fonts ready: arabic=" + _FONT_NAME +
-          " latin=" + _MONO_NAME)
-
-
-_ensure_fonts()
+    print("[defect] fonts ready: mono=" + _MONO_NAME +
+          " arabic=" + _FONT_NAME + " | registered=" +
+          str(sorted(_registered())))
 
 
 def _has_arabic(text):
@@ -167,15 +170,11 @@ def _has_arabic(text):
 
 
 def _esc_xml(s):
-    """Escape XML special chars so ReportLab doesn't interpret them."""
-    return (str(s or "")
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;"))
+    return (str(s or "").replace("&", "&amp;")
+            .replace("<", "&lt;").replace(">", "&gt;"))
 
 
 def _fix(text):
-    """Reshape Arabic to presentation forms. No XML escaping here."""
     if text is None:
         return ""
     s = str(text)
@@ -193,17 +192,22 @@ def _fix(text):
 
 
 def _font_for(text, bold=False):
+    reg = _registered()
     if _has_arabic(text):
-        return _FONT_BOLD if bold else _FONT_NAME
-    return _MONO_BOLD if bold else _MONO_NAME
+        if bold and "ArBold" in reg:
+            return "ArBold"
+        if "ArReg" in reg:
+            return "ArReg"
+        return "Helvetica"
+    if bold and "MonoBold" in reg:
+        return "MonoBold"
+    if "MonoReg" in reg:
+        return "MonoReg"
+    return "Courier"
 
 
 def _para(text, base_style, bold=False):
-    """
-    Build a Paragraph that is guaranteed to render in the right font.
-    Uses inline <font name="..."> tag — the one mechanism ReportLab
-    always honors, regardless of ParagraphStyle parent behaviour.
-    """
+    """Force font via inline <font name> so no fallback happens."""
     from reportlab.platypus import Paragraph
     raw = str(text or "")
     shaped = _fix(raw)
@@ -214,7 +218,7 @@ def _para(text, base_style, bold=False):
 
 
 # =====================================================================
-# UID
+# UID / IMAGES
 # =====================================================================
 def generate_uid(prefix="NTC"):
     short = uuid.uuid4().hex[:4].upper()
@@ -223,9 +227,6 @@ def generate_uid(prefix="NTC"):
     return prefix + "-" + short + "-" + str(year) + "-" + str(seq).zfill(4)
 
 
-# =====================================================================
-# IMAGE COMPRESSION
-# =====================================================================
 def _shrink_image(photo_bytes, max_side=1024):
     try:
         from PIL import Image
@@ -241,7 +242,7 @@ def _shrink_image(photo_bytes, max_side=1024):
         out.seek(0)
         return out.read()
     except Exception as e:
-        print("[defect] image shrink failed: " + repr(e))
+        print("[defect] shrink fail: " + repr(e))
         return photo_bytes
 
 
@@ -256,7 +257,7 @@ def _detect_image_type(data):
 
 
 # =====================================================================
-# DOCUMENT TEXT EXTRACTION
+# DOC TEXT
 # =====================================================================
 def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
     try:
@@ -270,7 +271,7 @@ def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
                 pass
         return "\n".join(parts)[:max_chars]
     except Exception as e:
-        print("[defect] pdf text extraction failed: " + repr(e))
+        print("[defect] pdf extract fail: " + repr(e))
         return ""
 
 
@@ -289,7 +290,7 @@ def extract_docx_text(docx_bytes, max_chars=40000):
                         parts.append(cell.text)
         return "\n".join(parts)[:max_chars]
     except Exception as e:
-        print("[defect] docx text extraction failed: " + repr(e))
+        print("[defect] docx extract fail: " + repr(e))
         return ""
 
 
@@ -309,7 +310,7 @@ def extract_document_text(file_bytes, filename=None, max_chars=40000):
     if name.endswith(".docx"):
         return extract_docx_text(file_bytes, max_chars=max_chars)
     if name.endswith(".doc"):
-        print("[defect] .doc legacy format is not supported; use .docx")
+        print("[defect] .doc not supported; save as .docx")
         return ""
     if name.endswith(".txt") or name.endswith(".md"):
         return extract_txt_text(file_bytes, max_chars=max_chars)
@@ -320,7 +321,7 @@ def extract_document_text(file_bytes, filename=None, max_chars=40000):
 
 
 # =====================================================================
-# JSON HELPERS
+# JSON
 # =====================================================================
 def _strip_fences(txt):
     t = (txt or "").strip()
@@ -341,7 +342,7 @@ def _parse_json_object(raw):
     try:
         return json.loads(txt[start:end + 1])
     except Exception as e:
-        print("[defect] JSON parse failed: " + repr(e))
+        print("[defect] JSON fail: " + repr(e))
         return None
 
 
@@ -378,37 +379,27 @@ __MS_TEXT__
 
 async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
                                     filename=None):
-    print("[defect] MS extraction started, bytes=" +
-          str(len(pdf_bytes) // 1024) + " KB, file=" + str(filename))
-
+    print("[defect] MS extract, bytes=" + str(len(pdf_bytes) // 1024))
     try:
         text = await asyncio.to_thread(
             extract_document_text, pdf_bytes, filename)
     except Exception as e:
-        print("[defect] document parse failed: " + repr(e))
         return {"clauses": [], "raw_text_length": 0,
                 "error": "Document parse failed: " + repr(e)}
-
     if not text or len(text) < 100:
         return {"clauses": [], "raw_text_length": len(text),
-                "error": "File has no readable text. If this is a .doc "
-                         "(legacy), save it as .docx and re-upload."}
-
+                "error": "File has no readable text."}
     text = text[:15000]
     prompt = _CLAUSE_PROMPT_TEMPLATE.replace("__MS_TEXT__", text)
-
     try:
         raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=40)
     except Exception as e:
-        print("[defect] AI call failed: " + repr(e))
         return {"clauses": [], "raw_text_length": len(text),
                 "error": "AI call failed: " + repr(e)}
-
     data = _parse_json_object(raw)
     if not data:
         return {"clauses": [], "raw_text_length": len(text),
                 "error": "AI returned unparseable output."}
-
     clauses = []
     for c in data.get("clauses", []):
         cid = str(c.get("id", "")).strip()
@@ -417,13 +408,11 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
         if not cid or not title:
             continue
         clauses.append({"id": cid, "title": title, "text": body})
-
-    print("[defect] extracted " + str(len(clauses)) + " clauses")
     return {"clauses": clauses, "raw_text_length": len(text), "error": None}
 
 
 # =====================================================================
-# ECP EXCERPTS
+# ECP
 # =====================================================================
 _ECP_BY_ELEMENT = {
     "column": [
@@ -495,64 +484,39 @@ def _format_ecp(ecp_excerpts):
 
 
 # =====================================================================
-# DEFECT ANALYSIS — PHOTO
+# AI — PHOTO
 # =====================================================================
 _DEFECT_PROMPT = """You are a senior QC engineer inspecting a construction site photo.
 
-Your job: identify visible defects in the photo, and cite MS clauses / ECP
-codes ONLY when they truly apply to what the photo shows.
+Identify visible defects, cite MS clauses / ECP codes ONLY when they truly
+apply to what the photo shows.
 
-CRITICAL — MATCHING RULE (read this before citing anything):
-Before citing any MS clause, ask yourself: does this clause describe work
-that relates to the ACTUAL content of the photo?
+MATCHING RULE: before citing an MS clause ask: does this clause relate to
+what the photo shows?
+If NOT:
+- still describe the defect in plain language
+- ms_violations = [], code_violations = [], context_mismatch = true
+If YES:
+- cite 1-3 MS clause ids and 1-3 ECP codes from the provided lists
+- context_mismatch = false
 
-Examples of NON-matches (DO NOT cite any clause in these cases):
-- MS is about masonry walls but the photo shows an asphalt pavement crack
-- MS is about column reinforcement but the photo shows a floor slab
-- MS is about concrete works but the photo shows electrical conduit
-- MS is about steel structure but the photo shows plaster finishing
+NEVER invent a clause match.
 
-When the MS clauses do NOT match the photo content:
-- STILL describe the defect(s) you see, in plain language
-- Set "ms_violations" to an empty array []
-- Set "code_violations" to an empty array []
-- Set "context_mismatch" to true on that defect
+Look for: cracks, honeycombing, exposed/corroded rebar, insufficient cover,
+poor formwork, cold joints, segregation, water stains, spalling, poor finish,
+missing spacers, rust stains, missing mortar.
 
-When the MS clauses DO match the photo:
-- Cite 1-3 MS clause ids that appear in the provided list
-- Cite 1-3 ECP codes that appear in the provided list
-- Set "context_mismatch" to false
+USER NOTE: __NOTE__
 
-NEVER invent a clause match. It is far better to return zero citations than
-a wrong one.
+ELEMENT: __ELEMENT__
 
-OBSERVATION CHECKLIST — look for these in the photo:
-- Cracks (any pattern, direction, width)
-- Honeycombing / voids / poor compaction
-- Exposed or corroded reinforcement
-- Insufficient concrete cover
-- Poor formwork (bulging, misalignment, seepage marks)
-- Cold joints, segregation, aggregate exposure
-- Water stains, efflorescence, damp patches
-- Spalling, chips, broken edges
-- Poor finishing, uneven surfaces
-- Missing or misplaced spacers/chairs
-- Rust stains on concrete surface
-- Missing mortar joints, damaged masonry units
-
-If the photo shows no construction defect at all, return an empty list.
-
-USER NOTE (may be empty): __NOTE__
-
-ELEMENT TYPE (from the app): __ELEMENT__
-
-METHOD STATEMENT CLAUSES AVAILABLE (cite by id only):
+MS CLAUSES AVAILABLE:
 __MS_CLAUSES__
 
-ECP CODE EXCERPTS AVAILABLE (cite by code string only):
+ECP CODES AVAILABLE:
 __ECP__
 
-Return ONE JSON object with this exact shape:
+Return ONE JSON object:
 {
   "defects": [
     {
@@ -561,19 +525,14 @@ Return ONE JSON object with this exact shape:
       "severity": "Medium",
       "ms_violations": ["3.5"],
       "code_violations": ["ECP 203 §6.3.1"],
-      "repair_action": "Chip back to sound concrete, apply bonding agent, patch with non-shrink mortar.",
+      "repair_action": "Chip back, patch with non-shrink mortar.",
       "context_mismatch": false
     }
   ]
 }
 
-RULES:
-- Report 1-6 defects. Aim for at least 1 if any structure is visible.
-- Only cite MS clause ids that appear in the list above.
-- Only cite ECP codes that appear in the list above.
-- Severity must be one of: Low, Medium, High, Critical.
-- Output ONLY the JSON. No prose. No markdown fences.
-"""
+RULES: MAX 6. Only cite ids from above. Severity: Low/Medium/High/Critical.
+Output ONLY JSON."""
 
 
 def _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts):
@@ -584,44 +543,30 @@ def _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts):
             .replace("__ECP__", _format_ecp(ecp_excerpts)))
 
 
-async def analyze_defect_photo(photo_bytes,
-                                mime_type,
-                                note,
-                                ms_clauses,
-                                element_type,
-                                call_gemini_json_fn):
+async def analyze_defect_photo(photo_bytes, mime_type, note, ms_clauses,
+                                element_type, call_gemini_json_fn):
     from google.genai import types
-
     img_type = _detect_image_type(photo_bytes)
     if img_type is None:
-        return {"defects": [], "error": "Uploaded file is not a JPEG or PNG "
-                                        "photo. Please upload a site photo."}
-
-    ecp_excerpts = get_ecp_excerpts(element_type)
-    prompt = _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts)
-
+        return {"defects": [], "error": "Not a JPEG/PNG photo."}
+    ecp = get_ecp_excerpts(element_type)
+    prompt = _build_defect_prompt(note, element_type, ms_clauses, ecp)
     shrunk = _shrink_image(photo_bytes, max_side=1024)
-
     try:
         img_part = types.Part.from_bytes(data=shrunk, mime_type="image/jpeg")
     except Exception as e:
         return {"defects": [], "error": "Image load failed: " + repr(e)}
-
-    contents = [prompt, img_part]
-
     try:
-        raw = await call_gemini_json_fn(contents, temperature=0.0, timeout=40)
+        raw = await call_gemini_json_fn([prompt, img_part],
+                                          temperature=0.0, timeout=40)
     except Exception as e:
         return {"defects": [], "error": "AI call failed: " + repr(e)}
-
     data = _parse_json_object(raw)
     if not data:
         return {"defects": [], "error": "AI returned unparseable output.",
                 "raw": (raw or "")[:1500]}
-
     allowed_ms = {str(c.get("id", "")).strip() for c in (ms_clauses or [])}
-    allowed_ecp = {e["code"] for e in ecp_excerpts}
-
+    allowed_ecp = {e["code"] for e in ecp}
     defects = []
     for d in data.get("defects", [])[:6]:
         name = str(d.get("name", "")).strip()[:120]
@@ -631,121 +576,85 @@ async def analyze_defect_photo(photo_bytes,
         ms_v = [v for v in ms_v if v in allowed_ms][:3]
         ecp_v = [str(v).strip() for v in (d.get("code_violations") or [])]
         ecp_v = [v for v in ecp_v if v in allowed_ecp][:3]
-        severity = str(d.get("severity", "Medium")).strip().title()
-        if severity not in ("Low", "Medium", "High", "Critical"):
-            severity = "Medium"
-        mismatch = bool(d.get("context_mismatch", False))
+        sev = str(d.get("severity", "Medium")).strip().title()
+        if sev not in ("Low", "Medium", "High", "Critical"):
+            sev = "Medium"
+        mm = bool(d.get("context_mismatch", False))
         if not ms_v and not ecp_v:
-            mismatch = True
+            mm = True
         defects.append({
             "name": name,
             "location_hint": str(d.get("location_hint", "")).strip()[:60],
-            "severity": severity,
+            "severity": sev,
             "ms_violations": ms_v,
             "code_violations": ecp_v,
             "repair_action": str(d.get("repair_action", "")).strip()[:180],
-            "context_mismatch": mismatch,
+            "context_mismatch": mm,
         })
-
     return {"defects": defects, "error": None, "raw": (raw or "")[:1500]}
 
 
 # =====================================================================
-# DEFECT ANALYSIS — TEXT ONLY
+# AI — TEXT
 # =====================================================================
-_DEFECT_TEXT_PROMPT = """You are a senior QC engineer reviewing a defect description
-that a site engineer wrote in the field. There is no photo — the engineer
-saw the defect and typed a description.
+_DEFECT_TEXT_PROMPT = """You are a senior QC engineer. A site engineer typed
+a defect description in the field. Turn it into one structured defect.
 
-Your job: turn that description into a structured defect, and match it
-against the available MS clauses / ECP codes.
+MATCHING RULE: same as photo. If nothing in the MS matches, set
+ms_violations=[], code_violations=[], context_mismatch=true.
+NEVER invent a clause match.
 
-CRITICAL — MATCHING RULE:
-Before citing any MS clause, ask: does this clause describe work that relates
-to the ACTUAL content of the description?
+DESCRIPTION: __DESC__
 
-When the MS clauses do NOT match the description:
-- STILL return the defect as the engineer described
-- Set "ms_violations" to an empty array []
-- Set "code_violations" to an empty array []
-- Set "context_mismatch" to true
+EXTRA NOTE: __NOTE__
 
-When the MS clauses DO match:
-- Cite 1-3 MS clause ids that appear in the provided list
-- Cite 1-3 ECP codes that appear in the provided list
-- Set "context_mismatch" to false
+ELEMENT: __ELEMENT__
 
-NEVER invent a clause match. Empty citations are far better than wrong ones.
-
-ENGINEER'S DEFECT DESCRIPTION (this is the source of truth):
-__DESC__
-
-OPTIONAL EXTRA NOTE: __NOTE__
-
-ELEMENT TYPE (from the app): __ELEMENT__
-
-METHOD STATEMENT CLAUSES AVAILABLE (cite by id only):
+MS CLAUSES AVAILABLE:
 __MS_CLAUSES__
 
-ECP CODE EXCERPTS AVAILABLE (cite by code string only):
+ECP CODES AVAILABLE:
 __ECP__
 
-Return ONE JSON object with this exact shape:
+Return ONE JSON object:
 {
   "defects": [
     {
-      "name": "Clean short name of the defect",
-      "location_hint": "where on site (from the description)",
+      "name": "Short clean name",
+      "location_hint": "where on site",
       "severity": "Medium",
-      "ms_violations": ["3.5"],
-      "code_violations": ["ECP 203 §6.3.1"],
-      "repair_action": "Suggested repair if the MS covers it, else a general suggestion.",
-      "context_mismatch": false
+      "ms_violations": [],
+      "code_violations": [],
+      "repair_action": "...",
+      "context_mismatch": true
     }
   ]
 }
 
-RULES:
-- Return exactly 1 defect that matches the engineer's description.
-- Do NOT invent a different defect — stick to what was written.
-- Only cite MS clause ids that appear in the list above.
-- Only cite ECP codes that appear in the list above.
-- If nothing in the MS matches, use empty arrays and context_mismatch=true.
-- Severity must be one of: Low, Medium, High, Critical.
-- Output ONLY the JSON. No prose. No markdown fences.
-"""
+Output ONLY JSON."""
 
 
-async def analyze_defect_text(description,
-                               note,
-                               ms_clauses,
-                               element_type,
+async def analyze_defect_text(description, note, ms_clauses, element_type,
                                call_gemini_json_fn):
     if not (description or "").strip():
-        return {"defects": [], "error": "Defect description is required."}
-
-    ecp_excerpts = get_ecp_excerpts(element_type)
-
+        return {"defects": [], "error": "Description required."}
+    ecp = get_ecp_excerpts(element_type)
     prompt = (_DEFECT_TEXT_PROMPT
               .replace("__DESC__", description.strip())
               .replace("__NOTE__", note or "(none)")
               .replace("__ELEMENT__", (element_type or "column").lower())
               .replace("__MS_CLAUSES__", _format_ms_clauses(ms_clauses))
-              .replace("__ECP__", _format_ecp(ecp_excerpts)))
-
+              .replace("__ECP__", _format_ecp(ecp)))
     try:
         raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=40)
     except Exception as e:
         return {"defects": [], "error": "AI call failed: " + repr(e)}
-
     data = _parse_json_object(raw)
     if not data:
         return {"defects": [], "error": "AI returned unparseable output.",
                 "raw": (raw or "")[:1500]}
-
     allowed_ms = {str(c.get("id", "")).strip() for c in (ms_clauses or [])}
-    allowed_ecp = {e["code"] for e in ecp_excerpts}
-
+    allowed_ecp = {e["code"] for e in ecp}
     defects = []
     for d in data.get("defects", [])[:3]:
         name = str(d.get("name", "")).strip()[:120]
@@ -755,22 +664,21 @@ async def analyze_defect_text(description,
         ms_v = [v for v in ms_v if v in allowed_ms][:3]
         ecp_v = [str(v).strip() for v in (d.get("code_violations") or [])]
         ecp_v = [v for v in ecp_v if v in allowed_ecp][:3]
-        severity = str(d.get("severity", "Medium")).strip().title()
-        if severity not in ("Low", "Medium", "High", "Critical"):
-            severity = "Medium"
-        mismatch = bool(d.get("context_mismatch", False))
+        sev = str(d.get("severity", "Medium")).strip().title()
+        if sev not in ("Low", "Medium", "High", "Critical"):
+            sev = "Medium"
+        mm = bool(d.get("context_mismatch", False))
         if not ms_v and not ecp_v:
-            mismatch = True
+            mm = True
         defects.append({
             "name": name,
             "location_hint": str(d.get("location_hint", "")).strip()[:60],
-            "severity": severity,
+            "severity": sev,
             "ms_violations": ms_v,
             "code_violations": ecp_v,
             "repair_action": str(d.get("repair_action", "")).strip()[:180],
-            "context_mismatch": mismatch,
+            "context_mismatch": mm,
         })
-
     return {"defects": defects, "error": None, "raw": (raw or "")[:1500]}
 
 
@@ -782,23 +690,18 @@ def _make_qr_buffer(text):
         from services.pdf_service import generate_qr_code
         return generate_qr_code(text)
     except Exception as e:
-        print("[defect] QR generation failed: " + repr(e))
+        print("[defect] QR fail: " + repr(e))
         return None
 
 
 # =====================================================================
 # NOTICE PDF
 # =====================================================================
-def build_notice_pdf(project,
-                     defects,
-                     notice_uid,
-                     subcontractor,
-                     deadline_days,
-                     raise_type="qc_internal",
-                     logo_bytes=None):
+def build_notice_pdf(project, defects, notice_uid, subcontractor,
+                     deadline_days, raise_type="qc_internal", logo_bytes=None):
     _ensure_fonts()
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        SimpleDocTemplate, Spacer, Table, TableStyle,
         Image as ReportLabImage, HRFlowable,
     )
     from reportlab.lib import colors
@@ -814,15 +717,14 @@ def build_notice_pdf(project,
     )
 
     NAVY = colors.HexColor("#0a0a0a")
-    ORANGE = colors.HexColor("#14b8a6")
+    ACCENT = colors.HexColor("#14b8a6")
     GREY = colors.HexColor("#525252")
-    LINE = colors.HexColor("#d4d4d4")
 
     title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
                                   fontSize=14, textColor=NAVY,
-                                  spaceAfter=2, leading=17)
+                                  spaceAfter=2, leading=18)
     sub_style = ParagraphStyle("Sub", fontName=_MONO_NAME,
-                                fontSize=9, textColor=ORANGE,
+                                fontSize=9, textColor=ACCENT,
                                 spaceAfter=6, leading=12)
     label_style = ParagraphStyle("Label", fontName=_MONO_BOLD,
                                   fontSize=8, textColor=NAVY, leading=11)
@@ -832,7 +734,7 @@ def build_notice_pdf(project,
                                  textColor=colors.black, leading=12)
     mono_head_style = ParagraphStyle("MonoHead", fontName=_MONO_BOLD,
                                       fontSize=9.5, textColor=NAVY,
-                                      leading=12, spaceAfter=2)
+                                      leading=13, spaceAfter=2)
     mono_cite_style = ParagraphStyle("MonoCite", fontName=_MONO_NAME,
                                       fontSize=8, textColor=GREY, leading=10)
     small_style = ParagraphStyle("Small", fontName=_MONO_NAME, fontSize=7,
@@ -864,7 +766,7 @@ def build_notice_pdf(project,
     ]))
     story.append(t_head)
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=0.8, color=ORANGE,
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
                              spaceAfter=10))
 
     meta_rows = [
@@ -882,8 +784,7 @@ def build_notice_pdf(project,
          _para("QC Internal" if raise_type == "qc_internal"
                else "Consultant / NCR", meta_style)],
     ]
-    t_meta = Table(meta_rows,
-                   colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
+    t_meta = Table(meta_rows, colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
     t_meta.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
@@ -898,8 +799,7 @@ def build_notice_pdf(project,
     story.append(Spacer(1, 4))
     story.append(_para(
         "DEADLINE: " + str(deadline_days) + " working day" +
-        ("s" if deadline_days != 1 else "") + " from receipt of this notice.",
-        body_style))
+        ("s" if deadline_days != 1 else "") + " from receipt.", body_style))
     story.append(Spacer(1, 10))
     story.append(_para(
         "You are required to remedy the following defects. "
@@ -943,8 +843,7 @@ def build_notice_pdf(project,
     sig_data = [
         [_para("ISSUED BY (QC)", label_style, bold=True),
          _para("ACKNOWLEDGED BY (SUBCONTRACTOR)", label_style, bold=True)],
-        [_para("_" * 32, body_style),
-         _para("_" * 32, body_style)],
+        [_para("_" * 32, body_style), _para("_" * 32, body_style)],
         [_para(project.get("engineer_name", ""), meta_style),
          _para("Name / Date / Signature", small_style)],
     ]
@@ -958,14 +857,12 @@ def build_notice_pdf(project,
     story.append(t_sig)
     story.append(Spacer(1, 14))
 
-    qr_buf = _make_qr_buffer(
-        "UID: " + notice_uid + " | Defect Notice | " +
-        project.get("name", ""))
+    qr_buf = _make_qr_buffer("UID: " + notice_uid + " | " +
+                              project.get("name", ""))
     if qr_buf:
         try:
             qr_img = ReportLabImage(qr_buf, width=18 * mm, height=18 * mm)
-            t_qr = Table([[qr_img,
-                           _para("UID: " + notice_uid, meta_style)]],
+            t_qr = Table([[qr_img, _para("UID: " + notice_uid, meta_style)]],
                           colWidths=[22 * mm, 158 * mm])
             t_qr.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -973,7 +870,7 @@ def build_notice_pdf(project,
             ]))
             story.append(t_qr)
         except Exception as e:
-            print("[defect] QR embed failed: " + repr(e))
+            print("[defect] QR embed fail: " + repr(e))
             story.append(_para("UID: " + notice_uid, meta_style))
     else:
         story.append(_para("UID: " + notice_uid, meta_style))
@@ -989,8 +886,7 @@ def build_notice_pdf(project,
 def build_register_pdf(project, rows, logo_bytes=None):
     _ensure_fonts()
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        HRFlowable,
+        SimpleDocTemplate, Spacer, Table, TableStyle, HRFlowable,
     )
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
@@ -1003,27 +899,25 @@ def build_register_pdf(project, rows, logo_bytes=None):
         leftMargin=14 * mm, rightMargin=14 * mm,
         topMargin=14 * mm, bottomMargin=14 * mm,
     )
-
     NAVY = colors.HexColor("#0a0a0a")
-    ORANGE = colors.HexColor("#14b8a6")
+    ACCENT = colors.HexColor("#14b8a6")
     GREY = colors.HexColor("#525252")
 
     title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
                                   fontSize=13, textColor=NAVY, spaceAfter=2)
     sub_style = ParagraphStyle("Sub", fontName=_MONO_NAME,
-                                fontSize=8.5, textColor=ORANGE, spaceAfter=6)
+                                fontSize=8.5, textColor=ACCENT, spaceAfter=6)
     cell_style = ParagraphStyle("Cell", fontName=_MONO_NAME, fontSize=8,
                                  textColor=GREY, leading=10)
     head_style = ParagraphStyle("Head", fontName=_MONO_BOLD,
-                                 fontSize=8, textColor=colors.white,
-                                 leading=10)
+                                 fontSize=8, textColor=colors.white, leading=10)
     small_style = ParagraphStyle("Small", fontName=_MONO_NAME, fontSize=7,
                                   textColor=GREY, leading=9)
 
     story = []
     story.append(_para("DEFECT REGISTER", title_style, bold=True))
     story.append(_para(project.get("name", ""), sub_style))
-    story.append(HRFlowable(width="100%", thickness=0.8, color=ORANGE,
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
                              spaceAfter=10))
 
     head = ["UID", "DEFECT", "ZONE", "SUBCONTRACTOR",
@@ -1055,9 +949,9 @@ def build_register_pdf(project, rows, logo_bytes=None):
     ]))
     story.append(t)
     story.append(Spacer(1, 8))
-    story.append(_para(
-        "GENERATED " + datetime.date.today().strftime("%Y-%m-%d") +
-        "  ·  " + str(len(rows)) + " RECORD(S)", small_style))
+    story.append(_para("GENERATED " +
+                        datetime.date.today().strftime("%Y-%m-%d") +
+                        "  ·  " + str(len(rows)) + " RECORD(S)", small_style))
 
     doc.build(story)
     buf.seek(0)
@@ -1065,12 +959,12 @@ def build_register_pdf(project, rows, logo_bytes=None):
 
 
 # =====================================================================
-# CLOSURE REPORT PDF
+# CLOSURE PDF
 # =====================================================================
 def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     _ensure_fonts()
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        SimpleDocTemplate, Spacer, Table, TableStyle,
         Image as ReportLabImage, HRFlowable,
     )
     from reportlab.lib import colors
@@ -1087,9 +981,8 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
         leftMargin=18 * mm, rightMargin=18 * mm,
         topMargin=18 * mm, bottomMargin=18 * mm,
     )
-
     NAVY = colors.HexColor("#0a0a0a")
-    ORANGE = colors.HexColor("#14b8a6")
+    ACCENT = colors.HexColor("#14b8a6")
     GREY = colors.HexColor("#525252")
     GREEN = colors.HexColor("#16a34a")
     RED = colors.HexColor("#dc2626")
@@ -1097,7 +990,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
                                   fontSize=14, textColor=NAVY, spaceAfter=2)
     sub_style = ParagraphStyle("Sub", fontName=_MONO_NAME,
-                                fontSize=9, textColor=ORANGE, spaceAfter=6)
+                                fontSize=9, textColor=ACCENT, spaceAfter=6)
     label_style = ParagraphStyle("Label", fontName=_MONO_BOLD,
                                   fontSize=8, textColor=NAVY, leading=11)
     meta_style = ParagraphStyle("Meta", fontName=_MONO_NAME, fontSize=8.5,
@@ -1110,11 +1003,10 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     small_style = ParagraphStyle("Small", fontName=_MONO_NAME, fontSize=7,
                                   textColor=GREY, leading=9)
 
-    open_rows = [r for r in rows if r.get("status") != "closed"]
     closed_rows = [r for r in rows if r.get("status") == "closed"]
+    open_rows = [r for r in rows if r.get("status") != "closed"]
 
     story = []
-
     logo_img = ""
     if logo_bytes:
         try:
@@ -1127,11 +1019,8 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
         _para("DEFECT CLOSURE REPORT", title_style, bold=True),
         _para("REPORT NO: " + report_uid, sub_style),
     ]
-    if logo_img:
-        t_head = Table([[logo_img, header_text]],
-                       colWidths=[32 * mm, 148 * mm])
-    else:
-        t_head = Table([[header_text]], colWidths=[180 * mm])
+    t_head = Table([[logo_img, header_text]] if logo_img else [[header_text]],
+                   colWidths=[32 * mm, 148 * mm] if logo_img else [180 * mm])
     t_head.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
@@ -1139,7 +1028,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     ]))
     story.append(t_head)
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=0.8, color=ORANGE,
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
                              spaceAfter=10))
 
     meta_rows = [
@@ -1152,8 +1041,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
          _para("CONSULTANT", label_style, bold=True),
          _para(project.get("consultant", ""), meta_style)],
     ]
-    t_meta = Table(meta_rows,
-                   colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
+    t_meta = Table(meta_rows, colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
     t_meta.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
@@ -1183,40 +1071,31 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     story.append(t_sum)
     story.append(Spacer(1, 14))
 
-    if not rows:
-        story.append(_para("No defects recorded.", body_style))
-    else:
-        for idx, r in enumerate(rows, start=1):
-            status = str(r.get("status", "")).upper()
-            color = GREEN if status == "CLOSED" else RED
-            head = (str(idx).zfill(2) + ".  " + _fix(r.get("uid", "")) +
-                    "   //   " + _fix(r.get("first_defect", "") or "-") +
-                    "   ·   ZONE " + _fix(r.get("zone", "")))
-            story.append(_para(head, mono_head_style, bold=True))
-
-            st_style = ParagraphStyle("St" + str(idx), parent=meta_style,
-                                       textColor=color, fontName=_MONO_BOLD)
-            story.append(_para("STATUS: " + status, st_style, bold=True))
-            story.append(_para("SOURCE: " +
-                                ("CONSULTANT" if r.get("raise_type") ==
-                                 "consultant" else "QC INTERNAL"),
+    for idx, r in enumerate(rows, start=1):
+        status = str(r.get("status", "")).upper()
+        color = GREEN if status == "CLOSED" else RED
+        head = (str(idx).zfill(2) + ".  " + _fix(r.get("uid", "")) +
+                "   //   " + _fix(r.get("first_defect", "") or "-") +
+                "   ·   ZONE " + _fix(r.get("zone", "")))
+        story.append(_para(head, mono_head_style, bold=True))
+        st_style = ParagraphStyle("St" + str(idx), parent=meta_style,
+                                   textColor=color, fontName=_MONO_BOLD)
+        story.append(_para("STATUS: " + status, st_style, bold=True))
+        story.append(_para("SOURCE: " +
+                            ("CONSULTANT" if r.get("raise_type") == "consultant"
+                             else "QC INTERNAL"), meta_style))
+        story.append(_para("CREATED: " + str(r.get("created_at", ""))[:19],
+                            meta_style))
+        if r.get("closed_at"):
+            story.append(_para("CLOSED: " + str(r["closed_at"])[:19],
                                 meta_style))
-            story.append(_para("CREATED: " +
-                                str(r.get("created_at", ""))[:19],
-                                meta_style))
-            if r.get("closed_at"):
-                story.append(_para("CLOSED: " +
-                                    str(r["closed_at"])[:19], meta_style))
-
-            story.append(Spacer(1, 6))
+        story.append(Spacer(1, 6))
 
     story.append(Spacer(1, 18))
-
     sig_data = [
         [_para("QC ENGINEER", label_style, bold=True),
          _para("CONSULTANT", label_style, bold=True)],
-        [_para("_" * 32, body_style),
-         _para("_" * 32, body_style)],
+        [_para("_" * 32, body_style), _para("_" * 32, body_style)],
         [_para(project.get("engineer_name", ""), meta_style),
          _para("Name / Date / Signature", small_style)],
     ]
@@ -1232,3 +1111,98 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     doc.build(story)
     buf.seek(0)
     return buf.read()
+
+
+# =====================================================================
+# EXCEL EXPORT
+# =====================================================================
+def build_register_xlsx(project, rows, logo_bytes=None):
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+
+    navy = PatternFill("solid", fgColor="0A0A0A")
+    white_bold = Font(bold=True, color="FFFFFF", size=10, name="Consolas")
+    body_font = Font(size=10, name="Consolas")
+    header_align = Alignment(vertical="center", horizontal="left",
+                              wrap_text=True)
+    body_align = Alignment(vertical="top", horizontal="left", wrap_text=True)
+
+    ws1 = wb.active
+    ws1.title = "Notices"
+    headers1 = ["UID", "Date", "Zone", "Subcontractor", "Source",
+                "Status", "Defects", "First defect"]
+    ws1.append(headers1)
+    for i in range(1, len(headers1) + 1):
+        c = ws1.cell(row=1, column=i)
+        c.fill = navy
+        c.font = white_bold
+        c.alignment = header_align
+
+    for r in rows:
+        ws1.append([
+            str(r.get("uid", "") or ""),
+            str(r.get("created_at", "") or "")[:19],
+            str(r.get("zone", "") or ""),
+            str(r.get("subcontractor", "") or ""),
+            "Consultant / NCR" if r.get("raise_type") == "consultant"
+            else "QC Internal",
+            str(r.get("status", "") or "").upper(),
+            int(r.get("count", 0) or 0),
+            str(r.get("first_defect", "") or ""),
+        ])
+
+    for i, w in enumerate([22, 20, 8, 30, 18, 12, 9, 50], 1):
+        ws1.column_dimensions[get_column_letter(i)].width = w
+    ws1.freeze_panes = "A2"
+    for row in ws1.iter_rows(min_row=2):
+        for c in row:
+            c.font = body_font
+            c.alignment = body_align
+
+    ws2 = wb.create_sheet("Defects")
+    headers2 = ["UID", "Date", "Zone", "Subcontractor", "Status",
+                "#", "Defect name", "Location", "Severity",
+                "MS clauses", "ECP codes", "Repair action"]
+    ws2.append(headers2)
+    for i in range(1, len(headers2) + 1):
+        c = ws2.cell(row=1, column=i)
+        c.fill = navy
+        c.font = white_bold
+        c.alignment = header_align
+
+    for r in rows:
+        sel = r.get("selected") or []
+        if not sel:
+            continue
+        for j, s in enumerate(sel, 1):
+            ws2.append([
+                str(r.get("uid", "") or ""),
+                str(r.get("created_at", "") or "")[:19],
+                str(r.get("zone", "") or ""),
+                str(r.get("subcontractor", "") or ""),
+                str(r.get("status", "") or "").upper(),
+                j,
+                str(s.get("name", "") or ""),
+                str(s.get("location_hint", "") or ""),
+                str(s.get("severity", "") or ""),
+                ", ".join(s.get("ms_violations") or []),
+                ", ".join(s.get("code_violations") or []),
+                str(s.get("repair_action", "") or ""),
+            ])
+
+    for i, w in enumerate([22, 20, 8, 30, 12, 6, 40, 25, 10, 25, 25, 45], 1):
+        ws2.column_dimensions[get_column_letter(i)].width = w
+    ws2.freeze_panes = "A2"
+    for row in ws2.iter_rows(min_row=2):
+        for c in row:
+            c.font = body_font
+            c.alignment = body_align
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.read()
