@@ -1002,3 +1002,52 @@ def chat_authors(project_id):
     """, (project_id,))
     rows = _to_dicts(cur.fetchall(), ["author"])
     return [r["author"] for r in rows if r.get("author")]
+    def chat_max_id(project_id):
+    """Highest chat message id for a project (0 if none). Cheap poll."""
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("SELECT COALESCE(MAX(id),0) FROM chat_messages "
+                    "WHERE project_id=?", (project_id,))
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+def chat_delete_secure(msg_id, user_id, within_seconds=60):
+    """Delete a chat message only if it belongs to user_id and is younger
+    than within_seconds. Returns (ok, reason)."""
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("SELECT user_id, created_at FROM chat_messages WHERE id=?",
+                (msg_id,))
+    row = cur.fetchone()
+    if not row:
+        return False, "not_found"
+    if isinstance(row, dict):
+        owner = row.get("user_id")
+        created = row.get("created_at")
+    else:
+        owner = row[0]
+        created = row[1]
+    try:
+        if owner is None or int(owner) != int(user_id):
+            return False, "not_owner"
+    except Exception:
+        return False, "not_owner"
+    try:
+        cd = datetime.datetime.strptime(str(created)[:19],
+                                         "%Y-%m-%d %H:%M:%S")
+        age = (datetime.datetime.utcnow() - cd).total_seconds()
+    except Exception:
+        return False, "bad_time"
+    if age > within_seconds:
+        return False, "too_late"
+    with _LOCK:
+        c2 = _conn()
+        cur2 = c2.cursor()
+        cur2.execute("DELETE FROM chat_messages WHERE id=?", (msg_id,))
+        c2.commit()
+        _sync(c2)
+    return True, None
