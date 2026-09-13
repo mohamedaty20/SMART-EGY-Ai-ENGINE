@@ -1,8 +1,11 @@
 """
-ui/defect_page.py — Full file. Multi-photos, per-sub PDF, search, duplicate badge.
+ui/defect_page.py — Full file.
+Dashboard: summary + SVG line + SVG scatter + printable PDF.
+Chat tab. Filters fixed. Search fixed. No scrollbars. Engineer + place.
 """
 import io
 import base64
+import datetime
 from nicegui import ui, app
 
 from services import defect_db as db
@@ -16,7 +19,7 @@ T = {
     "en": {
         "app_title": "DEFECT NOTICES",
         "new_defect": "NEW DEFECT", "logs": "DEFECT LOGS",
-        "subs": "SUBS", "dashboard": "DASHBOARD",
+        "subs": "SUBS", "dashboard": "DASHBOARD", "chat": "TEAM CHAT",
         "project": "PROJECT", "no_project": "NO PROJECT",
         "setup_project": "Set up project", "edit": "Edit",
         "contractor": "Contractor", "subcontractor": "Subcontractor",
@@ -40,6 +43,9 @@ T = {
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
         "zone": "Zone", "element": "Element",
+        "engineer_field": "Engineer name",
+        "place_field": "Exact place",
+        "place_placeholder": "e.g. Block B, Column C3 base, Grid 4-5",
         "ai_found": "AI found these defects. Untick false ones, add any missed:",
         "ai_found_none": "AI found no defects. Add one manually below.",
         "add_manual": "+ Add defect",
@@ -63,10 +69,11 @@ T = {
         "tag_ai": "AI", "tag_manual": "MANUAL",
         "tag_nophoto": "NO PHOTO", "mismatch_warn": "NO MS MATCH",
         "tag_dup": "SEEN {n}\u00d7",
+        "logs_title": "DEFECT LOGS",
         "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
         "no_match": "No matches.",
-        "search_placeholder": "Search UID, defect, sub...",
+        "search_placeholder": "Search UID, defect, sub, engineer, place...",
         "filter_all": "All", "filter_qc": "QC Internal",
         "filter_consultant": "Consultant / NCR",
         "export_register": "REGISTER PDF", "closure_report": "CLOSURE PDF",
@@ -112,6 +119,9 @@ T = {
         "kpi_avg_days": "AVG-CLOSE",
         "dash_zones": "OPEN BY ZONE", "dash_weeks": "RAISED / WEEK",
         "dash_subs": "BY SUBCONTRACTOR",
+        "dash_summary": "SUMMARY",
+        "dash_scatter": "DURATION BY DAYS OPEN",
+        "dash_print": "PRINT DASHBOARD PDF",
         "dash_empty": "No defects yet.",
         "no_data": "No data.",
         "col_name": "NAME", "col_open": "OPEN", "col_overdue": "OVERDUE",
@@ -161,11 +171,31 @@ T = {
         "delete_warning": "This cannot be undone.",
         "deleted_defect": "Notice deleted.",
         "no_items": "No defects in this notice.",
+        "raised_by": "By",
+        "at_place": "At",
+        "chat_title": "TEAM CHAT",
+        "chat_sub": "Project-wide discussion for the QC team.",
+        "chat_placeholder": "Type a message...  use @ to mention someone",
+        "chat_send": "Send",
+        "chat_empty": "No messages yet. Start the conversation.",
+        "chat_reply": "Reply",
+        "chat_replying_to": "Replying to",
+        "chat_cancel": "Cancel",
+        "chat_delete": "Delete",
+        "chat_filter_author": "Author",
+        "chat_filter_from": "From",
+        "chat_filter_to": "To",
+        "chat_filter_all": "All",
+        "chat_search": "Search messages...",
+        "chat_confirm_delete": "Delete this message?",
+        "chat_deleted": "Message deleted.",
+        "chat_you": "you",
+        "chat_mention": "Mention",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
         "new_defect": "عيب جديد", "logs": "السجل",
-        "dashboard": "الرئيسية", "subs": "المقاولون",
+        "dashboard": "الرئيسية", "subs": "المقاولون", "chat": "الدردشة",
         "project": "المشروع", "no_project": "لا مشروع",
         "setup_project": "إعداد المشروع", "edit": "تعديل",
         "contractor": "المقاول", "subcontractor": "المقاول الفرعي",
@@ -189,6 +219,9 @@ T = {
         "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة C3",
         "zone": "المنطقة", "element": "العنصر",
+        "engineer_field": "اسم المهندس",
+        "place_field": "المكان بالتفصيل",
+        "place_placeholder": "مثال: بلوك B، قاعدة عمود C3، محور 4-5",
         "ai_found": "العيوب المكتشفة. أزل غير الصحيحة وأضف المفقود:",
         "ai_found_none": "لم يُكتشف شيء. أضف عيباً يدوياً.",
         "add_manual": "+ إضافة عيب",
@@ -211,10 +244,11 @@ T = {
         "tag_ai": "AI", "tag_manual": "يدوي",
         "tag_nophoto": "بدون صورة", "mismatch_warn": "لا بند مطابق",
         "tag_dup": "سُبق {n}\u00d7",
+        "logs_title": "سجل العيوب",
         "logs_sub": "كل إشعار صدر.",
         "no_logs": "لا توجد إشعارات.",
         "no_match": "لا نتائج.",
-        "search_placeholder": "ابحث برقم الإشعار أو العيب...",
+        "search_placeholder": "ابحث بالرقم أو العيب أو المهندس أو المكان...",
         "filter_all": "الكل", "filter_qc": "داخلي QC",
         "filter_consultant": "استشاري / NCR",
         "export_register": "السجل PDF", "closure_report": "الإغلاق PDF",
@@ -260,6 +294,9 @@ T = {
         "kpi_avg_days": "متوسط الإغلاق",
         "dash_zones": "المفتوح حسب المنطقة", "dash_weeks": "المُصدر أسبوعياً",
         "dash_subs": "حسب المقاول الفرعي",
+        "dash_summary": "ملخص",
+        "dash_scatter": "المدة حسب أيام الفتح",
+        "dash_print": "طباعة تقرير الرئيسية",
         "dash_empty": "لا عيوب بعد.",
         "no_data": "لا بيانات.",
         "col_name": "الاسم", "col_open": "مفتوح", "col_overdue": "متأخر",
@@ -309,6 +346,26 @@ T = {
         "delete_warning": "لا يمكن التراجع.",
         "deleted_defect": "تم حذف الإشعار.",
         "no_items": "لا بنود في هذا الإشعار.",
+        "raised_by": "بواسطة",
+        "at_place": "في",
+        "chat_title": "دردشة الفريق",
+        "chat_sub": "نقاش المشروع لفريق الجودة.",
+        "chat_placeholder": "اكتب رسالة...  استخدم @ للإشارة",
+        "chat_send": "إرسال",
+        "chat_empty": "لا رسائل بعد. ابدأ النقاش.",
+        "chat_reply": "رد",
+        "chat_replying_to": "رداً على",
+        "chat_cancel": "إلغاء",
+        "chat_delete": "حذف",
+        "chat_filter_author": "الكاتب",
+        "chat_filter_from": "من",
+        "chat_filter_to": "إلى",
+        "chat_filter_all": "الكل",
+        "chat_search": "ابحث في الرسائل...",
+        "chat_confirm_delete": "حذف هذه الرسالة؟",
+        "chat_deleted": "تم الحذف.",
+        "chat_you": "أنت",
+        "chat_mention": "إشارة",
     },
 }
 
@@ -380,9 +437,16 @@ def _inject_theme():
     font-family: 'JetBrains Mono', 'Amiri', 'Courier New', monospace !important;
     font-size: 13px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    letter-spacing: -0.01em; overflow-x: hidden !important;
+    letter-spacing: -0.01em;
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
+    height: 100%;
     direction: __DIR__;
   }
+  /* Hide ALL scrollbars */
+  * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+  *::-webkit-scrollbar { display: none !important; width: 0 !important;
+                         height: 0 !important; background: transparent !important; }
   .nicegui-content { padding: 0 !important; max-width: 100vw !important;
                      overflow-x: hidden !important; }
   .q-page, .q-layout, .q-page-container {
@@ -495,9 +559,9 @@ def _inject_theme():
   }
   .top-tab-btn:hover { color: var(--text); background: var(--surface-2); }
   .top-tab-btn.active { color: var(--accent); background: var(--surface-2); }
-  .blink-cursor { display: inline-block; width: 7px; height: 12px;
+  .blink-cursor { display: inline-block; width: 6px; height: 11px;
                   background: #ffffff; vertical-align: middle;
-                  margin-left: 4px;
+                  margin-left: 5px;
                   animation: blink 1.1s steps(2, start) infinite; }
   @keyframes blink { to { visibility: hidden; } }
   .main-content { padding: 14px; padding-bottom: 30px;
@@ -531,12 +595,9 @@ def _inject_theme():
     color: var(--text) !important; font-size: 10px !important;
     font-family: inherit !important;
   }
-  .q-uploader__list .q-item__label--caption {
-    color: var(--muted) !important; font-family: inherit !important;
-  }
   .badge-open, .badge-closed, .badge-overdue,
   .badge-ai, .badge-manual, .badge-nophoto, .badge-mismatch,
-  .badge-seen, .badge-closure, .badge-dup {
+  .badge-seen, .badge-closure, .badge-dup, .badge-you {
     display: inline-block; font-family: inherit; font-size: 9px;
     font-weight: 700; letter-spacing: 0.08em; padding: 2px 6px;
     border-radius: 2px; text-transform: uppercase; line-height: 1.3;
@@ -561,6 +622,8 @@ def _inject_theme():
                    border: 1px solid rgba(74,222,128,0.3); }
   .badge-dup { color: #c4b5fd;
                border: 1px solid rgba(196,181,253,0.4); }
+  .badge-you { color: var(--accent);
+               border: 1px solid rgba(94,234,212,0.3); }
   .q-notification {
     border-radius: 3px !important; font-weight: 500 !important;
     font-family: 'JetBrains Mono', monospace !important;
@@ -608,41 +671,6 @@ def _inject_theme():
   .metric-value.closed { color: var(--success); }
   .metric-value.overdue { color: var(--danger); }
   .metric-value.accent { color: var(--accent); }
-  .bar-row {
-    display: grid; grid-template-columns: 60px 1fr 40px;
-    align-items: center; gap: 10px; padding: 6px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .bar-row:last-child { border-bottom: none; }
-  .bar-label { font-size: 11px; font-weight: 600;
-               color: var(--text-soft); }
-  .bar-track { height: 4px; background: var(--surface-3);
-               border-radius: 2px; overflow: hidden; }
-  .bar-fill { height: 100%; background: var(--accent);
-              border-radius: 2px; }
-  .bar-value { font-size: 11px; font-weight: 600; color: var(--text);
-               text-align: right; font-variant-numeric: tabular-nums; }
-  .week-chart {
-    display: grid; grid-template-columns: repeat(8, 1fr);
-    gap: 4px; align-items: end; height: 90px;
-    padding: 8px 0 0; border-bottom: 1px solid var(--border);
-  }
-  .week-cell {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: flex-end; height: 100%; gap: 4px;
-  }
-  .week-bar { width: 100%; background: var(--accent);
-              border-radius: 1px; min-height: 2px; opacity: 0.85; }
-  .week-num { font-size: 9px; color: var(--muted-2);
-              font-variant-numeric: tabular-nums; }
-  .week-labels {
-    display: grid; grid-template-columns: repeat(8, 1fr);
-    gap: 4px; padding-top: 4px;
-  }
-  .week-labels span {
-    font-size: 8px; color: var(--muted-2); text-align: center;
-    letter-spacing: -0.02em;
-  }
   .sub-row {
     display: grid; grid-template-columns: 1fr auto; gap: 12px;
     padding: 10px 0; border-bottom: 1px solid var(--border);
@@ -712,6 +740,71 @@ def _inject_theme():
     border-bottom: 1px solid var(--border);
   }
   .section-head .label { margin: 0; }
+  .summary-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 14px;
+    font-size: 12px; line-height: 1.7; color: var(--text-soft);
+    margin-bottom: 12px;
+  }
+  .summary-card b { color: var(--accent); }
+  /* Chat */
+  .chat-msg {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 10px 12px; margin-bottom: 8px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .chat-msg.mine { border-color: rgba(94,234,212,0.4); }
+  .chat-head {
+    display: flex; justify-content: space-between;
+    align-items: center; gap: 8px;
+  }
+  .chat-author {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+  }
+  .chat-time {
+    font-size: 9px; color: var(--muted-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .chat-body {
+    font-size: 12px; color: var(--text); line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .chat-reply-quote {
+    background: var(--surface-2); border-left: 2px solid var(--accent);
+    padding: 4px 8px; font-size: 10px; color: var(--muted);
+    border-radius: 2px; margin-bottom: 4px;
+  }
+  .chat-actions {
+    display: flex; gap: 6px; margin-top: 2px;
+  }
+  .chat-act {
+    font-size: 10px; color: var(--muted); cursor: pointer;
+    background: none; border: none; padding: 2px 4px;
+    font-family: inherit; font-weight: 600;
+  }
+  .chat-act:hover { color: var(--accent); }
+  .chat-act.danger:hover { color: var(--danger); }
+  .chat-composer {
+    position: sticky; bottom: 0;
+    background: var(--bg); border-top: 1px solid var(--border);
+    padding: 10px 0 4px; z-index: 5;
+  }
+  .mention-chip {
+    display: inline-block; color: var(--accent); font-weight: 700;
+    background: rgba(94,234,212,0.1); padding: 0 4px; border-radius: 2px;
+    margin: 0 1px;
+  }
+  .mention-drop {
+    position: absolute; bottom: 100%; left: 0; right: 0;
+    background: var(--surface-2); border: 1px solid var(--border-2);
+    border-radius: 4px; max-height: 160px; overflow-y: auto;
+    z-index: 100;
+  }
+  .mention-item {
+    padding: 6px 10px; font-size: 11px; cursor: pointer;
+    color: var(--text);
+  }
+  .mention-item:hover { background: var(--surface-3); color: var(--accent); }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -722,6 +815,135 @@ BTN_SOFT = "btn-soft"
 BTN_SUCCESS = "btn-success"
 BTN_OUTLINE = "btn-outline"
 BTN_DANGER = "btn-danger"
+
+
+# =====================================================================
+# SVG CHARTS
+# =====================================================================
+def _svg_line_chart(values, labels, height=200):
+    W = 600
+    H = height
+    PL, PR, PT, PB = 42, 16, 18, 34
+    CW = W - PL - PR
+    CH = H - PT - PB
+    maxv = max(values) if values else 1
+    if maxv < 1:
+        maxv = 1
+    n = len(values)
+    stepx = CW / max(n - 1, 1)
+    pts = []
+    for i, v in enumerate(values):
+        x = PL + i * stepx
+        y = PT + CH - (v / float(maxv)) * CH
+        pts.append((x, y, v))
+
+    poly = " ".join(str(round(x, 1)) + "," + str(round(y, 1))
+                    for x, y, _ in pts)
+    area = (str(PL) + "," + str(PT + CH) + " " + poly + " " +
+            str(round(PL + (n - 1) * stepx, 1)) + "," + str(PT + CH))
+
+    y_ticks = ""
+    for i in range(5):
+        yv = round(maxv * i / 4.0)
+        yy = PT + CH - (i / 4.0) * CH
+        y_ticks += (
+            '<line x1="' + str(PL) + '" y1="' + str(round(yy, 1)) +
+            '" x2="' + str(PL + CW) + '" y2="' + str(round(yy, 1)) +
+            '" stroke="#1e1e1e" stroke-width="1"/>'
+            '<text x="' + str(PL - 6) + '" y="' + str(round(yy + 3, 1)) +
+            '" font-size="9" fill="#5a5a5a" text-anchor="end" '
+            'font-family="monospace">' + str(yv) + '</text>'
+        )
+
+    x_labels = ""
+    for i, (x, _, _) in enumerate(pts):
+        if i % 2 == 0 or i == n - 1:
+            x_labels += (
+                '<text x="' + str(round(x, 1)) + '" y="' + str(H - 12) +
+                '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
+                'font-family="monospace">' + str(labels[i]) + '</text>'
+            )
+
+    dots = ""
+    for x, y, v in pts:
+        dots += ('<circle cx="' + str(round(x, 1)) + '" cy="' +
+                 str(round(y, 1)) + '" r="3" fill="#5eead4" '
+                 'stroke="#0b0b0b" stroke-width="1"/>')
+
+    svg = (
+        '<svg viewBox="0 0 ' + str(W) + ' ' + str(H) + '" '
+        'preserveAspectRatio="xMidYMid meet" '
+        'style="width:100%;height:auto;display:block;">'
+        '<polygon points="' + area + '" fill="rgba(94,234,212,0.08)"/>'
+        '<polyline points="' + poly + '" fill="none" '
+        'stroke="#5eead4" stroke-width="1.8"/>'
+        + y_ticks + x_labels + dots +
+        '</svg>'
+    )
+    return svg
+
+
+def _svg_scatter(points, height=220):
+    W = 600
+    H = height
+    PL, PR, PT, PB = 48, 16, 18, 34
+    CW = W - PL - PR
+    CH = H - PT - PB
+    if not points:
+        return '<div style="color:#5a5a5a;font-size:11px;' \
+               'text-align:center;padding:40px;">No data.</div>'
+    maxx = max(p["x"] for p in points) or 1
+    maxy = max(p["y"] for p in points) or 1
+    if maxx < 1:
+        maxx = 1
+    if maxy < 1:
+        maxy = 1
+
+    grid = ""
+    for i in range(5):
+        yy = PT + CH - (i / 4.0) * CH
+        yv = round(maxy * i / 4.0)
+        grid += ('<line x1="' + str(PL) + '" y1="' + str(round(yy, 1)) +
+                 '" x2="' + str(PL + CW) + '" y2="' + str(round(yy, 1)) +
+                 '" stroke="#1e1e1e" stroke-width="1"/>'
+                 '<text x="' + str(PL - 6) + '" y="' + str(round(yy + 3, 1)) +
+                 '" font-size="9" fill="#5a5a5a" text-anchor="end" '
+                 'font-family="monospace">' + str(yv) + '</text>')
+    for i in range(5):
+        xx = PL + (i / 4.0) * CW
+        xv = round(maxx * i / 4.0)
+        grid += ('<line x1="' + str(round(xx, 1)) + '" y1="' + str(PT) +
+                 '" x2="' + str(round(xx, 1)) + '" y2="' + str(PT + CH) +
+                 '" stroke="#1e1e1e" stroke-width="1"/>'
+                 '<text x="' + str(round(xx, 1)) + '" y="' + str(H - 12) +
+                 '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
+                 'font-family="monospace">' + str(xv) + '</text>')
+
+    dots = ""
+    for p in points:
+        cx = PL + (p["x"] / float(maxx)) * CW
+        cy = PT + CH - (p["y"] / float(maxy)) * CH
+        color = "#4ade80" if p["status"] == "closed" else "#f87171"
+        dots += ('<circle cx="' + str(round(cx, 1)) + '" cy="' +
+                 str(round(cy, 1)) + '" r="4" fill="' + color +
+                 '" opacity="0.8" stroke="#0b0b0b" stroke-width="1"/>')
+
+    ylab = ('<text x="14" y="' + str(PT + CH / 2) +
+            '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
+            'font-family="monospace" transform="rotate(-90 14 ' +
+            str(PT + CH / 2) + ')">DURATION (days)</text>')
+    xlab = ('<text x="' + str(PL + CW / 2) + '" y="' + str(H - 2) +
+            '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
+            'font-family="monospace">DAYS OPEN</text>')
+
+    svg = (
+        '<svg viewBox="0 0 ' + str(W) + ' ' + str(H) + '" '
+        'preserveAspectRatio="xMidYMid meet" '
+        'style="width:100%;height:auto;display:block;">'
+        + grid + dots + ylab + xlab +
+        '</svg>'
+    )
+    return svg
 
 
 # =====================================================================
@@ -788,6 +1010,8 @@ def build_defect_ui(user_id):
                 _build_logs(state)
             elif tab == "subs":
                 _build_subs(state)
+            elif tab == "chat":
+                _build_chat(state)
             else:
                 _build_dashboard(state)
 
@@ -796,19 +1020,25 @@ def build_defect_ui(user_id):
         with nav_holder:
             for key, label in [
                 ("new", _t("new_defect")), ("logs", _t("logs")),
-                ("subs", _t("subs")), ("dashboard", _t("dashboard")),
+                ("subs", _t("subs")), ("chat", _t("chat")),
+                ("dashboard", _t("dashboard")),
             ]:
                 active = state["tab"]["value"] == key
                 cls = "top-tab-btn active" if active else "top-tab-btn"
                 btn = ui.element('button').classes(cls)
                 with btn:
-                    ui.label(label).style(
+                    with ui.element('span').style(
+                        "display:inline-flex;align-items:center;"
                         "font-family:'JetBrains Mono',monospace;"
                         "font-size:11px;font-weight:600;"
                         "letter-spacing:0.05em;color:inherit;"
-                        "background:transparent;")
-                    if key == "logs":
-                        ui.element('span').classes("blink-cursor")
+                        "background:transparent;"
+                    ):
+                        ui.label(label).style(
+                            "font-family:inherit;color:inherit;"
+                            "background:transparent;")
+                        if key == "logs":
+                            ui.element('span').classes("blink-cursor")
 
                 def _handler(k=key):
                     if state["tab"]["value"] == k:
@@ -823,18 +1053,6 @@ def build_defect_ui(user_id):
     state["build_nav"] = _build_nav
     _build_nav()
     _render_tab()
-
-    # Toast if there are overdue defects on load
-    if state.get("project_id"):
-        try:
-            from services import alert_service as al
-            overdue_items = al.get_overdue(state["project_id"],
-                                            min_days_overdue=1)
-            ui.timer(0.8, lambda: _notify_overdue_on_load(state,
-                                                            overdue_items),
-                     once=True)
-        except Exception as e:
-            print("[ui] overdue toast failed: " + repr(e))
 
 
 def _render_no_project(state, refresh_fn):
@@ -852,6 +1070,289 @@ def _render_no_project(state, refresh_fn):
                                 on_created=refresh_fn)
         ui.button(_t("new_project"), icon="add", on_click=_open).classes(
             BTN_PRIMARY).style("width:100%;max-width:280px;")
+
+
+# =====================================================================
+# DASHBOARD
+# =====================================================================
+def _build_dashboard(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    pid = state["project_id"]
+
+    with ui.element('div').classes("section-head"):
+        ui.label(_t("dash_title")).classes("h1")
+
+        def _print_pdf():
+            try:
+                _build_dashboard_pdf(state, "dashboard.pdf")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("PDF failed: " + str(ex), type="negative")
+
+        with ui.element('div').style("display:flex;gap:6px;"):
+            ui.button(_t("dash_print"), icon="picture_as_pdf",
+                      on_click=_print_pdf).classes(BTN_SOFT).style(
+                "font-size:10px;min-height:28px;")
+
+            def _refresh():
+                state["render_main"]()
+            ui.button(icon="refresh", on_click=_refresh).props(
+                "flat round dense size=sm").style("color:#808080;")
+
+    kpis = db.kpi_summary(pid)
+
+    if not kpis or kpis.get("total", 0) == 0:
+        with ui.element('div').classes("card").style(
+            "text-align:center;padding:32px;"
+        ):
+            ui.icon("insights").style("font-size:28px;color:#5a5a5a;")
+            ui.label(_t("dash_empty")).classes("muted").style("margin-top:10px;")
+        return
+
+    # Summary card
+    zones = db.kpi_per_zone(pid)
+    weeks = db.kpi_per_week(pid, weeks=8)
+    scores = db.subcontractor_scores(pid)
+    top_zone = zones[0]["zone"] if zones else "-"
+    top_sub = scores[0]["name"] if scores else "-"
+
+    with ui.element('div').classes("summary-card"):
+        ui.label(_t("dash_summary")).classes("label").style(
+            "margin-bottom:6px;display:block;")
+        ui.html(
+            "Project has <b>" + str(kpis["total"]) + "</b> defects total. "
+            "<b>" + str(kpis["open"]) + "</b> open, "
+            "<b>" + str(kpis["closed"]) + "</b> closed, "
+            "<b>" + str(kpis["overdue"]) + "</b> overdue. "
+            "Average close time: <b>" + str(kpis["avg_days"]) + "d</b>. "
+            "Busiest zone: <b>" + str(top_zone) + "</b>. "
+            "Top subcontractor by open: <b>" + str(top_sub) + "</b>."
+        )
+
+    # Metric strip
+    with ui.element('div').classes("metric-strip"):
+        _metric_cell(_t("kpi_total"), kpis["total"], "")
+        _metric_cell(_t("kpi_open"), kpis["open"], "open")
+        _metric_cell(_t("kpi_closed"), kpis["closed"], "closed")
+        _metric_cell(_t("kpi_overdue"), kpis["overdue"], "overdue")
+        _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
+        _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
+
+    # Line chart — raised per week
+    if weeks:
+        with ui.element('div').classes("card").style("margin-bottom:12px;"):
+            ui.label(_t("dash_weeks")).classes("label").style(
+                "margin-bottom:8px;"
+            )
+            vals = [w["count"] for w in weeks]
+            labels = [w["label"] for w in weeks]
+            ui.html(_svg_line_chart(vals, labels, height=200))
+
+    # Scatter chart
+    scatter = db.defect_scatter_data(pid)
+    if scatter:
+        with ui.element('div').classes("card").style("margin-bottom:12px;"):
+            with ui.element('div').style(
+                "display:flex;justify-content:space-between;"
+                "align-items:center;margin-bottom:8px;"
+            ):
+                ui.label(_t("dash_scatter")).classes("label")
+                with ui.element('div').style(
+                    "display:flex;gap:10px;font-size:9px;"
+                    "color:#808080;letter-spacing:0.05em;"
+                ):
+                    ui.html('<span style="color:#4ade80;">● CLOSED</span>')
+                    ui.html('<span style="color:#f87171;">● OPEN</span>')
+            ui.html(_svg_scatter(scatter, height=220))
+
+    # Per-sub table
+    if scores:
+        with ui.element('div').classes("card"):
+            ui.label(_t("dash_subs")).classes("label").style(
+                "margin-bottom:8px;"
+            )
+            for s in scores[:10]:
+                name = s["name"] or _t("unassigned")
+                with ui.element('div').classes("sub-row"):
+                    ui.label(str(name)).classes("sub-name")
+                    with ui.element('div').classes("sub-badges"):
+                        ui.html('<span class="badge-open">' +
+                                str(s["open"]) + '</span>')
+                        if s["overdue"]:
+                            ui.html('<span class="badge-overdue">' +
+                                    str(s["overdue"]) + '</span>')
+                        ui.html('<span class="badge-closed">' +
+                                str(s["closed"]) + '</span>')
+
+
+def _metric_cell(label, value, variant):
+    with ui.element('div').classes("metric-cell"):
+        ui.label(label).classes("metric-label")
+        cls = "metric-value"
+        if variant:
+            cls += " " + variant
+        ui.label(str(value)).classes(cls)
+
+
+# =====================================================================
+# DASHBOARD PDF
+# =====================================================================
+def _build_dashboard_pdf(state, filename="dashboard.pdf"):
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        HRFlowable,
+    )
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+
+    project = state["project"]
+    pid = state["project_id"]
+    kpis = db.kpi_summary(pid)
+    zones = db.kpi_per_zone(pid)
+    weeks = db.kpi_per_week(pid, weeks=8)
+    scores = db.subcontractor_scores(pid)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+    )
+    NAVY = colors.HexColor("#0a0a0a")
+    ACCENT = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+
+    title_style = ParagraphStyle("T", fontName="Helvetica-Bold",
+                                  fontSize=14, textColor=NAVY, spaceAfter=2)
+    sub_style = ParagraphStyle("S", fontName="Helvetica",
+                                fontSize=9, textColor=ACCENT, spaceAfter=8)
+    label_style = ParagraphStyle("L", fontName="Helvetica-Bold",
+                                  fontSize=8, textColor=NAVY, leading=11)
+    body_style = ParagraphStyle("B", fontName="Helvetica", fontSize=9,
+                                 textColor=colors.black, leading=12)
+    small_style = ParagraphStyle("Sm", fontName="Helvetica", fontSize=7,
+                                  textColor=GREY, leading=9)
+
+    story = []
+    story.append(Paragraph("DASHBOARD SUMMARY", title_style))
+    story.append(Paragraph(str(project.get("name", "")), sub_style))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
+                             spaceAfter=10))
+
+    meta_rows = [
+        [Paragraph("<b>Project:</b>", label_style),
+         Paragraph(str(project.get("name", "")), body_style),
+         Paragraph("<b>Date:</b>", label_style),
+         Paragraph(datetime.date.today().strftime("%Y-%m-%d"), body_style)],
+        [Paragraph("<b>Contractor:</b>", label_style),
+         Paragraph(str(project.get("contractor", "")), body_style),
+         Paragraph("<b>Consultant:</b>", label_style),
+         Paragraph(str(project.get("consultant", "")), body_style)],
+    ]
+    t_meta = Table(meta_rows, colWidths=[22*mm, 68*mm, 25*mm, 65*mm])
+    t_meta.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_meta)
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph("KEY METRICS", label_style))
+    story.append(Spacer(1, 6))
+    kpi_data = [
+        ["Total", "Open", "Closed", "Overdue", "Closed-7d", "Avg close (d)"],
+        [str(kpis["total"]), str(kpis["open"]), str(kpis["closed"]),
+         str(kpis["overdue"]), str(kpis["closed_7d"]),
+         str(kpis["avg_days"])],
+    ]
+    t_kpi = Table(kpi_data, colWidths=[28*mm]*6)
+    t_kpi.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F5F5")),
+        ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(t_kpi)
+    story.append(Spacer(1, 16))
+
+    if weeks:
+        story.append(Paragraph("RAISED PER WEEK", label_style))
+        story.append(Spacer(1, 4))
+        wk_data = [["Week"] + [w["label"] for w in weeks]]
+        wk_data.append(["Count"] + [str(w["count"]) for w in weeks])
+        t_wk = Table(wk_data, colWidths=[20*mm] + [20*mm]*len(weeks))
+        t_wk.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F5F5F5")),
+            ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ]))
+        story.append(t_wk)
+        story.append(Spacer(1, 16))
+
+    if zones:
+        story.append(Paragraph("OPEN BY ZONE", label_style))
+        story.append(Spacer(1, 4))
+        z_data = [["Zone", "Open"]]
+        for z in zones:
+            z_data.append([str(z["zone"]), str(z["count"])])
+        t_z = Table(z_data, colWidths=[30*mm, 30*mm])
+        t_z.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F5F5")),
+            ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(t_z)
+        story.append(Spacer(1, 16))
+
+    if scores:
+        story.append(Paragraph("PER SUBCONTRACTOR", label_style))
+        story.append(Spacer(1, 4))
+        s_data = [["Subcontractor", "Open", "Overdue", "Closed", "Total"]]
+        for s in scores[:20]:
+            s_data.append([
+                str(s["name"]),
+                str(s["open"]),
+                str(s["overdue"]),
+                str(s["closed"]),
+                str(s["total"]),
+            ])
+        t_s = Table(s_data, colWidths=[70*mm, 20*mm, 25*mm, 22*mm, 20*mm])
+        t_s.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F5F5")),
+            ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8.5),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(t_s)
+
+    story.append(Spacer(1, 20))
+    story.append(Paragraph(
+        "Generated " + datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        small_style))
+
+    doc.build(story)
+    buf.seek(0)
+    ui.download(buf.read(), filename=filename)
 
 
 # =====================================================================
@@ -1023,98 +1524,6 @@ def _confirm_delete_sub(state, sub_id, refresh_fn):
 
 
 # =====================================================================
-# DASHBOARD
-# =====================================================================
-def _build_dashboard(state):
-    if not state.get("project_id"):
-        _render_no_project(state, state["render_main"])
-        return
-    pid = state["project_id"]
-
-    with ui.element('div').classes("section-head"):
-        ui.label(_t("dash_title")).classes("h1")
-
-        def _refresh():
-            state["render_main"]()
-        ui.button(icon="refresh", on_click=_refresh).props(
-            "flat round dense size=sm").style("color:#808080;")
-
-    ui.label(_t("dash_sub")).classes("muted").style("margin-bottom:14px;")
-
-    try:
-        from services import alert_service as al
-        overdue_items = al.get_overdue(pid, min_days_overdue=1)
-        if overdue_items:
-            _open_overdue_banner(state, overdue_items)
-    except Exception as e:
-        print("[ui] overdue banner failed: " + repr(e))
-
-    kpis = db.kpi_summary(pid)
-    if not kpis or kpis.get("total", 0) == 0:
-        with ui.element('div').classes("card").style(
-            "text-align:center;padding:32px;"
-        ):
-            ui.icon("insights").style("font-size:28px;color:#5a5a5a;")
-            ui.label(_t("dash_empty")).classes("muted").style("margin-top:10px;")
-        return
-
-    with ui.element('div').classes("metric-strip"):
-        _metric_cell(_t("kpi_total"), kpis["total"], "")
-        _metric_cell(_t("kpi_open"), kpis["open"], "open")
-        _metric_cell(_t("kpi_closed"), kpis["closed"], "closed")
-        _metric_cell(_t("kpi_overdue"), kpis["overdue"], "overdue")
-        _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
-        _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
-
-    zones = db.kpi_per_zone(pid)
-    if zones:
-        with ui.element('div').classes("card").style("margin-bottom:12px;"):
-            ui.label(_t("dash_zones")).classes("label").style("margin-bottom:8px;")
-            max_z = max(z["count"] for z in zones) or 1
-            for z in zones:
-                pct = int((z["count"] / float(max_z)) * 100)
-                with ui.element('div').classes("bar-row"):
-                    ui.label(str(z["zone"])).classes("bar-label")
-                    with ui.element('div').classes("bar-track"):
-                        ui.element('div').classes("bar-fill").style(
-                            "width:" + str(pct) + "%;")
-                    ui.label(str(z["count"])).classes("bar-value")
-
-    weeks = db.kpi_per_week(pid, weeks=8)
-    if weeks:
-        with ui.element('div').classes("card").style("margin-bottom:12px;"):
-            ui.label(_t("dash_weeks")).classes("label").style("margin-bottom:8px;")
-            max_w = max((w["count"] for w in weeks), default=0) or 1
-            with ui.element('div').classes("week-chart"):
-                for w in weeks:
-                    pct = int((w["count"] / float(max_w)) * 100)
-                    with ui.element('div').classes("week-cell"):
-                        ui.label(str(w["count"])).classes("week-num")
-                        ui.element('div').classes("week-bar").style(
-                            "height:" + str(max(pct, 3)) + "%;")
-            with ui.element('div').classes("week-labels"):
-                for w in weeks:
-                    el = ui.element('span')
-                    el.text = w["label"]
-
-    scores = db.subcontractor_scores(pid)
-    if scores:
-        with ui.element('div').classes("card"):
-            ui.label(_t("dash_subs")).classes("label").style("margin-bottom:8px;")
-            for s in scores[:8]:
-                name = s["name"] or _t("unassigned")
-                with ui.element('div').classes("sub-row"):
-                    ui.label(str(name)).classes("sub-name")
-                    with ui.element('div').classes("sub-badges"):
-                        ui.html('<span class="badge-open">' +
-                                str(s["open"]) + '</span>')
-                        if s["overdue"]:
-                            ui.html('<span class="badge-overdue">' +
-                                    str(s["overdue"]) + '</span>')
-                        ui.html('<span class="badge-closed">' +
-                                str(s["closed"]) + '</span>')
-
-# =====================================================================
 # DRAWER
 # =====================================================================
 def _build_drawer(state, drawer):
@@ -1215,6 +1624,7 @@ def _build_drawer(state, drawer):
                 ui.label(user.get("name") or user.get("email") or "").style(
                     "font-size:11px;color:#e8e8e8;font-weight:500;"
                     "margin-bottom:10px;")
+
             def _change_pw():
                 _open_change_password_dialog(state)
 
@@ -1494,7 +1904,7 @@ def _open_ms_dialog(state, refresh_drawer):
 
 
 # =====================================================================
-# NEW DEFECT (multi-photo)
+# NEW DEFECT
 # =====================================================================
 def _build_new_defect(state):
     if not state.get("project_id"):
@@ -1746,6 +2156,16 @@ def _render_candidates(state, stage, refresh_fn):
                 {"qc_internal": _t("qc_internal"),
                  "consultant": _t("consultant_ncr")},
                 value="qc_internal", label=_t("raised_as"))
+
+        # NEW: engineer name + place
+        engineer_in = ui.input(
+            _t("engineer_field"),
+            value=(state["project"] or {}).get("engineer_name", "") or ""
+        ).style("width:100%;margin-top:8px;")
+        place_in = ui.input(
+            _t("place_field"), placeholder=_t("place_placeholder")
+        ).style("width:100%;margin-top:8px;")
+
         gen_btn = ui.button(_t("generate_pdf"), icon="picture_as_pdf")
 
         def do_generate():
@@ -1791,7 +2211,9 @@ def _render_candidates(state, stage, refresh_fn):
                 photo_bytes=(photos_list[0] if photos_list else None),
                 note=stage.get("note", ""), selected=clean_selected,
                 notice_pdf=pdf_bytes,
-                extra_photos=photos_list[1:] if len(photos_list) > 1 else [])
+                extra_photos=photos_list[1:] if len(photos_list) > 1 else [],
+                engineer_name=engineer_in.value or "",
+                place=place_in.value or "")
             ui.notify(_t("notice_saved") + " " + notice_uid, type="positive")
             ui.download(pdf_bytes, filename=notice_uid + ".pdf")
             stage["photos"] = []
@@ -1830,7 +2252,6 @@ def _render_defect_card(item, stage, refresh_fn, state=None):
                     if item.get("context_mismatch"):
                         ui.html('<span class="badge-mismatch">' +
                                 _t("mismatch_warn") + '</span>')
-                    # Duplicate badge
                     if state:
                         n = _duplicate_count(state, item.get("name", ""))
                         if n > 0:
@@ -1906,7 +2327,7 @@ def _open_add_dialog(stage, refresh_fn):
 
 
 # =====================================================================
-# LOGS (with search)
+# LOGS (with search & filter — FIXED)
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
@@ -1914,7 +2335,6 @@ def _build_logs(state):
         return
     with ui.element('div').classes("section-head"):
         ui.label(_t("logs_title")).classes("h1")
-        ui.element('span').classes("blink-cursor")
 
         def _refresh():
             state["render_main"]()
@@ -1941,15 +2361,6 @@ def _build_logs(state):
 
     fstate = {"filter": "all", "query": ""}
 
-    search_in = ui.input(placeholder=_t("search_placeholder")).style(
-        "width:100%;margin-bottom:10px;").props("dense clearable")
-
-    def _on_search(e):
-        fstate["query"] = (e.value or "").strip().lower()
-        log_list.refresh()
-
-    search_in.on("update:model-value", _on_search)
-
     @ui.refreshable
     def log_list():
         all_rows = db.list_defects(state["project_id"]) or []
@@ -1968,21 +2379,32 @@ def _build_logs(state):
                     str(r.get("subcontractor", "")),
                     str(r.get("first_defect", "")),
                     str(r.get("status", "")),
+                    str(r.get("engineer_name", "")),
+                    str(r.get("place", "")),
                 ]).lower()
                 return q in hay
             rows = [r for r in rows if _match(r)]
 
-        with ui.element('div').style("margin-bottom:12px;"):
-            filt = ui.select(
+        def on_filter_change(e):
+            fstate["filter"] = (e.value if e and e.value else "all")
+            log_list.refresh()
+
+        def on_search_change(e):
+            fstate["query"] = (e.value or "").strip().lower()
+            log_list.refresh()
+
+        with ui.element('div').style("margin-bottom:10px;"):
+            ui.select(
                 {"all": _t("filter_all"),
                  "qc_internal": _t("filter_qc"),
                  "consultant": _t("filter_consultant")},
-                value=fstate["filter"]).style("width:100%;").props("dense")
+                value=fstate["filter"],
+                on_change=on_filter_change
+            ).style("width:100%;").props("dense")
 
-            def on_filter(e):
-                fstate["filter"] = e.value
-                log_list.refresh()
-            filt.on("update:model-value", on_filter)
+        ui.input(placeholder=_t("search_placeholder"),
+                  on_change=on_search_change).style(
+            "width:100%;margin-bottom:12px;").props("dense clearable")
 
         if rows:
             open_count = sum(1 for r in rows if r["status"] == "open")
@@ -2063,11 +2485,21 @@ def _render_log_card(row, refresh_fn):
             with ui.element('div').style("flex:1;min-width:0;"):
                 ui.label(str(title) + extra).classes("mono-lg").style(
                     "margin-bottom:4px;")
-                ui.label(
-                    row.get("uid", "") + "  " +
-                    str(row.get("zone", "")) + "  " +
-                    str(row.get("subcontractor", ""))
-                ).classes("mono-sm")
+                eng = row.get("engineer_name") or ""
+                place = row.get("place") or ""
+                subline = (row.get("uid", "") + "  " +
+                           str(row.get("zone", "")) + "  " +
+                           str(row.get("subcontractor", "")))
+                ui.label(subline).classes("mono-sm")
+                # Engineer + place line
+                bits = []
+                if eng:
+                    bits.append(_t("raised_by") + ": " + str(eng))
+                if place:
+                    bits.append(_t("at_place") + ": " + str(place))
+                if bits:
+                    ui.label("  ·  ".join(bits)).classes("mono-sm").style(
+                        "margin-top:2px;")
             ui.html('<span class="' + badge + '">' + badge_txt + '</span>')
 
         def _click():
@@ -2095,6 +2527,14 @@ def _show_defect_dialog(defect_id, on_close_cb):
             ui.label(
                 "ZONE " + str(d["zone"]) + "  " + str(d["subcontractor"])
             ).classes("mono-sm").style("margin-top:4px;")
+            if d.get("engineer_name") or d.get("place"):
+                bits = []
+                if d.get("engineer_name"):
+                    bits.append(_t("raised_by") + ": " + str(d["engineer_name"]))
+                if d.get("place"):
+                    bits.append(_t("at_place") + ": " + str(d["place"]))
+                ui.label("  ·  ".join(bits)).classes("mono-sm").style(
+                    "margin-top:2px;")
             if d.get("consultant_ncr"):
                 ui.label(_t("ncr_input") + ": " +
                           str(d["consultant_ncr"])).style(
@@ -2104,7 +2544,6 @@ def _show_defect_dialog(defect_id, on_close_cb):
         with ui.element('div').style(
             "padding:16px;max-height:60vh;overflow-y:auto;"
         ):
-            # Assemble all photos: primary + extras + closure
             photos = []
             if d.get("photo_bytes"):
                 photos.append(d["photo_bytes"])
@@ -2277,6 +2716,8 @@ def _open_edit_defect_dialog(d, on_close_cb):
         "raise_type": d.get("raise_type") or "qc_internal",
         "consultant_ncr": d.get("consultant_ncr") or "",
         "note": d.get("note") or "",
+        "engineer_name": d.get("engineer_name") or "",
+        "place": d.get("place") or "",
     }
     items = []
     for s in (d.get("selected") or []):
@@ -2323,6 +2764,11 @@ def _open_edit_defect_dialog(d, on_close_cb):
                  "consultant": _t("consultant_ncr")},
                 label=_t("raised_as")).style("width:100%;margin-top:8px;"
                 ).bind_value(meta, "raise_type")
+            ui.input(_t("engineer_field")).style(
+                "width:100%;margin-top:8px;").bind_value(meta, "engineer_name")
+            ui.input(_t("place_field")).style(
+                "width:100%;margin-top:8px;").bind_value(meta, "place")
+
             ncr_in = None
             if is_consultant or d.get("consultant_ncr"):
                 ncr_in = ui.input(_t("ncr_input")).style(
@@ -2448,7 +2894,9 @@ def _open_edit_defect_dialog(d, on_close_cb):
                         raise_type=meta["raise_type"],
                         selected=selected,
                         notice_pdf=pdf_bytes,
-                        consultant_ncr=ncr_val)
+                        consultant_ncr=ncr_val,
+                        engineer_name=meta.get("engineer_name") or None,
+                        place=meta.get("place") or None)
                 except Exception as ex:
                     import traceback
                     traceback.print_exc()
@@ -2555,58 +3003,295 @@ def _open_change_password_dialog(state):
         err_holder
 
     dlg.open()
-    
+
 
 # =====================================================================
-# OVERDUE ALERTS
+# CHAT
 # =====================================================================
-def _open_overdue_banner(state, overdue_items):
-    try:
-        from services import alert_service as al
-    except Exception:
+def _chat_render_body(body, known_authors):
+    """Escape HTML, then wrap @mentions in a chip."""
+    import html as _html
+    safe = _html.escape(str(body or ""))
+    parts = safe.split(" ")
+    out = []
+    for p in parts:
+        if p.startswith("@") and len(p) > 1:
+            out.append('<span class="mention-chip">' + p + '</span>')
+        else:
+            out.append(p)
+    return " ".join(out)
+
+
+def _build_chat(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
         return
+    pid = state["project_id"]
+    user = state.get("user") or {}
+    my_name = (user.get("name") or user.get("email") or "me")
+
+    with ui.element('div').classes("section-head"):
+        ui.label(_t("chat_title")).classes("h1")
+
+        def _refresh():
+            state["render_main"]()
+        ui.button(icon="refresh", on_click=_refresh).props(
+            "flat round dense size=sm").style("color:#808080;")
+
+    ui.label(_t("chat_sub")).classes("muted").style("margin-bottom:12px;")
+
+    # Filters state
+    fstate = {
+        "author": "all",
+        "query": "",
+        "from": "",
+        "to": "",
+        "reply_to": None,
+    }
+
+    authors = db.chat_authors(pid)
+    if my_name not in authors:
+        authors = [my_name] + authors
+
+    author_opts = {"all": _t("chat_filter_all")}
+    for a in authors:
+        author_opts[a] = a
+
+    def on_author_change(e):
+        fstate["author"] = (e.value if e and e.value else "all")
+        chat_list.refresh()
+
+    def on_search_change(e):
+        fstate["query"] = (e.value or "").strip().lower()
+        chat_list.refresh()
+
+    def on_from_change(e):
+        fstate["from"] = (e.value or "").strip()
+        chat_list.refresh()
+
+    def on_to_change(e):
+        fstate["to"] = (e.value or "").strip()
+        chat_list.refresh()
+
     with ui.element('div').style(
-        "background:rgba(248,113,113,0.08);"
-        "border:1px solid rgba(248,113,113,0.35);"
-        "border-radius:4px;padding:12px 14px;margin-bottom:12px;"
+        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+        "margin-bottom:8px;"
     ):
-        with ui.element('div').style(
-            "display:flex;align-items:flex-start;gap:10px;"
-        ):
-            ui.icon("warning").style("color:#f87171;font-size:20px;")
-            with ui.element('div').style("flex:1;min-width:0;"):
+        ui.select(author_opts, value=fstate["author"],
+                   label=_t("chat_filter_author"),
+                   on_change=on_author_change).props("dense")
+        ui.input(placeholder=_t("chat_search"),
+                  on_change=on_search_change).props("dense")
+
+    with ui.element('div').style(
+        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+        "margin-bottom:12px;"
+    ):
+        ui.input(label=_t("chat_filter_from"), on_change=on_from_change).props(
+            "dense"
+        ).props("type=date")
+        ui.input(label=_t("chat_filter_to"), on_change=on_to_change).props(
+            "dense"
+        ).props("type=date")
+
+    # Reply indicator
+    reply_holder = ui.element('div').style("width:100%;")
+
+    def render_reply_indicator():
+        reply_holder.clear()
+        rid = fstate.get("reply_to")
+        if not rid:
+            return
+        target = db.chat_get(rid) or {}
+        with reply_holder:
+            with ui.element('div').style(
+                "display:flex;justify-content:space-between;"
+                "align-items:center;background:#161616;"
+                "border:1px solid #262626;border-radius:3px;"
+                "padding:6px 10px;margin-bottom:6px;"
+            ):
                 ui.label(
-                    str(len(overdue_items)) + " OVERDUE DEFECT(S)"
-                ).style(
-                    "font-family:'JetBrains Mono',monospace;"
-                    "font-size:11px;font-weight:700;letter-spacing:0.08em;"
-                    "color:#f87171;margin-bottom:6px;")
-                for r in overdue_items[:5]:
-                    ui.label(
-                        "> " + str(r.get("uid", "")) + "  " +
-                        str(r.get("first_defect", ""))[:50] + "  (" +
-                        str(r.get("_days_overdue", 0)) + "d late, " +
-                        str(r.get("subcontractor", "")) + ")"
-                    ).style(
-                        "font-family:'JetBrains Mono',monospace;"
-                        "font-size:10px;color:#b8b8b8;"
-                        "margin-bottom:3px;word-break:break-word;")
-                if len(overdue_items) > 5:
-                    ui.label("+ " + str(len(overdue_items) - 5) + " more"
-                              ).style(
-                        "font-family:'JetBrains Mono',monospace;"
-                        "font-size:10px;color:#808080;margin-top:2px;")
+                    _t("chat_replying_to") + ": " +
+                    str(target.get("author", "")) + " — " +
+                    str(target.get("body", ""))[:60]
+                ).style("font-size:10px;color:#b8b8b8;")
+
+                def _cancel():
+                    fstate["reply_to"] = None
+                    render_reply_indicator()
+                ui.button(_t("chat_cancel"), on_click=_cancel).props(
+                    "flat dense no-caps size=sm").style(
+                    "color:#808080;font-size:10px;")
+
+    render_reply_indicator()
+
+    @ui.refreshable
+    def chat_list():
+        msgs = db.chat_list(pid, limit=300)
+
+        # Apply filters
+        if fstate["author"] != "all":
+            msgs = [m for m in msgs if (m.get("author") or "") ==
+                    fstate["author"]]
+        if fstate["query"]:
+            q = fstate["query"]
+            msgs = [m for m in msgs
+                    if q in (m.get("body") or "").lower()]
+        if fstate["from"]:
+            msgs = [m for m in msgs
+                    if (m.get("created_at") or "")[:10] >= fstate["from"]]
+        if fstate["to"]:
+            msgs = [m for m in msgs
+                    if (m.get("created_at") or "")[:10] <= fstate["to"]]
+
+        if not msgs:
+            ui.label(_t("chat_empty")).classes("mono-sm").style(
+                "text-align:center;padding:32px 0;color:#5a5a5a;")
+            return
+
+        # Build message map for reply lookup
+        by_id = {m["id"]: m for m in msgs}
+
+        for m in msgs:
+            mid = m.get("id")
+            author = m.get("author") or ""
+            body = m.get("body") or ""
+            created = (m.get("created_at") or "")[:16]
+            reply_to = m.get("reply_to_id")
+            is_mine = (author == my_name)
+            cls = "chat-msg mine" if is_mine else "chat-msg"
+
+            with ui.element('div').classes(cls):
+                with ui.element('div').classes("chat-head"):
+                    with ui.element('div').style(
+                        "display:flex;align-items:center;gap:6px;"
+                    ):
+                        ui.label(author).classes("chat-author")
+                        if is_mine:
+                            ui.html('<span class="badge-you">' +
+                                    _t("chat_you") + '</span>')
+                    ui.label(created).classes("chat-time")
+
+                if reply_to and reply_to in by_id:
+                    parent = by_id[reply_to]
+                    ui.html(
+                        '<div class="chat-reply-quote">' +
+                        '<b>' + str(parent.get("author", "")) + '</b>: ' +
+                        str(parent.get("body", ""))[:80] +
+                        '</div>'
+                    )
+
+                ui.html('<div class="chat-body">' +
+                        _chat_render_body(body, authors) + '</div>')
+
+                with ui.element('div').classes("chat-actions"):
+                    def _reply(rid=mid):
+                        fstate["reply_to"] = rid
+                        render_reply_indicator()
+                    ui.element('button').classes("chat-act").on(
+                        "click", _reply
+                    )
+                    ui.label(_t("chat_reply")).classes("chat-act").style(
+                        "cursor:pointer;"
+                    ).on("click", _reply)
+
+                    if is_mine:
+                        def _del(did=mid):
+                            _confirm_delete_chat(state, did, chat_list.refresh)
+                        ui.label(_t("chat_delete")).classes(
+                            "chat-act danger"
+                        ).style("cursor:pointer;").on("click", _del)
+
+    chat_list()
+
+    # Composer
+    with ui.element('div').classes("chat-composer"):
+        with ui.element('div').style("position:relative;width:100%;"):
+            body_in = ui.textarea(
+                placeholder=_t("chat_placeholder")
+            ).style("width:100%;").props("dense autogrow")
+
+            mention_holder = ui.element('div').style(
+                "position:absolute;bottom:100%;left:0;right:0;"
+                "display:none;"
+            )
+
+            def _update_mentions():
+                txt = body_in.value or ""
+                # Show mention dropdown if last typed token starts with @
+                last = txt.split()[-1] if txt.split() else ""
+                if last.startswith("@") and len(last) >= 1:
+                    query = last[1:].lower()
+                    matches = [a for a in authors
+                               if query in (a or "").lower()][:6]
+                    mention_holder.clear()
+                    mention_holder.style("display:block;")
+                    with mention_holder:
+                        ui.html('<div class="mention-drop" id="mq"></div>')
+                        with ui.element('div').classes("mention-drop"):
+                            if not matches:
+                                ui.label("No matches").classes(
+                                    "mention-item"
+                                ).style("color:#5a5a5a;")
+                            for a in matches:
+                                def _pick(nm=a):
+                                    parts = (body_in.value or "").split()
+                                    if parts and parts[-1].startswith("@"):
+                                        parts[-1] = "@" + nm
+                                    else:
+                                        parts.append("@" + nm)
+                                    body_in.value = " ".join(parts) + " "
+                                    mention_holder.style("display:none;")
+                                ui.label(a).classes("mention-item").on(
+                                    "click", _pick
+                                )
+                else:
+                    mention_holder.style("display:none;")
+
+            body_in.on("update:model-value",
+                        lambda e: _update_mentions())
+
+        def _send():
+            txt = (body_in.value or "").strip()
+            if not txt:
+                return
+            # Extract mentions
+            import re as _re
+            mentions = _re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
+            # Remove self from mentions
+            mentions = [m for m in mentions if m and m != my_name]
+            try:
+                db.chat_add(pid, state["user_id"], my_name, txt,
+                             reply_to_id=fstate.get("reply_to"),
+                             mentions=mentions)
+            except Exception as ex:
+                ui.notify("Send failed: " + str(ex), type="negative")
+                return
+            body_in.value = ""
+            fstate["reply_to"] = None
+            render_reply_indicator()
+            mention_holder.style("display:none;")
+            chat_list.refresh()
+
+        ui.button(_t("chat_send"), icon="send", on_click=_send).classes(
+            BTN_PRIMARY).style("width:100%;margin-top:6px;")
 
 
-def _notify_overdue_on_load(state, overdue_items):
-    """Fire a toast if there are overdue defects."""
-    if not overdue_items:
-        return
-    n = len(overdue_items)
-    ui.notify(
-        str(n) + " overdue defect" + ("s" if n != 1 else "") +
-        " — open the Dashboard",
-        type="warning",
-        position="top",
-        timeout=8000,
-    )
+def _confirm_delete_chat(state, msg_id, refresh_fn):
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:280px;max-width:95vw;width:360px;"
+    ):
+        ui.label(_t("chat_confirm_delete")).classes("h3").style(
+            "margin-bottom:14px;")
+
+        def _yes():
+            db.chat_delete(msg_id)
+            ui.notify(_t("chat_deleted"), type="positive")
+            dlg.close()
+            ui.timer(0.03, refresh_fn, once=True)
+
+        with ui.element('div').style("display:flex;gap:8px;"):
+            ui.button(_t("chat_delete"), on_click=_yes).classes(
+                BTN_DANGER).style("flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+    dlg.open()
