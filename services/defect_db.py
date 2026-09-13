@@ -1,5 +1,5 @@
 """
-services/defect_db.py — Multi-user, Turso-compatible.
+services/defect_db.py — Turso-compatible SQLite layer.
 """
 import os
 import re
@@ -41,7 +41,7 @@ def _conn():
                 print("[db] turso sync warn: " + repr(e))
             return c
         except Exception as e:
-            print("[db] Turso failed, fallback local: " + repr(e))
+            print("[db] Turso failed, fallback: " + repr(e))
     return sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
 
 
@@ -122,9 +122,9 @@ def _ensure_columns(cur, table, wanted):
             try:
                 cur.execute("ALTER TABLE " + table + " ADD COLUMN " +
                             name + " " + ddl)
-                print("[db] added column " + table + "." + name)
+                print("[db] added " + table + "." + name)
             except Exception as e:
-                print("[db] add column failed: " + repr(e))
+                print("[db] add col failed: " + repr(e))
 
 
 def init_db():
@@ -135,57 +135,47 @@ def init_db():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE,
-                password_hash TEXT,
-                name TEXT,
+                email TEXT UNIQUE, password_hash TEXT, name TEXT,
                 created_at TEXT
             )
         """)
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS projects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
                 name TEXT, contractor TEXT, subcontractor TEXT,
                 consultant TEXT, location TEXT, engineer_name TEXT,
                 logo_bytes BLOB, created_at TEXT
             )
         """)
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS method_statements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER, ms_number TEXT, title TEXT,
-                element_type TEXT, discipline TEXT,
-                pdf_bytes BLOB, clauses_json TEXT, created_at TEXT
+                id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER,
+                ms_number TEXT, title TEXT, element_type TEXT,
+                discipline TEXT, pdf_bytes BLOB, clauses_json TEXT,
+                created_at TEXT
             )
         """)
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS defects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER, uid TEXT, zone TEXT,
-                photo_bytes BLOB, note TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER,
+                uid TEXT, zone TEXT, photo_bytes BLOB, note TEXT,
                 ai_candidates_json TEXT, selected_json TEXT,
                 subcontractor TEXT, deadline_days INTEGER,
-                raise_type TEXT, status TEXT,
-                created_at TEXT, closed_at TEXT,
-                notice_pdf BLOB, consultant_ncr TEXT,
+                raise_type TEXT, status TEXT, created_at TEXT,
+                closed_at TEXT, notice_pdf BLOB, consultant_ncr TEXT,
                 closure_photo BLOB
             )
         """)
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS subcontractors (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER, name TEXT, trade TEXT,
-                phone TEXT, notes TEXT, created_at TEXT
+                id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER,
+                name TEXT, trade TEXT, phone TEXT, notes TEXT,
+                created_at TEXT
             )
         """)
 
         _ensure_columns(cur, "projects", [
-            ("user_id", "INTEGER"),
-            ("subcontractor", "TEXT"),
+            ("user_id", "INTEGER"), ("subcontractor", "TEXT"),
         ])
         _ensure_columns(cur, "defects", [
             ("raise_type", "TEXT"), ("closed_at", "TEXT"),
@@ -206,7 +196,6 @@ init_db()
 # USERS
 # =====================================================================
 def create_user(email, password_hash, name):
-    """Return (user_id, error). Claims orphan projects for first user."""
     email = (email or "").strip().lower()
     with _LOCK:
         c = _conn()
@@ -220,14 +209,13 @@ def create_user(email, password_hash, name):
             VALUES (?, ?, ?, ?)
         """, (email, password_hash, name, _now()))
         uid = cur.lastrowid
-        # First user claims any orphan projects
         cur.execute("SELECT COUNT(*) FROM users")
         row = cur.fetchone()
         count = row[0] if row else 1
         if count == 1:
-            cur.execute("UPDATE projects SET user_id=? "
-                        "WHERE user_id IS NULL", (uid,))
-            print("[db] first user claimed orphan projects")
+            cur.execute("UPDATE projects SET user_id=? WHERE user_id IS NULL",
+                        (uid,))
+            print("[db] first user claimed orphans")
         c.commit()
         _sync(c)
         c.close()
@@ -259,7 +247,7 @@ def get_user(user_id):
 
 
 # =====================================================================
-# PROJECTS (per-user)
+# PROJECTS
 # =====================================================================
 def list_projects(user_id):
     c = _conn()
@@ -318,8 +306,7 @@ def delete_project(project_id):
         cur = c.cursor()
         cur.execute("DELETE FROM method_statements WHERE project_id=?",
                     (project_id,))
-        cur.execute("DELETE FROM defects WHERE project_id=?",
-                    (project_id,))
+        cur.execute("DELETE FROM defects WHERE project_id=?", (project_id,))
         cur.execute("DELETE FROM subcontractors WHERE project_id=?",
                     (project_id,))
         cur.execute("DELETE FROM projects WHERE id=?", (project_id,))
@@ -378,8 +365,7 @@ def list_ms(project_id):
             clauses = []
         out.append({
             "id": r.get("id"), "ms_number": r.get("ms_number"),
-            "title": r.get("title"),
-            "element_type": r.get("element_type"),
+            "title": r.get("title"), "element_type": r.get("element_type"),
             "discipline": r.get("discipline"), "clauses": clauses,
         })
     return out
@@ -448,8 +434,7 @@ def list_defects(project_id, raise_filter=None):
         cur.execute("""
             SELECT id, uid, zone, subcontractor, status, created_at,
                    closed_at, raise_type, selected_json, deadline_days
-            FROM defects
-            WHERE project_id=? ORDER BY id DESC
+            FROM defects WHERE project_id=? ORDER BY id DESC
         """, (project_id,))
     raw = _to_dicts(cur.fetchall(), DEFECT_LIST_COLS)
     c.close()
@@ -523,6 +508,46 @@ def close_defect(defect_id, consultant_ncr=None, closure_photo=None):
             cur.execute("""
                 UPDATE defects SET status='closed', closed_at=? WHERE id=?
             """, (_now(), defect_id))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def update_defect_notice(defect_id, subcontractor, deadline_days, zone,
+                          note, raise_type, selected, notice_pdf,
+                          consultant_ncr=None):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        if consultant_ncr:
+            cur.execute("""
+                UPDATE defects
+                SET subcontractor=?, deadline_days=?, zone=?, note=?,
+                    raise_type=?, selected_json=?, notice_pdf=?,
+                    consultant_ncr=?
+                WHERE id=?
+            """, (subcontractor, int(deadline_days or 3), zone, note,
+                  raise_type or "qc_internal", json.dumps(selected),
+                  notice_pdf, consultant_ncr, defect_id))
+        else:
+            cur.execute("""
+                UPDATE defects
+                SET subcontractor=?, deadline_days=?, zone=?, note=?,
+                    raise_type=?, selected_json=?, notice_pdf=?
+                WHERE id=?
+            """, (subcontractor, int(deadline_days or 3), zone, note,
+                  raise_type or "qc_internal", json.dumps(selected),
+                  notice_pdf, defect_id))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def delete_defect(defect_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("DELETE FROM defects WHERE id=?", (defect_id,))
         c.commit()
         _sync(c)
         c.close()
@@ -667,17 +692,14 @@ def subcontractor_scores(project_id):
 
 
 # =====================================================================
-# DASHBOARD KPIs
+# KPIs
 # =====================================================================
 def kpi_summary(project_id):
     rows = list_defects(project_id)
     now = datetime.datetime.utcnow()
     week_ago = now - datetime.timedelta(days=7)
     total = len(rows)
-    open_c = 0
-    closed_c = 0
-    overdue_c = 0
-    closed_7d = 0
+    open_c = closed_c = overdue_c = closed_7d = 0
     days_to_close = []
     for r in rows:
         if r["status"] == "open":
