@@ -1,5 +1,6 @@
 """
-services/billing_db.py — Subscriptions, plans, payments.
+services/billing_db.py — Subscriptions, plans, payments, password reset,
+admin stats, onboarding.
 """
 import os
 import json
@@ -14,46 +15,19 @@ LOCAL_CACHE = "/tmp/defects_cache.db"
 
 _LOCK = threading.Lock()
 
-# --------------------------------------------------------------
-# Plan definitions
-# --------------------------------------------------------------
 PLANS = {
-    "free": {
-        "id": "free",
-        "name": "Starter",
-        "price_egp": 0,
-        "price_usd": 0,
-        "max_projects": 1,
-        "max_ms": 3,
-        "monthly_ai_calls": 30,
-    },
-    "pro": {
-        "id": "pro",
-        "name": "Pro",
-        "price_egp": 500,
-        "price_usd": 15,
-        "max_projects": 3,
-        "max_ms": 10,
-        "monthly_ai_calls": 500,
-    },
-    "business": {
-        "id": "business",
-        "name": "Business",
-        "price_egp": 2000,
-        "price_usd": 60,
-        "max_projects": 999,
-        "max_ms": 999,
-        "monthly_ai_calls": 5000,
-    },
-    "trial": {
-        "id": "trial",
-        "name": "Trial",
-        "price_egp": 0,
-        "price_usd": 0,
-        "max_projects": 2,
-        "max_ms": 5,
-        "monthly_ai_calls": 100,
-    },
+    "free": {"id": "free", "name": "Starter", "price_egp": 0,
+             "price_usd": 0, "max_projects": 1, "max_ms": 3,
+             "monthly_ai_calls": 30},
+    "pro": {"id": "pro", "name": "Pro", "price_egp": 500,
+            "price_usd": 15, "max_projects": 3, "max_ms": 10,
+            "monthly_ai_calls": 500},
+    "business": {"id": "business", "name": "Business",
+                 "price_egp": 2000, "price_usd": 60, "max_projects": 999,
+                 "max_ms": 999, "monthly_ai_calls": 5000},
+    "trial": {"id": "trial", "name": "Trial", "price_egp": 0,
+              "price_usd": 0, "max_projects": 2, "max_ms": 5,
+              "monthly_ai_calls": 100},
 }
 
 TRIAL_DAYS = 14
@@ -129,10 +103,13 @@ def _to_dict(row, cols):
 
 USER_BILL_COLS = ["id", "email", "name", "plan", "plan_started_at",
                   "plan_expires_at", "trial_ends_at", "payment_provider",
-                  "payment_ref"]
+                  "payment_ref", "has_onboarded"]
 
 PAYMENT_COLS = ["id", "user_id", "plan", "amount", "currency",
                 "provider", "provider_ref", "status", "created_at"]
+
+RESET_COLS = ["id", "user_id", "token", "expires_at", "used_at",
+              "created_at"]
 
 
 def _ensure_columns(cur, table, wanted):
@@ -167,6 +144,8 @@ def init_billing():
             ("trial_ends_at", "TEXT"),
             ("payment_provider", "TEXT"),
             ("payment_ref", "TEXT"),
+            ("has_onboarded", "INTEGER DEFAULT 0"),
+            ("is_admin", "INTEGER DEFAULT 0"),
         ])
         cur.execute("""
             CREATE TABLE IF NOT EXISTS payments (
@@ -174,6 +153,13 @@ def init_billing():
                 user_id INTEGER, plan TEXT, amount REAL, currency TEXT,
                 provider TEXT, provider_ref TEXT, status TEXT,
                 created_at TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER, token TEXT UNIQUE, expires_at TEXT,
+                used_at TEXT, created_at TEXT
             )
         """)
         c.commit()
@@ -193,7 +179,7 @@ def get_user_billing(user_id):
     cur = c.cursor()
     cur.execute("""
         SELECT id, email, name, plan, plan_started_at, plan_expires_at,
-               trial_ends_at, payment_provider, payment_ref
+               trial_ends_at, payment_provider, payment_ref, has_onboarded
         FROM users WHERE id=?
     """, (user_id,))
     row = cur.fetchone()
@@ -207,7 +193,6 @@ def get_user_billing(user_id):
 
 
 def start_trial(user_id):
-    """Called once at signup. Sets trial window."""
     now = datetime.datetime.utcnow()
     end = now + datetime.timedelta(days=TRIAL_DAYS)
     with _LOCK:
@@ -224,16 +209,13 @@ def start_trial(user_id):
 
 
 def is_active(user_id):
-    """Returns (active: bool, plan: str, reason: str)."""
     b = get_user_billing(user_id)
     if not b:
         return False, "free", "no_user"
     plan = b.get("plan") or "free"
     now = datetime.datetime.utcnow()
-
     if plan == "free":
         return True, "free", "free_forever"
-
     if plan == "trial":
         ends = b.get("trial_ends_at")
         if not ends:
@@ -246,8 +228,6 @@ def is_active(user_id):
         if now > end_dt:
             return False, "trial", "expired"
         return True, "trial", "active"
-
-    # paid plan
     if plan in ("pro", "business"):
         expires = b.get("plan_expires_at")
         if not expires:
@@ -260,7 +240,6 @@ def is_active(user_id):
         if now > end_dt:
             return False, plan, "expired"
         return True, plan, "active"
-
     return False, plan, "unknown"
 
 
@@ -270,7 +249,6 @@ def plan_limits(plan_id):
 
 def apply_payment(user_id, plan, provider, provider_ref,
                   months=1, amount=0, currency="EGP"):
-    """Mark user as on 'plan' for N months. Log payment record."""
     now = datetime.datetime.utcnow()
     expires = now + datetime.timedelta(days=30 * months)
     with _LOCK:
@@ -309,9 +287,6 @@ def list_payments(user_id):
     return rows
 
 
-# =====================================================================
-# USAGE COUNTERS
-# =====================================================================
 def count_projects(user_id):
     c = _conn()
     cur = c.cursor()
@@ -362,3 +337,161 @@ def can_upload_ms(user_id):
         return False, ("Plan limit: " + str(lim["max_ms"]) +
                        " MS file(s). Upgrade for more.")
     return True, ""
+
+
+# =====================================================================
+# PASSWORD RESET
+# =====================================================================
+def create_reset_token(user_id, token, hours=2):
+    now = datetime.datetime.utcnow()
+    expires = now + datetime.timedelta(hours=hours)
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("DELETE FROM password_resets WHERE user_id=? "
+                    "AND used_at IS NULL", (user_id,))
+        cur.execute("""
+            INSERT INTO password_resets
+                (user_id, token, expires_at, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (user_id, token, expires.strftime("%Y-%m-%d %H:%M:%S"),
+              now.strftime("%Y-%m-%d %H:%M:%S")))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def get_reset_by_token(token):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, user_id, token, expires_at, used_at, created_at
+        FROM password_resets WHERE token=?
+    """, (token,))
+    row = cur.fetchone()
+    c.close()
+    return _to_dict(row, RESET_COLS)
+
+
+def mark_reset_used(reset_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("UPDATE password_resets SET used_at=? WHERE id=?",
+                    (_now(), reset_id))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+# =====================================================================
+# ONBOARDING
+# =====================================================================
+def mark_onboarded(user_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("UPDATE users SET has_onboarded=1 WHERE id=?", (user_id,))
+        c.commit()
+        _sync(c)
+        c.close()
+
+
+def has_onboarded(user_id):
+    b = get_user_billing(user_id)
+    if not b:
+        return False
+    try:
+        return bool(int(b.get("has_onboarded") or 0))
+    except Exception:
+        return False
+
+
+# =====================================================================
+# ADMIN
+# =====================================================================
+def admin_stats():
+    """Aggregate stats for admin panel."""
+    c = _conn()
+    cur = c.cursor()
+    stats = {}
+
+    cur.execute("SELECT COUNT(*) FROM users")
+    stats["users_total"] = int((cur.fetchone() or [0])[0])
+
+    cur.execute("SELECT COUNT(*) FROM users WHERE plan='trial' "
+                "AND trial_ends_at > ?", (_now(),))
+    stats["users_trial"] = int((cur.fetchone() or [0])[0])
+
+    cur.execute("SELECT COUNT(*) FROM users WHERE plan IN ('pro','business')")
+    stats["users_paid"] = int((cur.fetchone() or [0])[0])
+
+    cur.execute("SELECT COUNT(*) FROM projects")
+    stats["projects_total"] = int((cur.fetchone() or [0])[0])
+
+    cur.execute("SELECT COUNT(*) FROM defects")
+    stats["defects_total"] = int((cur.fetchone() or [0])[0])
+
+    cur.execute("SELECT COALESCE(SUM(amount),0) FROM payments "
+                "WHERE status='paid'")
+    try:
+        stats["revenue_total"] = float((cur.fetchone() or [0])[0])
+    except Exception:
+        stats["revenue_total"] = 0.0
+
+    # Revenue last 30 days
+    cutoff = (datetime.datetime.utcnow() -
+              datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    cur.execute("SELECT COALESCE(SUM(amount),0) FROM payments "
+                "WHERE status='paid' AND created_at >= ?", (cutoff,))
+    try:
+        stats["revenue_30d"] = float((cur.fetchone() or [0])[0])
+    except Exception:
+        stats["revenue_30d"] = 0.0
+
+    c.close()
+    return stats
+
+
+def admin_user_list(limit=200):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, email, name, plan, plan_started_at, plan_expires_at,
+               trial_ends_at, has_onboarded
+        FROM users ORDER BY id DESC LIMIT ?
+    """, (int(limit),))
+    rows = _to_dicts(cur.fetchall(), USER_BILL_COLS)
+    c.close()
+
+    # Add project + defect counts per user
+    for u in rows:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("SELECT COUNT(*) FROM projects WHERE user_id=?",
+                    (u["id"],))
+        u["projects_count"] = int((cur.fetchone() or [0])[0])
+        cur.execute("""
+            SELECT COUNT(*) FROM defects d
+            JOIN projects p ON p.id = d.project_id
+            WHERE p.user_id=?
+        """, (u["id"],))
+        u["defects_count"] = int((cur.fetchone() or [0])[0])
+        c.close()
+    return rows
+
+
+def admin_recent_payments(limit=50):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT p.id, p.user_id, p.plan, p.amount, p.currency,
+               p.provider, p.status, p.created_at, u.email
+        FROM payments p
+        LEFT JOIN users u ON u.id = p.user_id
+        ORDER BY p.id DESC LIMIT ?
+    """, (int(limit),))
+    rows = _to_dicts(cur.fetchall(),
+                     PAYMENT_COLS + ["email"])
+    c.close()
+    return rows
