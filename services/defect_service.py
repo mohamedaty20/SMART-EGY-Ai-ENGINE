@@ -291,8 +291,26 @@ def get_ecp_excerpts(element_type):
 # =====================================================================
 _DEFECT_PROMPT = """You are a senior QC engineer inspecting a construction site photo.
 
-Your job: identify defects visible in the photo, and cite ONLY the
+Your job: identify ALL visible defects in the photo, and cite ONLY the
 provided MS clauses and ECP codes. Never invent clause numbers.
+
+IMPORTANT: A real site photo almost always contains at least one defect
+worth noting. Be thorough and observant. Look for:
+- Cracks (any pattern, direction, width)
+- Honeycombing / voids / poor compaction
+- Exposed or corroded reinforcement
+- Insufficient concrete cover (rebar close to surface)
+- Poor formwork (bulging, misalignment, seepage marks)
+- Cold joints, segregation, aggregate exposure
+- Water stains, efflorescence, damp patches
+- Spalling, chips, broken edges
+- Poor finishing, uneven surfaces
+- Missing or misplaced spacers/chairs
+- Rust stains on concrete surface
+
+If you genuinely see nothing wrong, return an empty list. But do not be
+overly cautious — any defect that a QC engineer would write in a notice
+must be reported.
 
 USER NOTE (may be empty): __NOTE__
 
@@ -319,10 +337,9 @@ Return ONE JSON object with this exact shape:
 }
 
 RULES:
-- MAX 6 defects.
+- Report 1-6 defects. Aim for at least 1 if any concrete surface is shown.
 - Only cite MS clause ids that appear in the list above.
 - Only cite ECP codes that appear in the list above.
-- If the photo shows no clear defect, return an empty defects list.
 - Severity must be one of: Low, Medium, High, Critical.
 - Output ONLY the JSON. No prose. No markdown fences.
 """
