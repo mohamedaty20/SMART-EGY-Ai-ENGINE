@@ -1,7 +1,6 @@
 """
-services/defect_service.py — Complete file.
-AI logic + PDF generation for the Defect Notice tool.
-No UI. No database. Pure functions.
+services/defect_service.py — Full file.
+Supports PDF, DOCX, TXT method statements.
 """
 
 import io
@@ -45,7 +44,20 @@ def _shrink_image(photo_bytes, max_side=1024):
 
 
 # =====================================================================
-# PDF TEXT EXTRACTION
+# FILE TYPE VALIDATION
+# =====================================================================
+def _detect_image_type(data):
+    if not data or len(data) < 8:
+        return None
+    if data[:3] == b'\xff\xd8\xff':
+        return "jpeg"
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return "png"
+    return None
+
+
+# =====================================================================
+# DOCUMENT TEXT EXTRACTION (PDF, DOCX, TXT)
 # =====================================================================
 def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
     try:
@@ -61,6 +73,53 @@ def extract_pdf_text(pdf_bytes, max_pages=30, max_chars=40000):
     except Exception as e:
         print("[defect] pdf text extraction failed: " + repr(e))
         return ""
+
+
+def extract_docx_text(docx_bytes, max_chars=40000):
+    try:
+        from docx import Document
+        doc = Document(io.BytesIO(docx_bytes))
+        parts = []
+        for para in doc.paragraphs:
+            if para.text and para.text.strip():
+                parts.append(para.text)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text and cell.text.strip():
+                        parts.append(cell.text)
+        return "\n".join(parts)[:max_chars]
+    except Exception as e:
+        print("[defect] docx text extraction failed: " + repr(e))
+        return ""
+
+
+def extract_txt_text(txt_bytes, max_chars=40000):
+    for enc in ("utf-8", "utf-16", "latin-1"):
+        try:
+            return txt_bytes.decode(enc)[:max_chars]
+        except Exception:
+            continue
+    return ""
+
+
+def extract_document_text(file_bytes, filename=None, max_chars=40000):
+    name = (filename or "").lower().strip()
+    if name.endswith(".pdf"):
+        return extract_pdf_text(file_bytes, max_chars=max_chars)
+    if name.endswith(".docx"):
+        return extract_docx_text(file_bytes, max_chars=max_chars)
+    if name.endswith(".doc"):
+        print("[defect] .doc legacy format is not supported; "
+              "please save as .docx")
+        return ""
+    if name.endswith(".txt") or name.endswith(".md"):
+        return extract_txt_text(file_bytes, max_chars=max_chars)
+    # Unknown extension: try PDF first, then TXT
+    t = extract_pdf_text(file_bytes, max_chars=max_chars)
+    if t and len(t) > 100:
+        return t
+    return extract_txt_text(file_bytes, max_chars=max_chars)
 
 
 # =====================================================================
@@ -120,22 +179,26 @@ __MS_TEXT__
 """
 
 
-async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn):
-    print("[defect] MS extraction started, pdf_bytes=" +
-          str(len(pdf_bytes) // 1024) + " KB")
+async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
+                                    filename=None):
+    print("[defect] MS extraction started, bytes=" +
+          str(len(pdf_bytes) // 1024) + " KB, file=" + str(filename))
 
     try:
-        text = await asyncio.to_thread(extract_pdf_text, pdf_bytes)
+        text = await asyncio.to_thread(
+            extract_document_text, pdf_bytes, filename
+        )
     except Exception as e:
-        print("[defect] pdf parse failed: " + repr(e))
+        print("[defect] document parse failed: " + repr(e))
         return {"clauses": [], "raw_text_length": 0,
-                "error": "PDF parse failed: " + repr(e)}
+                "error": "Document parse failed: " + repr(e)}
 
-    print("[defect] extracted " + str(len(text)) + " chars from PDF")
+    print("[defect] extracted " + str(len(text)) + " chars")
 
     if not text or len(text) < 100:
         return {"clauses": [], "raw_text_length": len(text),
-                "error": "PDF has no readable text (may be scanned image)."}
+                "error": "File has no readable text. If this is a .doc "
+                         "(legacy), save it as .docx and re-upload."}
 
     text = text[:15000]
     print("[defect] sending " + str(len(text)) + " chars to Gemini")
@@ -224,7 +287,7 @@ def get_ecp_excerpts(element_type):
 
 
 # =====================================================================
-# DEFECT ANALYSIS — uses REPLACE not FORMAT
+# DEFECT ANALYSIS
 # =====================================================================
 _DEFECT_PROMPT = """You are a senior QC engineer inspecting a construction site photo.
 
@@ -299,6 +362,11 @@ async def analyze_defect_photo(photo_bytes,
                                 call_gemini_json_fn):
     from google.genai import types
 
+    img_type = _detect_image_type(photo_bytes)
+    if img_type is None:
+        return {"defects": [], "error": "Uploaded file is not a JPEG or PNG "
+                                        "photo. Please upload a site photo."}
+
     ecp_excerpts = get_ecp_excerpts(element_type)
     prompt = _build_defect_prompt(note, element_type, ms_clauses, ecp_excerpts)
 
@@ -355,7 +423,7 @@ async def analyze_defect_photo(photo_bytes,
 
 
 # =====================================================================
-# QR HELPER (safe import)
+# QR HELPER
 # =====================================================================
 def _make_qr_buffer(text):
     try:
@@ -553,12 +621,12 @@ def build_notice_pdf(project,
 
 
 # =====================================================================
-# REGISTER PDF (quick export of the register table)
+# REGISTER PDF
 # =====================================================================
 def build_register_pdf(project, rows, logo_bytes=None):
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        Image as ReportLabImage, HRFlowable,
+        HRFlowable,
     )
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
@@ -592,27 +660,20 @@ def build_register_pdf(project, rows, logo_bytes=None):
     story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
                              spaceAfter=10))
 
-    head = ["UID", "Zone", "Defect", "Subcontractor", "Status", "Created"]
+    head = ["UID", "Zone", "Defect", "Subcontractor", "Source", "Status", "Created"]
     data = [[Paragraph(h, head_style) for h in head]]
     for r in rows:
-        name = ""
-        try:
-            sel = r.get("selected") or []
-            name = sel[0].get("name", "") if sel else ""
-            if len(sel) > 1:
-                name += " (+" + str(len(sel) - 1) + ")"
-        except Exception:
-            name = ""
         data.append([
             Paragraph(str(r.get("uid", "")), cell_style),
             Paragraph(str(r.get("zone", "")), cell_style),
-            Paragraph(name or "(no defects)", cell_style),
+            Paragraph("(" + str(r.get("count", 0)) + " defects)", cell_style),
             Paragraph(str(r.get("subcontractor", "")), cell_style),
+            Paragraph(str(r.get("raise_type", "qc_internal")), cell_style),
             Paragraph(str(r.get("status", "")).upper(), cell_style),
             Paragraph(str(r.get("created_at", ""))[:10], cell_style),
         ])
 
-    t = Table(data, colWidths=[36 * mm, 16 * mm, 80 * mm, 55 * mm, 25 * mm, 25 * mm])
+    t = Table(data, colWidths=[36*mm, 15*mm, 32*mm, 55*mm, 32*mm, 24*mm, 26*mm])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), NAVY),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -636,16 +697,12 @@ def build_register_pdf(project, rows, logo_bytes=None):
 
 
 # =====================================================================
-# CLOSURE REPORT PDF (handover)
+# CLOSURE REPORT PDF
 # =====================================================================
 def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
-    """
-    Handover closure report. Shows all defects with QC vs Consultant
-    sign-off. Uses the same rows format as db.list_defects().
-    """
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        Image as ReportLabImage, HRFlowable, PageBreak,
+        Image as ReportLabImage, HRFlowable,
     )
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
@@ -776,21 +833,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
                 story.append(Paragraph(
                     "Closed: " + str(r["closed_at"])[:19], meta_style))
 
-            sel = r.get("selected") or []
-            for j, s in enumerate(sel, 1):
-                line = ("  " + str(j) + ". " + str(s.get("name", "")))
-                story.append(Paragraph(line, body_style))
-                cit_bits = []
-                if s.get("ms_violations"):
-                    cit_bits.append("MS: " + ", ".join(s["ms_violations"]))
-                if s.get("code_violations"):
-                    cit_bits.append("Code: " +
-                                    ", ".join(s["code_violations"]))
-                if cit_bits:
-                    story.append(Paragraph("     <i>" + "  |  ".join(cit_bits) +
-                                            "</i>", meta_style))
-
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 8))
 
     story.append(Spacer(1, 20))
 
@@ -810,25 +853,6 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
     ]))
     story.append(t_sig)
-    story.append(Spacer(1, 10))
-
-    qr_buf = _make_qr_buffer(
-        "UID: " + report_uid + " | Closure Report | " +
-        project.get("name", "")
-    )
-    if qr_buf:
-        try:
-            qr_img = ReportLabImage(qr_buf, width=20 * mm, height=20 * mm)
-            story.append(Table([[qr_img,
-                                 Paragraph("<b>UID:</b> " + report_uid,
-                                           meta_style)]],
-                                colWidths=[25 * mm, 155 * mm],
-                                style=TableStyle([
-                                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                                ])))
-        except Exception as e:
-            print("[defect] closure QR failed: " + repr(e))
 
     doc.build(story)
     buf.seek(0)
