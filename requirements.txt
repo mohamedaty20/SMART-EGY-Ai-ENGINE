@@ -8,3 +8,5 @@ reportlab
 qrcode[pil]
 pillow
 python-docx
+arabic-reshaper
+python-bidi
