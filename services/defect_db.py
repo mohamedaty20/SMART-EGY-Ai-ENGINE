@@ -1,5 +1,5 @@
 """
-services/defect_db.py — SQLite layer with Turso support + analytics.
+services/defect_db.py — Turso-compatible SQLite layer.
 """
 import os
 import re
@@ -36,18 +36,13 @@ def _conn():
                                     sync_url=TURSO_URL,
                                     auth_token=TURSO_TOKEN)
             try:
-                c.row_factory = sqlite3.Row
-            except Exception:
-                pass
-            try:
                 c.sync()
-            except Exception:
-                pass
+            except Exception as e:
+                print("[db] turso sync warn: " + repr(e))
             return c
         except Exception as e:
             print("[db] Turso failed, fallback local: " + repr(e))
     c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
-    c.row_factory = sqlite3.Row
     return c
 
 
@@ -58,9 +53,39 @@ def _sync(c):
         pass
 
 
+def _rows(cur, fetchall=True):
+    """Return list of dicts (or one dict) regardless of driver."""
+    try:
+        cols = [d[0] for d in cur.description] if cur.description else []
+    except Exception:
+        cols = []
+    if fetchall:
+        out = []
+        for r in cur.fetchall():
+            if isinstance(r, dict):
+                out.append(r)
+            else:
+                out.append(dict(zip(cols, r)))
+        return out
+    r = cur.fetchone()
+    if r is None:
+        return None
+    if isinstance(r, dict):
+        return r
+    return dict(zip(cols, r))
+
+
 def _ensure_columns(cur, table, wanted):
     cur.execute("PRAGMA table_info(" + table + ")")
-    have = {r[1] for r in cur.fetchall()}
+    have = set()
+    for r in cur.fetchall():
+        if isinstance(r, dict):
+            have.add(r.get("name"))
+        else:
+            try:
+                have.add(r[1])
+            except Exception:
+                pass
     for name, ddl in wanted:
         if name not in have:
             try:
@@ -142,10 +167,10 @@ def save_project(name, contractor, consultant, location,
         cur = c.cursor()
         cur.execute("SELECT id, subcontractor FROM projects "
                     "ORDER BY id LIMIT 1")
-        row = cur.fetchone()
+        row = _rows(cur, fetchall=False)
         if row:
             sub = (subcontractor if subcontractor is not None
-                   else (row["subcontractor"] or ""))
+                   else (row.get("subcontractor") or ""))
             cur.execute("""
                 UPDATE projects
                 SET name=?, contractor=?, consultant=?, location=?,
@@ -173,9 +198,9 @@ def get_project():
     c = _conn()
     cur = c.cursor()
     cur.execute("SELECT * FROM projects ORDER BY id LIMIT 1")
-    row = cur.fetchone()
+    row = _rows(cur, fetchall=False)
     c.close()
-    return dict(row) if row else None
+    return row
 
 
 # =====================================================================
@@ -205,18 +230,19 @@ def list_ms(project_id):
         SELECT id, ms_number, title, element_type, discipline, clauses_json
         FROM method_statements WHERE project_id=? ORDER BY id DESC
     """, (project_id,))
-    rows = cur.fetchall()
+    rows = _rows(cur)
     c.close()
     out = []
     for r in rows:
         try:
-            clauses = json.loads(r["clauses_json"] or "[]")
+            clauses = json.loads(r.get("clauses_json") or "[]")
         except Exception:
             clauses = []
         out.append({
-            "id": r["id"], "ms_number": r["ms_number"], "title": r["title"],
-            "element_type": r["element_type"],
-            "discipline": r["discipline"], "clauses": clauses,
+            "id": r.get("id"), "ms_number": r.get("ms_number"),
+            "title": r.get("title"),
+            "element_type": r.get("element_type"),
+            "discipline": r.get("discipline"), "clauses": clauses,
         })
     return out
 
@@ -228,16 +254,16 @@ def get_clauses_for_element(project_id, element_type):
         SELECT clauses_json FROM method_statements
         WHERE project_id=? AND LOWER(element_type)=LOWER(?)
     """, (project_id, element_type))
-    rows = cur.fetchall()
+    rows = _rows(cur)
     if not rows:
         cur.execute("SELECT clauses_json FROM method_statements "
                     "WHERE project_id=?", (project_id,))
-        rows = cur.fetchall()
+        rows = _rows(cur)
     c.close()
     clauses = []
     for r in rows:
         try:
-            clauses.extend(json.loads(r["clauses_json"] or "[]"))
+            clauses.extend(json.loads(r.get("clauses_json") or "[]"))
         except Exception:
             pass
     return clauses
@@ -287,22 +313,24 @@ def list_defects(project_id, raise_filter=None):
             FROM defects
             WHERE project_id=? ORDER BY id DESC
         """, (project_id,))
-    rows = cur.fetchall()
+    raw = _rows(cur)
     c.close()
     out = []
-    for r in rows:
+    for r in raw:
         try:
-            sel = json.loads(r["selected_json"] or "[]")
+            sel = json.loads(r.get("selected_json") or "[]")
         except Exception:
             sel = []
         first_name = str(sel[0].get("name", ""))[:100] if sel else ""
         out.append({
-            "id": r["id"], "uid": r["uid"], "zone": r["zone"],
-            "subcontractor": r["subcontractor"], "status": r["status"],
-            "created_at": r["created_at"], "closed_at": r["closed_at"],
-            "raise_type": r["raise_type"] or "qc_internal",
+            "id": r.get("id"), "uid": r.get("uid"), "zone": r.get("zone"),
+            "subcontractor": r.get("subcontractor"),
+            "status": r.get("status"),
+            "created_at": r.get("created_at"),
+            "closed_at": r.get("closed_at"),
+            "raise_type": r.get("raise_type") or "qc_internal",
             "count": len(sel), "first_defect": first_name,
-            "deadline_days": r["deadline_days"] or 3,
+            "deadline_days": r.get("deadline_days") or 3,
             "selected": sel,
         })
     return out
@@ -312,11 +340,10 @@ def get_defect(defect_id):
     c = _conn()
     cur = c.cursor()
     cur.execute("SELECT * FROM defects WHERE id=?", (defect_id,))
-    r = cur.fetchone()
+    d = _rows(cur, fetchall=False)
     c.close()
-    if not r:
+    if not d:
         return None
-    d = dict(r)
     try:
         d["selected"] = json.loads(d.get("selected_json") or "[]")
     except Exception:
@@ -367,7 +394,6 @@ def _keywords(text):
 
 def find_similar_defects(project_id, name, days=60, limit=5,
                           min_overlap=0.4):
-    """Return past defects with keyword overlap >= min_overlap."""
     kw = _keywords(name)
     if not kw:
         return []
@@ -380,12 +406,12 @@ def find_similar_defects(project_id, name, days=60, limit=5,
         FROM defects WHERE project_id=? AND created_at >= ?
         ORDER BY id DESC LIMIT 300
     """, (project_id, cutoff))
-    rows = cur.fetchall()
+    rows = _rows(cur)
     c.close()
     matches = []
     for r in rows:
         try:
-            sel = json.loads(r["selected_json"] or "[]")
+            sel = json.loads(r.get("selected_json") or "[]")
         except Exception:
             continue
         for s in sel:
@@ -396,9 +422,9 @@ def find_similar_defects(project_id, name, days=60, limit=5,
             overlap = len(kw & past_kw) / float(max(len(kw), len(past_kw)))
             if overlap >= min_overlap:
                 matches.append({
-                    "uid": r["uid"], "zone": r["zone"],
-                    "subcontractor": r["subcontractor"],
-                    "name": past, "date": r["created_at"],
+                    "uid": r.get("uid"), "zone": r.get("zone"),
+                    "subcontractor": r.get("subcontractor"),
+                    "name": past, "date": r.get("created_at"),
                 })
                 break
         if len(matches) >= limit:
@@ -434,28 +460,33 @@ def delete_subcontractor(sub_id):
 
 
 def list_subcontractors(project_id):
-    """Return masters + any names that appear in defects but not in masters."""
     c = _conn()
     cur = c.cursor()
     cur.execute("""
         SELECT id, name, trade, phone, notes
         FROM subcontractors WHERE project_id=? ORDER BY name ASC
     """, (project_id,))
-    master = cur.fetchall()
+    master = _rows(cur)
     cur.execute("""
         SELECT DISTINCT subcontractor FROM defects
         WHERE project_id=? AND subcontractor IS NOT NULL
               AND subcontractor != ''
     """, (project_id,))
-    used = {r["subcontractor"] for r in cur.fetchall()}
+    used_rows = _rows(cur)
     c.close()
+    used = set()
+    for r in used_rows:
+        name = r.get("subcontractor")
+        if name:
+            used.add(name)
     out = []
     seen = set()
     for r in master:
-        out.append({"id": r["id"], "name": r["name"],
-                    "trade": r["trade"] or "", "phone": r["phone"] or "",
-                    "notes": r["notes"] or "", "from_master": True})
-        seen.add(r["name"])
+        out.append({"id": r.get("id"), "name": r.get("name"),
+                    "trade": r.get("trade") or "",
+                    "phone": r.get("phone") or "",
+                    "notes": r.get("notes") or "", "from_master": True})
+        seen.add(r.get("name"))
     for name in used:
         if name not in seen:
             out.append({"id": None, "name": name, "trade": "",
@@ -464,7 +495,6 @@ def list_subcontractors(project_id):
 
 
 def subcontractor_scores(project_id):
-    """Per-subcontractor open/closed/overdue counts."""
     rows = list_defects(project_id)
     now = datetime.datetime.utcnow()
     agg = {}
@@ -476,7 +506,6 @@ def subcontractor_scores(project_id):
         agg[name]["total"] += 1
         if r["status"] == "open":
             agg[name]["open"] += 1
-            # overdue = open + created > deadline_days ago
             try:
                 created = datetime.datetime.strptime(
                     r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
@@ -541,9 +570,9 @@ def kpi_per_zone(project_id):
     rows = list_defects(project_id)
     agg = {}
     for r in rows:
-        z = r.get("zone") or "?"
         if r["status"] != "open":
             continue
+        z = r.get("zone") or "?"
         agg[z] = agg.get(z, 0) + 1
     return [{"zone": k, "count": v}
             for k, v in sorted(agg.items(), key=lambda x: -x[1])]
