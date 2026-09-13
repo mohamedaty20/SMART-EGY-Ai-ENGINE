@@ -1002,7 +1002,8 @@ def chat_authors(project_id):
     """, (project_id,))
     rows = _to_dicts(cur.fetchall(), ["author"])
     return [r["author"] for r in rows if r.get("author")]
-    def chat_max_id(project_id):
+
+def chat_max_id(project_id):
     """Highest chat message id for a project (0 if none). Cheap poll."""
     c = _conn()
     cur = c.cursor()
