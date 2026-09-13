@@ -822,3 +822,26 @@ def kpi_per_week(project_id, weeks=8):
                 pass
         buckets.append({"label": label, "count": count})
     return buckets
+
+
+def get_overdue_defects(project_id):
+    """Convenience: open defects past their deadline."""
+    import datetime as _dt
+    now = _dt.datetime.utcnow()
+    rows = list_defects(project_id)
+    out = []
+    for r in rows:
+        if r.get("status") != "open":
+            continue
+        try:
+            cd = _dt.datetime.strptime(r["created_at"][:19],
+                                        "%Y-%m-%d %H:%M:%S")
+            days_open = (now - cd).days
+            if days_open > int(r.get("deadline_days") or 3):
+                r["_days_open"] = days_open
+                r["_days_overdue"] = days_open - int(r.get("deadline_days") or 3)
+                out.append(r)
+        except Exception:
+            pass
+    out.sort(key=lambda x: -x.get("_days_overdue", 0))
+    return out
