@@ -1,54 +1,62 @@
 """
-ui/auth_page.py — Login / Signup screen.
+ui/auth_page.py — Login / Signup.
 """
 from nicegui import ui, app
 
 from services import defect_db as db
+from services import billing_db as bdb
 from services import auth_service as auth
+from ui.onboarding import show_onboarding
 
 
 STYLE = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   html, body {
-    background: #0a0a0a !important; color: #fafafa !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
-                 Roboto, Helvetica, Arial, sans-serif !important;
-    overflow-x: hidden !important;
+    background: #0b0b0b !important; color: #e8e8e8 !important;
+    font-family: 'JetBrains Mono','Courier New',monospace !important;
+    margin: 0; padding: 0;
   }
   .nicegui-content { padding: 0 !important; }
-  .q-page, .q-layout { background: #0a0a0a !important; }
+  .q-page, .q-layout { background: #0b0b0b !important; }
   .auth-card {
     background: #141414; border: 1px solid #262626;
-    border-radius: 16px; padding: 28px;
-    width: 380px; max-width: 92vw;
+    border-radius: 8px; padding: 28px;
+    width: 400px; max-width: 92vw;
   }
-  .auth-title { font-size: 24px; font-weight: 800; color: #fafafa;
+  .auth-title { font-size: 20px; font-weight: 800; color: #e8e8e8;
                 letter-spacing: -0.02em; margin-bottom: 4px; }
-  .auth-sub { font-size: 13px; color: #a3a3a3; margin-bottom: 22px; }
+  .auth-sub { font-size: 12px; color: #a3a3a3; margin-bottom: 22px; }
   .btn-primary {
-    background: #a855f7 !important; color: #fff !important;
-    font-weight: 600 !important; min-height: 44px !important;
-    border-radius: 10px !important; text-transform: none !important;
-    width: 100%;
+    background: #5eead4 !important; color: #0b0b0b !important;
+    font-weight: 700 !important; min-height: 42px !important;
+    border-radius: 3px !important; text-transform: none !important;
+    width: 100%; font-family: 'JetBrains Mono',monospace !important;
+    font-size: 12px !important;
   }
   .btn-soft {
-    background: #1a1a1a !important; color: #fafafa !important;
+    background: #1a1a1a !important; color: #e8e8e8 !important;
     border: 1px solid #262626 !important;
-    border-radius: 10px !important; text-transform: none !important;
-    width: 100%; min-height: 42px !important;
+    border-radius: 3px !important; text-transform: none !important;
+    width: 100%; min-height: 40px !important;
+    font-family: 'JetBrains Mono',monospace !important;
+    font-size: 12px !important;
   }
   .q-field--outlined .q-field__control {
-    border-radius: 10px !important;
-    background: #1a1a1a !important;
+    border-radius: 3px !important; background: #1a1a1a !important;
   }
   .q-field--outlined .q-field__control:before {
     border-color: #262626 !important;
   }
   .q-field--outlined.q-field--focused .q-field__control:after {
-    border-color: #a855f7 !important;
+    border-color: #5eead4 !important;
   }
   .q-field__label, .q-field__native, .q-field__input {
-    color: #fafafa !important;
+    color: #e8e8e8 !important;
+    font-family: 'JetBrains Mono',monospace !important;
+    font-size: 12px !important;
   }
 </style>
 """
@@ -67,7 +75,7 @@ def login_page():
                                 password_toggle_button=True).style("width:100%;")
 
             err_holder = ui.label("").style(
-                "color:#ef4444;font-size:13px;margin-top:6px;"
+                "color:#f87171;font-size:12px;margin-top:6px;"
                 "min-height:18px;"
             )
 
@@ -88,13 +96,27 @@ def login_page():
                     return
                 token = auth.make_session(u["id"])
                 app.storage.user["session"] = token
-                ui.navigate.to("/")
+                # Onboarding for first login
+                if not bdb.has_onboarded(u["id"]):
+                    show_onboarding(u["id"],
+                                     on_done=lambda: ui.navigate.to("/app"))
+                else:
+                    ui.navigate.to("/app")
 
             pass_in.on("keydown.enter", lambda _: do_login())
             ui.button("Sign in", on_click=do_login).classes("btn-primary")
-            ui.element('div').style("height:10px;")
-            ui.button("Create account", on_click=lambda: ui.navigate.to("/signup")
-                      ).classes("btn-soft")
+            ui.element('div').style("height:8px;")
+
+            def _forgot():
+                ui.navigate.to("/reset")
+
+            ui.button("Forgot password?", on_click=_forgot).props(
+                "flat").style("width:100%;color:#808080;font-size:11px;")
+
+            ui.element('div').style("height:6px;")
+            ui.button("Create account",
+                      on_click=lambda: ui.navigate.to("/signup")).classes(
+                "btn-soft")
 
 
 def signup_page():
@@ -103,7 +125,7 @@ def signup_page():
     with ui.column().classes("w-full min-h-screen items-center justify-center"):
         with ui.element('div').classes("auth-card"):
             ui.label("Create account").classes("auth-title")
-            ui.label("One workspace per user").classes("auth-sub")
+            ui.label("14-day trial — no card required.").classes("auth-sub")
 
             name_in = ui.input("Your name").style("width:100%;")
             email_in = ui.input("Email").style("width:100%;")
@@ -114,7 +136,7 @@ def signup_page():
             )
 
             err_holder = ui.label("").style(
-                "color:#ef4444;font-size:13px;margin-top:6px;"
+                "color:#f87171;font-size:12px;margin-top:6px;"
                 "min-height:18px;"
             )
 
@@ -130,8 +152,9 @@ def signup_page():
                 if not em or "@" not in em:
                     err_holder.set_text("Valid email required.")
                     return
-                if len(pw) < 6:
-                    err_holder.set_text("Password must be 6+ characters.")
+                ok, msg = auth.password_strength_ok(pw)
+                if not ok:
+                    err_holder.set_text(msg)
                     return
                 if pw != pw2:
                     err_holder.set_text("Passwords do not match.")
@@ -141,11 +164,17 @@ def signup_page():
                 if err:
                     err_holder.set_text(err)
                     return
+                # Start the trial
+                bdb.start_trial(uid)
                 token = auth.make_session(uid)
                 app.storage.user["session"] = token
-                ui.navigate.to("/")
+                # Show onboarding
+                show_onboarding(uid,
+                                 on_done=lambda: ui.navigate.to("/app"))
 
-            ui.button("Create account", on_click=do_signup).classes("btn-primary")
+            ui.button("Create account", on_click=do_signup).classes(
+                "btn-primary")
             ui.element('div').style("height:10px;")
-            ui.button("Back to sign in", on_click=lambda: ui.navigate.to("/login")
-                      ).classes("btn-soft")
+            ui.button("Back to sign in",
+                      on_click=lambda: ui.navigate.to("/login")).classes(
+                "btn-soft")
