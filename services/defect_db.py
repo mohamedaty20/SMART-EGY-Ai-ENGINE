@@ -15,6 +15,13 @@ TURSO_TOKEN = os.environ.get("TURSO_TOKEN", "").strip()
 LOCAL_CACHE = "/tmp/defects_cache.db"
 
 _LOCK = threading.Lock()
+_LIST_CACHE = {}
+_LIST_CACHE_LOCK = threading.Lock()
+
+
+def _bump_list_cache():
+    with _LIST_CACHE_LOCK:
+        _LIST_CACHE.clear()
 
 
 def _now():
@@ -225,7 +232,6 @@ def init_db():
             ("engineer_name", "TEXT"), ("place", "TEXT"),
         ])
 
-        # Speed: indexes on the columns we query by
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_defects_project "
             "ON defects(project_id)",
@@ -473,6 +479,7 @@ def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                 raise_type, photo_bytes, note, selected, notice_pdf,
                 ai_candidates=None, extra_photos=None,
                 engineer_name=None, place=None):
+    _bump_list_cache()
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -496,6 +503,10 @@ def save_defect(project_id, uid, zone, subcontractor, deadline_days,
 
 
 def list_defects(project_id, raise_filter=None):
+    _ck = (project_id, raise_filter)
+    with _LIST_CACHE_LOCK:
+        if _ck in _LIST_CACHE:
+            return _LIST_CACHE[_ck]
     c = _conn()
     cur = c.cursor()
     if raise_filter in ("qc_internal", "consultant"):
@@ -536,6 +547,8 @@ def list_defects(project_id, raise_filter=None):
             "engineer_name": r.get("engineer_name") or "",
             "place": r.get("place") or "",
         })
+    with _LIST_CACHE_LOCK:
+        _LIST_CACHE[_ck] = out
     return out
 
 
@@ -568,6 +581,7 @@ def get_defect(defect_id):
 
 
 def close_defect(defect_id, consultant_ncr=None, closure_photo=None):
+    _bump_list_cache()
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -599,6 +613,7 @@ def update_defect_notice(defect_id, subcontractor, deadline_days, zone,
                           note, raise_type, selected, notice_pdf,
                           consultant_ncr=None, extra_photos=None,
                           engineer_name=None, place=None):
+    _bump_list_cache()
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -637,6 +652,7 @@ def update_defect_notice(defect_id, subcontractor, deadline_days, zone,
 
 
 def delete_defect(defect_id):
+    _bump_list_cache()
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -884,10 +900,6 @@ def get_overdue_defects(project_id):
 
 
 def defect_scatter_data(project_id):
-    """
-    Returns list of {x: date_index, y: days_to_close_or_age, status}
-    for scatter plot. x = days since project start (or first defect).
-    """
     rows = list_defects(project_id)
     out = []
     now = datetime.datetime.utcnow()
@@ -923,6 +935,7 @@ def defect_scatter_data(project_id):
 # =====================================================================
 def chat_add(project_id, user_id, author, body, reply_to_id=None,
               mentions=None):
+    _bump_list_cache()
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -994,7 +1007,6 @@ def chat_delete(msg_id):
 
 
 def chat_authors(project_id):
-    """Distinct author names for filter dropdown."""
     c = _conn()
     cur = c.cursor()
     cur.execute("""
