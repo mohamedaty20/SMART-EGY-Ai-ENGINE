@@ -1,6 +1,5 @@
 """
-ui/defect_page.py — Full redesign.
-Off-white theme, mobile-first, collapsible left drawer, 2-tab wizard.
+ui/defect_page.py — Dark theme, mobile-first.
 """
 import io
 from nicegui import ui
@@ -10,58 +9,44 @@ from services import defect_service as svc
 from services.ai_service import call_gemini_json
 
 
-# =====================================================================
-# LANGUAGE STATE
-# =====================================================================
 LANG = {"code": "en"}
 
 T = {
     "en": {
         "app_title": "Defect Notices",
-        "menu": "Menu",
         "new_defect": "New Defect",
         "logs": "Logs",
-        "project_info": "Project",
+        "project": "Project",
         "no_project": "No project yet",
         "setup_project": "Set up project",
-        "edit_project": "Edit",
+        "edit": "Edit",
         "contractor": "Contractor",
         "subcontractor": "Subcontractor",
         "consultant": "Consultant",
         "location": "Location",
         "engineer": "QC Engineer",
-        "logo": "Company Logo",
+        "logo": "Company logo",
         "upload_logo": "Upload logo",
-        "logo_loaded": "Logo loaded",
         "ms_section": "Method Statements",
-        "upload_ms": "Upload MS",
+        "upload_ms": "Upload",
         "no_ms": "No method statements yet",
         "clauses_count": "clauses",
-        "delete": "Delete",
-        "confirm_delete_ms": "Delete this method statement?",
-        "yes": "Yes", "no": "No",
-
         "photo_title": "Take a photo of the defect",
         "photo_sub": "Upload a site photo to begin.",
         "choose_photo": "Choose photo",
         "change_photo": "Change photo",
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
-        "zone": "Zone",
-        "element": "Element",
+        "zone": "Zone", "element": "Element",
         "analyze": "Analyze with AI",
-        "analyzing": "Analyzing photo...",
-        "back": "Back",
-        "reset": "Start over",
-
+        "analyzing": "Analyzing...",
         "ai_found": "AI found these defects. Untick false ones, add any missed:",
         "ai_found_none": "AI found no defects. Add one manually below.",
         "add_manual": "+ Add defect",
         "notice_details": "Notice details",
         "send_to": "Send to subcontractor",
         "send_to_placeholder": "e.g. Al-Ahram Steel Fixing",
-        "deadline": "Deadline",
-        "days": "days",
+        "deadline": "Deadline", "days": "days",
         "raised_as": "Raised as",
         "qc_internal": "QC Internal",
         "consultant_ncr": "Consultant / NCR",
@@ -71,7 +56,6 @@ T = {
         "notice_saved": "Notice saved",
         "upload_photo_first": "Upload a photo first.",
         "setup_first": "Set up the project first.",
-
         "add_defect_title": "Add defect manually",
         "name": "Defect name",
         "location_hint": "Location hint",
@@ -80,22 +64,18 @@ T = {
         "ecp_code": "ECP code",
         "repair": "Repair action",
         "add": "Add", "cancel": "Cancel",
-        "name_required": "Defect name is required.",
+        "name_required": "Defect name required.",
         "tag_ai": "AI", "tag_manual": "MANUAL",
-
         "logs_title": "Defect Logs",
         "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
-        "filter_source": "Source",
         "filter_all": "All",
         "filter_qc": "QC Internal",
         "filter_consultant": "Consultant / NCR",
         "export_register": "Export Register",
         "closure_report": "Closure Report",
-        "refresh": "Refresh",
         "open": "Open", "closed": "Closed",
         "no_rows": "Nothing here yet.",
-
         "notice": "Notice",
         "download_pdf": "Download PDF",
         "mark_closed": "Mark Closed",
@@ -105,17 +85,14 @@ T = {
         "marked_closed": "Marked as closed.",
         "not_found": "Not found.",
         "repair_label": "Repair",
-
         "save": "Save", "cancel_btn": "Cancel",
-
         "setup_title": "Project Setup",
         "project_name": "Project name",
         "save_project": "Save",
-
         "ms_dialog_title": "Upload Method Statement",
         "ms_number": "MS number",
         "ms_title": "Title",
-        "element_type": "Element type",
+        "element_type": "Element",
         "discipline": "Discipline",
         "extract": "Extract clauses",
         "extracting": "Extracting...",
@@ -125,7 +102,6 @@ T = {
         "ms_upload_file": "Choose file (PDF/DOCX/TXT)",
         "upload_first": "Choose a file first.",
         "error_prefix": "Error: ",
-
         "severity_low": "Low", "severity_medium": "Medium",
         "severity_high": "High", "severity_critical": "Critical",
         "element_column": "Column", "element_beam": "Beam",
@@ -135,17 +111,16 @@ T = {
         "discipline_arch": "Architectural",
         "discipline_mep": "MEP",
         "zone_general": "General",
-        "lang_button": "العربية",
+        "lang_button": "AR",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
-        "menu": "القائمة",
         "new_defect": "عيب جديد",
         "logs": "السجل",
-        "project_info": "المشروع",
+        "project": "المشروع",
         "no_project": "لا يوجد مشروع بعد",
         "setup_project": "إعداد المشروع",
-        "edit_project": "تعديل",
+        "edit": "تعديل",
         "contractor": "المقاول",
         "subcontractor": "المقاول الفرعي",
         "consultant": "الاستشاري",
@@ -153,36 +128,26 @@ T = {
         "engineer": "مهندس الجودة",
         "logo": "شعار الشركة",
         "upload_logo": "تحميل الشعار",
-        "logo_loaded": "تم تحميل الشعار",
         "ms_section": "بيانات طريقة العمل",
-        "upload_ms": "تحميل MS",
+        "upload_ms": "تحميل",
         "no_ms": "لا توجد بيانات طريقة بعد",
         "clauses_count": "بند",
-        "delete": "حذف",
-        "confirm_delete_ms": "حذف بند الطريقة؟",
-        "yes": "نعم", "no": "لا",
-
         "photo_title": "التقط صورة للعيب",
         "photo_sub": "حمّل صورة الموقع للبدء.",
         "choose_photo": "اختر صورة",
         "change_photo": "تغيير الصورة",
         "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة العمود C3",
-        "zone": "المنطقة",
-        "element": "العنصر",
+        "zone": "المنطقة", "element": "العنصر",
         "analyze": "تحليل بالذكاء الاصطناعي",
         "analyzing": "جاري التحليل...",
-        "back": "رجوع",
-        "reset": "البدء من جديد",
-
         "ai_found": "وجد الذكاء الاصطناعي هذه العيوب. أزل غير الصحيحة وأضف أي مفقود:",
         "ai_found_none": "لم يجد الذكاء الاصطناعي عيوباً. أضف عيباً يدوياً أدناه.",
         "add_manual": "+ إضافة عيب",
         "notice_details": "تفاصيل الإشعار",
         "send_to": "إرسال إلى المقاول الفرعي",
         "send_to_placeholder": "مثال: الأهرام لتثبيت الحديد",
-        "deadline": "المهلة",
-        "days": "أيام",
+        "deadline": "المهلة", "days": "أيام",
         "raised_as": "مصدر الإشعار",
         "qc_internal": "داخلي QC",
         "consultant_ncr": "استشاري / NCR",
@@ -192,7 +157,6 @@ T = {
         "notice_saved": "تم حفظ الإشعار",
         "upload_photo_first": "حمّل صورة أولاً.",
         "setup_first": "أعدّ المشروع أولاً.",
-
         "add_defect_title": "إضافة عيب يدوياً",
         "name": "اسم العيب",
         "location_hint": "الموقع التقريبي",
@@ -203,20 +167,16 @@ T = {
         "add": "إضافة", "cancel": "إلغاء",
         "name_required": "اسم العيب مطلوب.",
         "tag_ai": "ذكاء اصطناعي", "tag_manual": "يدوي",
-
         "logs_title": "سجل العيوب",
         "logs_sub": "كل إشعار صدر. اضغط للعرض.",
         "no_logs": "لا توجد إشعارات بعد.",
-        "filter_source": "المصدر",
         "filter_all": "الكل",
         "filter_qc": "داخلي QC",
         "filter_consultant": "استشاري / NCR",
         "export_register": "تصدير السجل",
         "closure_report": "تقرير الإغلاق",
-        "refresh": "تحديث",
         "open": "مفتوح", "closed": "مغلق",
         "no_rows": "لا يوجد شيء بعد.",
-
         "notice": "إشعار",
         "download_pdf": "تحميل PDF",
         "mark_closed": "تعليم كمغلق",
@@ -226,17 +186,14 @@ T = {
         "marked_closed": "تم التعليم كمغلق.",
         "not_found": "غير موجود.",
         "repair_label": "الإصلاح",
-
         "save": "حفظ", "cancel_btn": "إلغاء",
-
         "setup_title": "إعداد المشروع",
         "project_name": "اسم المشروع",
         "save_project": "حفظ",
-
         "ms_dialog_title": "تحميل بند طريقة عمل",
         "ms_number": "رقم MS",
         "ms_title": "العنوان",
-        "element_type": "نوع العنصر",
+        "element_type": "العنصر",
         "discipline": "التخصص",
         "extract": "استخراج البنود",
         "extracting": "جاري الاستخراج...",
@@ -246,7 +203,6 @@ T = {
         "ms_upload_file": "اختر ملف (PDF/DOCX/TXT)",
         "upload_first": "اختر ملفاً أولاً.",
         "error_prefix": "خطأ: ",
-
         "severity_low": "منخفض", "severity_medium": "متوسط",
         "severity_high": "عالي", "severity_critical": "حرج",
         "element_column": "عمود", "element_beam": "كمرة",
@@ -256,21 +212,14 @@ T = {
         "discipline_arch": "معماري",
         "discipline_mep": "كهروميكانيكي",
         "zone_general": "عام",
-        "lang_button": "English",
+        "lang_button": "EN",
     },
 }
 
 
-def _lang():
-    return LANG["code"]
-
-
-def _t(key):
-    return T[_lang()].get(key, key)
-
-
-def _is_rtl():
-    return _lang() == "ar"
+def _lang(): return LANG["code"]
+def _t(k): return T[_lang()].get(k, k)
+def _is_rtl(): return _lang() == "ar"
 
 
 def _toggle_lang():
@@ -280,10 +229,8 @@ def _toggle_lang():
 
 def _element_options():
     return {
-        "column": _t("element_column"),
-        "beam": _t("element_beam"),
-        "slab": _t("element_slab"),
-        "wall": _t("element_wall"),
+        "column": _t("element_column"), "beam": _t("element_beam"),
+        "slab": _t("element_slab"), "wall": _t("element_wall"),
         "foundation": _t("element_foundation"),
         "finishing": _t("element_finishing"),
     }
@@ -304,15 +251,13 @@ def _zone_options():
 
 def _severity_options():
     return {
-        "Low": _t("severity_low"),
-        "Medium": _t("severity_medium"),
-        "High": _t("severity_high"),
-        "Critical": _t("severity_critical"),
+        "Low": _t("severity_low"), "Medium": _t("severity_medium"),
+        "High": _t("severity_high"), "Critical": _t("severity_critical"),
     }
 
 
 # =====================================================================
-# THEME + GLOBAL CSS
+# THEME
 # =====================================================================
 def _inject_theme():
     rtl = "rtl" if _is_rtl() else "ltr"
@@ -323,20 +268,21 @@ def _inject_theme():
 
 <style>
   :root {
-    --bg: #f7f7f5;
-    --surface: #ffffff;
-    --text: #0a0a0a;
-    --text-soft: #525252;
-    --muted: #8b8b8b;
-    --border: #ececec;
-    --primary: #0a0a0a;
-    --primary-hover: #1f1f1f;
-    --success: #059669;
-    --danger: #dc2626;
-    --warn: #d97706;
-    --radius: 14px;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
-    --shadow: 0 2px 4px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06);
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface-2: #1a1a1a;
+    --border: #262626;
+    --border-soft: #1f1f1f;
+    --text: #fafafa;
+    --text-soft: #d4d4d4;
+    --muted: #a3a3a3;
+    --muted-2: #737373;
+    --violet: #a855f7;
+    --violet-soft: #7c3aed;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --radius: 12px;
   }
 
   html, body {
@@ -345,7 +291,7 @@ def _inject_theme():
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
                  Roboto, Helvetica, Arial, sans-serif !important;
     font-size: 15px;
-    line-height: 1.5;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.005em;
     overflow-x: hidden !important;
@@ -366,56 +312,64 @@ def _inject_theme():
 
   /* ---- Buttons ---- */
   .q-btn {
-    border-radius: 12px !important;
-    box-shadow: var(--shadow-sm) !important;
+    border-radius: 10px !important;
     text-transform: none !important;
     font-weight: 600 !important;
     letter-spacing: -0.01em !important;
-    min-height: 44px !important;
-    padding: 0 18px !important;
+    min-height: 42px !important;
+    padding: 0 16px !important;
     font-size: 14px !important;
     transition: all 0.15s ease !important;
   }
-  .q-btn:hover {
-    box-shadow: var(--shadow) !important;
-    transform: translateY(-1px);
-  }
 
   .btn-primary {
-    background: var(--primary) !important;
+    background: var(--violet) !important;
     color: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(168,85,247,0.3) !important;
   }
-  .btn-primary:hover { background: var(--primary-hover) !important; }
+  .btn-primary:hover { background: var(--violet-soft) !important; }
 
   .btn-soft {
-    background: #ffffff !important;
+    background: var(--surface-2) !important;
     color: var(--text) !important;
     border: 1px solid var(--border) !important;
   }
+  .btn-soft:hover {
+    background: #202020 !important;
+    border-color: #333 !important;
+  }
 
   .btn-success {
-    background: var(--success) !important;
+    background: var(--green) !important;
     color: #ffffff !important;
   }
 
   /* ---- Inputs ---- */
   .q-field--outlined .q-field__control {
-    border-radius: 12px !important;
-    background: #ffffff !important;
+    border-radius: 10px !important;
+    background: var(--surface-2) !important;
   }
   .q-field--outlined .q-field__control:before {
     border-color: var(--border) !important;
   }
+  .q-field--outlined:hover .q-field__control:before {
+    border-color: #3a3a3a !important;
+  }
   .q-field--outlined.q-field--focused .q-field__control:after {
-    border-color: var(--primary) !important;
+    border-color: var(--violet) !important;
+  }
+  .q-field__label, .q-field__native, .q-field__input {
+    color: var(--text) !important;
   }
   .q-field__label { color: var(--muted) !important; font-weight: 500; }
+  .q-field__native::placeholder, .q-field__input::placeholder {
+    color: var(--muted-2) !important;
+  }
 
-  /* ---- Cards / surfaces ---- */
+  /* ---- Cards ---- */
   .card {
     background: var(--surface);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-sm);
     border: 1px solid var(--border);
     padding: 20px;
     width: 100%;
@@ -423,9 +377,9 @@ def _inject_theme():
   }
 
   .item-box {
-    background: #ffffff;
-    border-radius: 12px;
-    border: 1px solid var(--border);
+    background: var(--surface-2);
+    border-radius: 10px;
+    border: 1px solid var(--border-soft);
     padding: 14px 16px;
     margin-bottom: 10px;
     width: 100%;
@@ -434,24 +388,26 @@ def _inject_theme():
 
   /* ---- Typography ---- */
   .h1 { font-size: 22px; font-weight: 800; color: var(--text);
-        letter-spacing: -0.02em; }
+        letter-spacing: -0.025em; }
   .h2 { font-size: 17px; font-weight: 700; color: var(--text);
-        letter-spacing: -0.01em; }
-  .h3 { font-size: 15px; font-weight: 600; color: var(--text); }
+        letter-spacing: -0.015em; }
+  .h3 { font-size: 14px; font-weight: 600; color: var(--text); }
   .muted { color: var(--muted); font-size: 13px; }
   .soft { color: var(--text-soft); font-size: 13px; }
 
   /* ---- Drawer ---- */
   .q-drawer {
-    background: var(--surface) !important;
+    background: var(--bg) !important;
     border-right: 1px solid var(--border) !important;
   }
 
-  /* ---- Tabs (bottom nav) ---- */
+  /* ---- Bottom nav ---- */
   .bottom-nav {
     position: fixed;
     bottom: 0; left: 0; right: 0;
-    background: var(--surface);
+    background: rgba(10,10,10,0.95);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     border-top: 1px solid var(--border);
     display: flex;
     justify-content: space-around;
@@ -464,7 +420,7 @@ def _inject_theme():
     flex-direction: column;
     align-items: center;
     padding: 8px 4px;
-    color: var(--muted);
+    color: var(--muted-2);
     cursor: pointer;
     border: none;
     background: transparent;
@@ -472,13 +428,12 @@ def _inject_theme():
     font-weight: 600;
     gap: 3px;
     transition: color 0.15s;
+    font-family: inherit;
   }
-  .bottom-nav-item.active {
-    color: var(--primary);
-  }
+  .bottom-nav-item.active { color: var(--text); }
+  .bottom-nav-item.active .q-icon { color: var(--violet); }
   .bottom-nav-item .q-icon { font-size: 22px; }
 
-  /* Main content padding for bottom nav */
   .main-content {
     padding: 16px;
     padding-bottom: 100px;
@@ -492,7 +447,7 @@ def _inject_theme():
   .app-header {
     position: sticky;
     top: 0;
-    background: rgba(247,247,245,0.9);
+    background: rgba(10,10,10,0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
@@ -505,46 +460,120 @@ def _inject_theme():
     box-sizing: border-box;
   }
   .app-header .brand {
-    font-weight: 800;
-    font-size: 17px;
-    letter-spacing: -0.02em;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
     color: var(--text);
   }
 
   /* Drop zone */
   .drop-zone {
-    border: 2px dashed #d4d4d4;
-    border-radius: 16px;
-    padding: 40px 20px;
+    border: 1.5px dashed #333;
+    border-radius: 14px;
+    padding: 44px 20px;
     text-align: center;
-    background: #ffffff;
+    background: var(--surface-2);
     transition: border-color 0.2s, background 0.2s;
     cursor: pointer;
   }
   .drop-zone:hover {
-    border-color: var(--primary);
-    background: #fafafa;
+    border-color: var(--violet);
+    background: #1c1a1f;
+  }
+
+  /* Badges */
+  .badge-live {
+    display: inline-block;
+    background: rgba(16,185,129,0.12);
+    color: #34d399;
+    border: 1px solid rgba(16,185,129,0.3);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-open {
+    display: inline-block;
+    background: rgba(245,158,11,0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(245,158,11,0.3);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-closed {
+    display: inline-block;
+    background: rgba(16,185,129,0.12);
+    color: #34d399;
+    border: 1px solid rgba(16,185,129,0.3);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-ai {
+    display: inline-block;
+    background: rgba(168,85,247,0.15);
+    color: #c4b5fd;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 6px;
+    letter-spacing: 0.05em;
+  }
+  .badge-manual {
+    display: inline-block;
+    background: rgba(16,185,129,0.15);
+    color: #6ee7b7;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 6px;
+    letter-spacing: 0.05em;
   }
 
   /* Notification */
   .q-notification {
-    border-radius: 12px !important;
-    box-shadow: var(--shadow) !important;
+    border-radius: 10px !important;
     font-weight: 600 !important;
+    background: var(--surface-2) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
   }
+
+  /* Card title row */
+  .card-title-row {
+    display: flex; justify-content: space-between;
+    align-items: center; margin-bottom: 14px;
+  }
+  .section-label {
+    font-size: 11px; font-weight: 700; color: var(--muted-2);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+
+  /* Make sure q-separator is subtle */
+  .q-separator { background: var(--border) !important; }
+  hr { border-color: var(--border) !important; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
 
 
-# Button style constants
 BTN_PRIMARY = "btn-primary"
 BTN_SOFT = "btn-soft"
 BTN_SUCCESS = "btn-success"
 
 
 # =====================================================================
-# MAIN BUILDER
+# MAIN
 # =====================================================================
 def build_defect_ui():
     _inject_theme()
@@ -554,30 +583,25 @@ def build_defect_ui():
         "tab": {"value": "new"},
     }
 
-    # ---- Left drawer ----
     with ui.left_drawer(value=False, bordered=False).style(
-        "background:#ffffff;width:320px;max-width:90vw;"
+        "background:#0a0a0a;width:320px;max-width:88vw;"
     ) as drawer:
         _build_drawer(state, drawer)
 
-    # ---- Header ----
-    with ui.element('div').style(
-        "position:sticky;top:0;z-index:900;width:100%;"
-    ).classes("app-header"):
+    with ui.element('div').classes("app-header"):
         with ui.element('div').style(
             "display:flex;align-items:center;gap:10px;"
         ):
-            ui.button(icon="menu",
-                      on_click=drawer.toggle).props(
+            ui.button(icon="menu", on_click=drawer.toggle).props(
                 "flat round dense"
-            ).style("color:#0a0a0a;")
+            ).style("color:#fafafa;")
             ui.label(_t("app_title")).classes("brand")
         ui.button(_t("lang_button"), on_click=_toggle_lang).props(
             "flat dense no-caps"
-        ).style("color:#0a0a0a;font-weight:600;min-height:36px;"
-                "font-size:13px;")
+        ).style("color:#fafafa;font-weight:600;min-height:36px;"
+                "font-size:13px;border:1px solid #262626;"
+                "border-radius:8px;padding:0 12px;")
 
-    # ---- Main content ----
     content = ui.element('div').classes("main-content")
 
     def render_main():
@@ -591,7 +615,6 @@ def build_defect_ui():
     state["render_main"] = render_main
     render_main()
 
-    # ---- Bottom navigation ----
     with ui.element('div').classes("bottom-nav"):
         _nav_item("new", "add_a_photo", _t("new_defect"),
                   state, render_main)
@@ -610,108 +633,121 @@ def _nav_item(key, icon, label, state, render_fn):
     def _click():
         state["tab"]["value"] = key
         render_fn()
-        # Rebuild nav highlight
         ui.run_javascript(
             "document.querySelectorAll('.bottom-nav-item').forEach"
             "(function(el,i){el.classList.remove('active');});"
+            "document.querySelectorAll('.bottom-nav-item')[" +
+            ("0" if key == "new" else "1") +
+            "].classList.add('active');"
         )
 
-    btn.on("click", lambda: _click())
+    btn.on("click", _click)
 
 
 # =====================================================================
-# DRAWER — project info + MS manager
+# DRAWER
 # =====================================================================
 def _build_drawer(state, drawer):
     holder = ui.element('div').style(
-        "padding:16px;width:100%;box-sizing:border-box;"
+        "padding:20px;width:100%;box-sizing:border-box;"
     )
 
     def refresh():
         holder.clear()
         with holder:
             proj = state.get("project") or {}
-            # Logo
-            if proj.get("logo_bytes"):
-                ui.image(io.BytesIO(proj["logo_bytes"])).style(
-                    "width:56px;height:56px;object-fit:contain;"
-                    "border-radius:12px;border:1px solid #ececec;"
-                    "background:#fff;padding:6px;"
-                )
-            else:
-                ui.element('div').style(
-                    "width:56px;height:56px;border-radius:12px;"
-                    "background:#f3f3f1;display:flex;align-items:center;"
-                    "justify-content:center;color:#8b8b8b;"
-                    "font-weight:700;font-size:18px;"
-                )
-                with holder:
-                    pass
+
+            # Logo + project header
+            with ui.element('div').style(
+                "display:flex;align-items:center;gap:12px;"
+                "margin-bottom:18px;"
+            ):
+                if proj.get("logo_bytes"):
+                    ui.image(io.BytesIO(proj["logo_bytes"])).style(
+                        "width:44px;height:44px;object-fit:contain;"
+                        "border-radius:10px;border:1px solid #262626;"
+                        "background:#141414;padding:4px;"
+                    )
+                else:
+                    with ui.element('div').style(
+                        "width:44px;height:44px;border-radius:10px;"
+                        "background:#1a1a1a;border:1px solid #262626;"
+                        "display:flex;align-items:center;"
+                        "justify-content:center;color:#737373;"
+                    ):
+                        ui.icon("business").style("font-size:20px;")
+                with ui.element('div').style("flex:1;min-width:0;"):
+                    if proj.get("name"):
+                        ui.label(proj.get("name", "")).style(
+                            "font-size:15px;font-weight:700;"
+                            "color:#fafafa;letter-spacing:-0.01em;"
+                            "white-space:nowrap;overflow:hidden;"
+                            "text-overflow:ellipsis;"
+                        )
+                        ui.label(_t("project")).classes("muted").style(
+                            "font-size:11px;"
+                        )
+                    else:
+                        ui.label(_t("no_project")).style(
+                            "font-size:14px;font-weight:600;"
+                            "color:#a3a3a3;"
+                        )
 
             if proj.get("name"):
-                ui.label(proj.get("name", "")).classes("h2").style(
-                    "margin-top:12px;margin-bottom:2px;"
-                )
-                ui.label(_t("project_info")).classes("muted")
-            else:
-                ui.label(_t("no_project")).classes("h2").style(
-                    "margin-top:12px;"
-                )
-
-            ui.separator().style("margin:16px 0;")
-
-            if proj.get("name"):
+                ui.separator().style("margin:14px 0;")
                 _info_row(_t("contractor"), proj.get("contractor", ""))
+                _info_row(_t("subcontractor"), proj.get("subcontractor", ""))
                 _info_row(_t("consultant"), proj.get("consultant", ""))
                 _info_row(_t("location"), proj.get("location", ""))
                 _info_row(_t("engineer"), proj.get("engineer_name", ""))
-                ui.separator().style("margin:16px 0;")
+                ui.separator().style("margin:14px 0;")
 
             def open_setup():
-                _open_setup_dialog(state, refresh, drawer)
+                _open_setup_dialog(state, refresh)
 
-            ui.button(_t("edit_project") if proj.get("name")
-                      else _t("setup_project"),
-                      on_click=open_setup,
-                      icon="settings").classes(BTN_SOFT).style(
-                "width:100%;"
-            )
+            ui.button(
+                _t("edit") if proj.get("name") else _t("setup_project"),
+                icon="settings",
+                on_click=open_setup
+            ).classes(BTN_SOFT).style("width:100%;")
 
-            ui.separator().style("margin:16px 0;")
+            ui.separator().style("margin:18px 0;")
 
-            # MS section
             with ui.element('div').style(
                 "display:flex;justify-content:space-between;"
                 "align-items:center;margin-bottom:10px;"
             ):
-                ui.label(_t("ms_section")).classes("h3")
-
-                def open_ms():
-                    _open_ms_dialog(state, refresh, drawer)
-
-                ui.button(icon="add",
-                          on_click=open_ms).props(
-                    "flat round dense"
-                ).style("color:#0a0a0a;")
+                ui.label(_t("ms_section")).classes("section-label")
+                if state.get("project"):
+                    def open_ms():
+                        _open_ms_dialog(state, refresh)
+                    ui.button(icon="add", on_click=open_ms).props(
+                        "flat round dense size=sm"
+                    ).style("color:#a855f7;")
 
             if not state.get("project"):
                 ui.label(_t("setup_first")).classes("muted")
             else:
                 ms_list = db.list_ms(state["project"]["id"])
                 if not ms_list:
-                    ui.label(_t("no_ms")).classes("muted")
+                    ui.label(_t("no_ms")).classes("muted").style(
+                        "font-size:12px;"
+                    )
                 else:
                     for m in ms_list:
                         with ui.element('div').classes("item-box"):
                             ui.label(
                                 m["ms_number"] + " — " + m["title"]
-                            ).classes("h3").style("margin-bottom:2px;")
+                            ).style(
+                                "font-size:13px;font-weight:600;"
+                                "color:#fafafa;margin-bottom:2px;"
+                            )
                             ui.label(
                                 m["element_type"] + " · " +
                                 m["discipline"] + " · " +
                                 str(len(m["clauses"])) + " " +
                                 _t("clauses_count")
-                            ).classes("muted")
+                            ).classes("muted").style("font-size:11px;")
 
     refresh()
 
@@ -719,24 +755,31 @@ def _build_drawer(state, drawer):
 def _info_row(label, value):
     if not value:
         return
-    with ui.element('div').style("margin-bottom:8px;"):
-        ui.label(label).classes("muted").style("font-size:11px;"
-                                                "text-transform:uppercase;"
-                                                "letter-spacing:0.05em;")
-        ui.label(str(value)).classes("h3")
+    with ui.element('div').style("margin-bottom:10px;"):
+        ui.label(label).style(
+            "font-size:10px;font-weight:700;color:#737373;"
+            "text-transform:uppercase;letter-spacing:0.08em;"
+            "margin-bottom:2px;display:block;"
+        )
+        ui.label(str(value)).style(
+            "font-size:13px;color:#fafafa;font-weight:500;"
+        )
 
 
 # =====================================================================
 # SETUP DIALOG
 # =====================================================================
-def _open_setup_dialog(state, refresh_drawer, drawer):
+def _open_setup_dialog(state, refresh_drawer):
     proj = state.get("project") or {}
 
     with ui.dialog() as dlg, ui.card().style(
-        "background:#fff;padding:24px;min-width:320px;max-width:95vw;"
-        "width:440px;border-radius:20px;"
+        "background:#141414;padding:24px;min-width:320px;"
+        "max-width:95vw;width:460px;border-radius:16px;"
+        "border:1px solid #262626;"
     ):
-        ui.label(_t("setup_title")).classes("h1").style("margin-bottom:16px;")
+        ui.label(_t("setup_title")).classes("h1").style(
+            "margin-bottom:18px;"
+        )
 
         name_in = ui.input(_t("project_name"),
                             value=proj.get("name", "")).style("width:100%;")
@@ -752,22 +795,18 @@ def _open_setup_dialog(state, refresh_drawer, drawer):
                                 value=proj.get("engineer_name", "")).style("width:100%;")
 
         logo_holder = {"bytes": proj.get("logo_bytes")}
-        logo_lbl = ui.label(_t("logo_loaded") if logo_holder["bytes"]
-                             else _t("upload_logo")).classes("muted")
 
         async def handle_logo(e):
             logo_holder["bytes"] = await e.file.read()
-            logo_lbl.set_text(_t("logo_loaded"))
 
         ui.upload(on_upload=handle_logo, auto_upload=True).style(
             "width:100%;"
         ).props("flat bordered accept=image/* label='" +
                 _t("upload_logo") + "'")
-        logo_lbl
 
         def save():
             if not name_in.value.strip():
-                ui.notify("Project name is required.", type="warning")
+                ui.notify(_t("project_name"), type="warning")
                 return
             db.save_project(
                 name=name_in.value.strip(),
@@ -777,19 +816,18 @@ def _open_setup_dialog(state, refresh_drawer, drawer):
                 engineer_name=engineer_in.value.strip(),
                 logo_bytes=logo_holder["bytes"],
             )
-            # Also save subcontractor separately if the DB supports it
             try:
                 db.save_subcontractor(sub_in.value.strip())
             except Exception:
                 pass
             state["project"] = db.get_project()
-            ui.notify("Saved.", type="positive")
+            ui.notify(_t("save") + " ✓", type="positive")
             dlg.close()
             refresh_drawer()
             state["render_main"]()
 
         with ui.element('div').style(
-            "display:flex;gap:8px;margin-top:16px;"
+            "display:flex;gap:8px;margin-top:18px;"
         ):
             ui.button(_t("save_project"), on_click=save).classes(
                 BTN_PRIMARY
@@ -802,35 +840,32 @@ def _open_setup_dialog(state, refresh_drawer, drawer):
 
 
 # =====================================================================
-# MS UPLOAD DIALOG
+# MS DIALOG
 # =====================================================================
-def _open_ms_dialog(state, refresh_drawer, drawer):
+def _open_ms_dialog(state, refresh_drawer):
     if not state.get("project"):
         ui.notify(_t("setup_first"), type="warning")
         return
 
     with ui.dialog() as dlg, ui.card().style(
-        "background:#fff;padding:24px;min-width:320px;max-width:95vw;"
-        "width:480px;border-radius:20px;"
+        "background:#141414;padding:24px;min-width:320px;"
+        "max-width:95vw;width:500px;border-radius:16px;"
+        "border:1px solid #262626;"
     ):
         ui.label(_t("ms_dialog_title")).classes("h1").style(
-            "margin-bottom:16px;"
+            "margin-bottom:18px;"
         )
 
         holder = {"bytes": None, "name": ""}
-        file_lbl = ui.label(_t("ms_upload_file")).classes("muted")
 
         async def handle_file(e):
             holder["bytes"] = await e.file.read()
             holder["name"] = e.file.name
-            file_lbl.set_text(e.file.name + " (" +
-                              str(len(holder["bytes"]) // 1024) + " KB)")
 
         ui.upload(on_upload=handle_file, auto_upload=True).style(
             "width:100%;"
         ).props("flat bordered accept=.pdf,.docx,.doc,.txt,.md "
                 "label='" + _t("ms_upload_file") + "'")
-        file_lbl
 
         ms_num_in = ui.input(_t("ms_number"), value="MS-01").style(
             "width:100%;"
@@ -859,7 +894,7 @@ def _open_ms_dialog(state, refresh_drawer, drawer):
                 with preview:
                     ui.label(_t("error_prefix") +
                              str(result["error"])).style(
-                        "color:#dc2626;font-size:13px;"
+                        "color:#ef4444;font-size:13px;"
                     )
                 return
 
@@ -867,15 +902,21 @@ def _open_ms_dialog(state, refresh_drawer, drawer):
 
             with preview:
                 ui.label(_t("extracted") + " " + str(len(clauses)) +
-                          " " + _t("clauses_count")).classes("h3")
-                for cl in clauses[:6]:
+                          " " + _t("clauses_count")).classes("h3").style(
+                    "margin-bottom:8px;"
+                )
+                for cl in clauses[:5]:
                     with ui.element('div').classes("item-box"):
                         ui.label("§" + cl["id"] + " — " + cl["title"]).style(
-                            "font-weight:600;font-size:13px;"
+                            "font-weight:600;font-size:13px;color:#fafafa;"
                         )
-                        ui.label(cl["text"][:120]).classes("muted")
-                if len(clauses) > 6:
-                    ui.label("... +" + str(len(clauses) - 6)).classes("muted")
+                        ui.label(cl["text"][:100]).classes("muted").style(
+                            "font-size:12px;"
+                        )
+                if len(clauses) > 5:
+                    ui.label("+ " + str(len(clauses) - 5) + " more").classes(
+                        "muted"
+                    )
 
                 def confirm():
                     db.save_ms(
@@ -887,16 +928,16 @@ def _open_ms_dialog(state, refresh_drawer, drawer):
                         pdf_bytes=holder["bytes"],
                         clauses=clauses,
                     )
-                    ui.notify(_t("ms_saved"), type="positive")
+                    ui.notify(_t("ms_saved") + " ✓", type="positive")
                     dlg.close()
                     refresh_drawer()
 
                 ui.button(_t("confirm_save"), on_click=confirm).classes(
                     BTN_SUCCESS
-                ).style("width:100%;margin-top:8px;")
+                ).style("width:100%;margin-top:10px;")
 
         with ui.element('div').style(
-            "display:flex;gap:8px;margin-top:16px;"
+            "display:flex;gap:8px;margin-top:18px;"
         ):
             ui.button(_t("extract"), on_click=extract).classes(
                 BTN_PRIMARY
@@ -911,19 +952,14 @@ def _open_ms_dialog(state, refresh_drawer, drawer):
 
 
 # =====================================================================
-# NEW DEFECT — wizard
+# NEW DEFECT WIZARD
 # =====================================================================
 def _build_new_defect(state):
     stage = {
-        "photo": None,
-        "mime": None,
-        "candidates": None,
-        "manual": [],
+        "photo": None, "mime": None,
+        "candidates": None, "manual": [],
     }
-
     container = ui.element('div').style("width:100%;")
-    state["_wizard_stage"] = stage
-    state["_wizard_container"] = container
 
     def render():
         container.clear()
@@ -936,44 +972,32 @@ def _build_new_defect(state):
 def _render_wizard(state, stage, render_fn):
     if not state.get("project"):
         with ui.element('div').classes("card").style("text-align:center;"):
-            ui.icon("info").style("font-size:36px;color:#8b8b8b;")
+            ui.icon("info").style("font-size:36px;color:#737373;")
             ui.label(_t("setup_first")).classes("h3").style(
-                "margin-top:8px;"
+                "margin-top:10px;"
             )
-            ui.label(_t("no_project")).classes("muted")
         return
 
-    # ---- Header card (always visible) ----
+    # ---- Photo card ----
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:4px;")
         ui.label(_t("photo_sub")).classes("muted").style(
-            "margin-bottom:14px;"
+            "margin-bottom:16px;"
         )
 
-        photo_holder = {"bytes": stage["photo"], "mime": stage["mime"]}
-
         if not stage["photo"]:
-            # Drop zone
-            with ui.element('div').classes("drop-zone").on(
-                "click", lambda: None
-            ):
+            with ui.element('div').classes("drop-zone"):
                 ui.icon("add_a_photo").style(
-                    "font-size:44px;color:#0a0a0a;display:block;"
-                    "margin-bottom:8px;"
+                    "font-size:42px;color:#a855f7;display:block;"
+                    "margin-bottom:10px;"
                 )
                 ui.label(_t("choose_photo")).classes("h3")
         else:
             ui.image(io.BytesIO(stage["photo"])).style(
                 "width:100%;max-height:340px;object-fit:cover;"
-                "border-radius:14px;border:1px solid #ececec;"
-            )
-            ui.button(_t("change_photo"), icon="edit",
-                      on_click=lambda: _reset_photo(stage, render_fn)
-                      ).classes(BTN_SOFT).style(
-                "margin-top:10px;"
+                "border-radius:12px;border:1px solid #262626;"
             )
 
-        # File input (always present, hidden behind the drop zone)
         async def handle_photo(e):
             data = await e.file.read()
             stage["photo"] = data
@@ -985,12 +1009,12 @@ def _render_wizard(state, stage, render_fn):
             render_fn()
 
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
-            "width:100%;margin-top:10px;"
+            "width:100%;margin-top:12px;"
         ).props("flat bordered accept=image/* label='" +
                 (_t("change_photo") if stage["photo"]
                  else _t("choose_photo")) + "'")
 
-    # ---- Stage 2 — note + analyze ----
+    # ---- Stage 2: note + analyze ----
     if stage["photo"] and stage["candidates"] is None:
         with ui.element('div').classes("card"):
             note_in = ui.textarea(
@@ -1038,25 +1062,14 @@ def _render_wizard(state, stage, render_fn):
                     c["_manual"] = False
                 render_fn()
 
-            analyze_btn.on("click", lambda: None)
+            analyze_btn.on("click", do_analyze)
             analyze_btn.classes(BTN_PRIMARY).style(
                 "width:100%;margin-top:14px;"
             )
-            # Reattach click handler properly
-            analyze_btn._props["onClick"] = None
-            analyze_btn.on("click", do_analyze, [])
 
-    # ---- Stage 3 — candidates + notice ----
+    # ---- Stage 3: candidates + notice ----
     if stage["photo"] and stage["candidates"] is not None:
         _render_candidates(state, stage, render_fn)
-
-
-def _reset_photo(stage, render_fn):
-    stage["photo"] = None
-    stage["mime"] = None
-    stage["candidates"] = None
-    stage["manual"] = []
-    render_fn()
 
 
 def _render_candidates(state, stage, render_fn):
@@ -1065,11 +1078,11 @@ def _render_candidates(state, stage, render_fn):
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
         if stage["candidates"]:
             ui.label(_t("ai_found")).classes("h3").style(
-                "margin-bottom:14px;"
+                "margin-bottom:14px;color:#d4d4d4;"
             )
         else:
             ui.label(_t("ai_found_none")).classes("h3").style(
-                "margin-bottom:14px;"
+                "margin-bottom:14px;color:#d4d4d4;"
             )
 
         for c in list(all_items):
@@ -1083,7 +1096,6 @@ def _render_candidates(state, stage, render_fn):
             "width:100%;margin-top:6px;"
         )
 
-    # Notice details
     with ui.element('div').classes("card"):
         ui.label(_t("notice_details")).classes("h1").style(
             "margin-bottom:14px;"
@@ -1163,18 +1175,16 @@ def _render_candidates(state, stage, render_fn):
                        type="positive")
             ui.download(pdf_bytes, filename=notice_uid + ".pdf")
 
-            # Reset wizard
             stage["photo"] = None
             stage["mime"] = None
             stage["candidates"] = None
             stage["manual"] = []
             render_fn()
 
-        gen_btn.on("click", lambda: None)
+        gen_btn.on("click", do_generate)
         gen_btn.classes(BTN_PRIMARY).style(
             "width:100%;margin-top:16px;"
         )
-        gen_btn.on("click", do_generate, [])
 
 
 def _render_defect_card(item, stage, render_fn):
@@ -1188,17 +1198,15 @@ def _render_defect_card(item, stage, render_fn):
                          on_change=_toggle)
             with ui.element('div').style("flex:1;min-width:0;"):
                 if item.get("_manual"):
-                    tag, color = _t("tag_manual"), "#059669"
+                    tag_cls = "badge-manual"
+                    tag_txt = _t("tag_manual")
                 else:
-                    tag, color = _t("tag_ai"), "#2563eb"
-                ui.label(tag).style(
-                    "color:#fff;background:" + color + ";"
-                    "font-size:9px;font-weight:800;padding:2px 7px;"
-                    "border-radius:6px;letter-spacing:0.05em;"
-                    "display:inline-block;margin-bottom:6px;"
-                )
+                    tag_cls = "badge-ai"
+                    tag_txt = _t("tag_ai")
+                ui.html('<span class="' + tag_cls + '">' + tag_txt +
+                        '</span>').style("margin-bottom:6px;")
                 ui.label(str(item.get("name", ""))).classes("h3").style(
-                    "margin-bottom:4px;"
+                    "margin-top:6px;margin-bottom:4px;"
                 )
                 if item.get("location_hint"):
                     ui.label(str(item["location_hint"])).classes("muted")
@@ -1229,13 +1237,14 @@ def _render_defect_card(item, stage, render_fn):
 
             ui.button(icon="close", on_click=_remove).props(
                 "flat round dense"
-            ).style("color:#8b8b8b;")
+            ).style("color:#737373;")
 
 
 def _open_add_dialog(stage, render_fn):
     with ui.dialog() as dlg, ui.card().style(
-        "background:#fff;padding:24px;min-width:320px;max-width:95vw;"
-        "width:440px;border-radius:20px;"
+        "background:#141414;padding:24px;min-width:320px;"
+        "max-width:95vw;width:440px;border-radius:16px;"
+        "border:1px solid #262626;"
     ):
         ui.label(_t("add_defect_title")).classes("h1").style(
             "margin-bottom:14px;"
@@ -1284,9 +1293,9 @@ def _open_add_dialog(stage, render_fn):
 def _build_logs(state):
     if not state.get("project"):
         with ui.element('div').classes("card").style("text-align:center;"):
-            ui.icon("info").style("font-size:36px;color:#8b8b8b;")
+            ui.icon("info").style("font-size:36px;color:#737373;")
             ui.label(_t("setup_first")).classes("h3").style(
-                "margin-top:8px;"
+                "margin-top:10px;"
             )
         return
 
@@ -1305,17 +1314,16 @@ def _build_logs(state):
         )
 
         with holder:
-            # Filter + actions
             with ui.element('div').style(
                 "display:flex;gap:8px;align-items:center;"
-                "margin-bottom:14px;flex-wrap:wrap;"
+                "margin-bottom:14px;"
             ):
                 filt = ui.select(
                     {"all": _t("filter_all"),
                      "qc_internal": _t("filter_qc"),
                      "consultant": _t("filter_consultant")},
                     value=fstate["filter"]
-                ).style("flex:1;min-width:140px;")
+                ).style("flex:1;")
 
                 def on_filter(e):
                     fstate["filter"] = e.value
@@ -1323,21 +1331,14 @@ def _build_logs(state):
 
                 filt.on("update:model-value", on_filter)
 
-                ui.button(icon="refresh", on_click=refresh).props(
-                    "flat round dense"
-                ).style("color:#0a0a0a;")
-
-            # Counts
             if rows:
-                open_count = sum(1 for r in rows
-                                 if r["status"] == "open")
+                open_count = sum(1 for r in rows if r["status"] == "open")
                 ui.label(
                     str(len(rows)) + " · " + _t("open") + " " +
                     str(open_count) + " · " + _t("closed") + " " +
                     str(len(rows) - open_count)
                 ).classes("muted").style("margin-bottom:12px;")
 
-            # Export buttons
             with ui.element('div').style(
                 "display:grid;grid-template-columns:1fr 1fr;"
                 "gap:8px;margin-bottom:16px;"
@@ -1371,21 +1372,23 @@ def _build_logs(state):
                     BTN_PRIMARY
                 ).style("width:100%;")
 
-            # List
             if not rows:
                 ui.label(_t("no_logs")).classes("muted").style(
-                    "text-align:center;padding:30px 0;"
+                    "text-align:center;padding:40px 0;"
                 )
                 return
 
             for r in rows:
                 _render_log_card(r, refresh)
 
+    refresh()
+
 
 def _render_log_card(row, refresh_fn):
     status = row.get("status", "open")
     is_open = status == "open"
-    badge_color = "#d97706" if is_open else "#059669"
+    badge = "badge-open" if is_open else "badge-closed"
+    badge_txt = _t("open") if is_open else _t("closed")
 
     with ui.element('div').classes("card").style(
         "padding:16px;margin-bottom:10px;cursor:pointer;"
@@ -1399,15 +1402,8 @@ def _render_log_card(row, refresh_fn):
                 ui.label(
                     "Zone " + str(row.get("zone", "")) + " · " +
                     str(row.get("subcontractor", ""))
-                ).classes("muted")
-            ui.label(
-                _t("open") if is_open else _t("closed")
-            ).style(
-                "background:" + badge_color + ";color:#fff;"
-                "font-size:10px;font-weight:800;padding:3px 9px;"
-                "border-radius:20px;text-transform:uppercase;"
-                "letter-spacing:0.05em;white-space:nowrap;"
-            )
+                ).classes("muted").style("margin-top:2px;")
+            ui.html('<span class="' + badge + '">' + badge_txt + '</span>')
 
         def _click():
             _show_defect_dialog(row.get("id"), refresh_fn)
@@ -1424,33 +1420,32 @@ def _show_defect_dialog(defect_id, on_close_cb):
     is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
 
     with ui.dialog() as dialog, ui.card().style(
-        "background:#fff;padding:0;max-width:560px;width:95vw;"
-        "border-radius:20px;overflow:hidden;"
+        "background:#141414;padding:0;max-width:560px;width:95vw;"
+        "border-radius:16px;overflow:hidden;border:1px solid #262626;"
     ):
-        # Header
         with ui.element('div').style(
-            "padding:20px 20px 16px;border-bottom:1px solid #ececec;"
+            "padding:20px 20px 16px;border-bottom:1px solid #262626;"
         ):
             ui.label(_t("notice") + " " + d["uid"]).classes("h2")
             ui.label(
                 "Zone " + str(d["zone"]) + " · " +
                 str(d["subcontractor"])
-            ).classes("muted")
+            ).classes("muted").style("margin-top:4px;")
             if d.get("consultant_ncr"):
                 ui.label(_t("ncr_input") + ": " +
                           str(d["consultant_ncr"])).style(
-                    "color:#d97706;font-size:12px;font-weight:700;"
-                    "margin-top:4px;"
+                    "color:#fbbf24;font-size:12px;font-weight:700;"
+                    "margin-top:6px;"
                 )
 
-        # Body
         with ui.element('div').style(
             "padding:20px;max-height:60vh;overflow-y:auto;"
         ):
             if d.get("photo_bytes"):
                 ui.image(io.BytesIO(d["photo_bytes"])).style(
                     "width:100%;max-height:260px;object-fit:cover;"
-                    "border-radius:12px;margin-bottom:14px;"
+                    "border-radius:10px;margin-bottom:14px;"
+                    "border:1px solid #262626;"
                 )
             if d.get("note"):
                 ui.label("📝 " + str(d["note"])).classes("soft").style(
@@ -1470,15 +1465,14 @@ def _show_defect_dialog(defect_id, on_close_cb):
                                     ", ".join(s["code_violations"]))
                     if cit:
                         ui.label(" · ".join(cit)).classes("muted").style(
-                            "font-style:italic;"
+                            "font-style:italic;margin-top:3px;"
                         )
                     if s.get("repair_action"):
                         ui.label(_t("repair_label") + ": " +
                                   str(s["repair_action"])).classes("muted")
 
-        # Actions
         with ui.element('div').style(
-            "padding:14px 20px 20px;border-top:1px solid #ececec;"
+            "padding:14px 20px 20px;border-top:1px solid #262626;"
             "display:flex;flex-direction:column;gap:8px;"
         ):
             if d.get("notice_pdf"):
@@ -1514,6 +1508,6 @@ def _show_defect_dialog(defect_id, on_close_cb):
 
             ui.button(_t("close"), on_click=dialog.close).props(
                 "flat"
-            ).style("width:100%;color:#8b8b8b;")
+            ).style("width:100%;color:#a3a3a3;")
 
     dialog.open()
