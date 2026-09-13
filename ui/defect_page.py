@@ -1,11 +1,11 @@
 """
 ui/defect_page.py — Full file.
-Dashboard: summary + SVG line + SVG scatter + printable PDF.
-Chat tab. Filters fixed. Search fixed. No scrollbars. Engineer + place.
+Scrolling fixed. Search fixed. Profile. Chat with avatars + typeable filter.
 """
 import io
 import base64
 import datetime
+import html as _html_mod
 from nicegui import ui, app
 
 from services import defect_db as db
@@ -14,6 +14,12 @@ from services.ai_service import call_gemini_json
 
 
 LANG = {"code": "en"}
+
+TITLES = [
+    "QC Engineer", "QC Manager", "Site Engineer", "Project Manager",
+    "Civil Engineer", "Structural Engineer", "Electrical Engineer",
+    "Mechanical Engineer", "Architect", "Consultant", "Foreman", "Other",
+]
 
 T = {
     "en": {
@@ -185,12 +191,19 @@ T = {
         "chat_filter_author": "Author",
         "chat_filter_from": "From",
         "chat_filter_to": "To",
-        "chat_filter_all": "All",
+        "chat_filter_all": "All members",
         "chat_search": "Search messages...",
         "chat_confirm_delete": "Delete this message?",
         "chat_deleted": "Message deleted.",
         "chat_you": "you",
-        "chat_mention": "Mention",
+        "profile": "Profile",
+        "my_profile": "My profile",
+        "profile_name": "Name",
+        "profile_title": "Job title",
+        "profile_photo": "Profile photo",
+        "profile_saved": "Profile saved.",
+        "profile_view": "Member",
+        "profile_email": "Email",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -221,7 +234,7 @@ T = {
         "zone": "المنطقة", "element": "العنصر",
         "engineer_field": "اسم المهندس",
         "place_field": "المكان بالتفصيل",
-        "place_placeholder": "مثال: بلوك B، قاعدة عمود C3، محور 4-5",
+        "place_placeholder": "مثال: بلوك B، قاعدة عمود C3",
         "ai_found": "العيوب المكتشفة. أزل غير الصحيحة وأضف المفقود:",
         "ai_found_none": "لم يُكتشف شيء. أضف عيباً يدوياً.",
         "add_manual": "+ إضافة عيب",
@@ -360,12 +373,19 @@ T = {
         "chat_filter_author": "الكاتب",
         "chat_filter_from": "من",
         "chat_filter_to": "إلى",
-        "chat_filter_all": "الكل",
+        "chat_filter_all": "كل الأعضاء",
         "chat_search": "ابحث في الرسائل...",
         "chat_confirm_delete": "حذف هذه الرسالة؟",
         "chat_deleted": "تم الحذف.",
         "chat_you": "أنت",
-        "chat_mention": "إشارة",
+        "profile": "الملف الشخصي",
+        "my_profile": "ملفي الشخصي",
+        "profile_name": "الاسم",
+        "profile_title": "المسمى الوظيفي",
+        "profile_photo": "صورة شخصية",
+        "profile_saved": "تم الحفظ.",
+        "profile_view": "عضو",
+        "profile_email": "البريد",
     },
 }
 
@@ -439,19 +459,23 @@ def _inject_theme():
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.01em;
     overflow-x: hidden !important;
-    overflow-y: hidden !important;
-    height: 100%;
     direction: __DIR__;
   }
-  /* Hide ALL scrollbars */
-  * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
-  *::-webkit-scrollbar { display: none !important; width: 0 !important;
-                         height: 0 !important; background: transparent !important; }
-  .nicegui-content { padding: 0 !important; max-width: 100vw !important;
-                     overflow-x: hidden !important; }
+  /* Hide scrollbars visually, but KEEP scrolling */
+  html, body { scrollbar-width: none !important; }
+  html::-webkit-scrollbar, body::-webkit-scrollbar {
+    width: 0 !important; height: 0 !important; display: none !important;
+  }
+  .nicegui-content { padding: 0 !important; max-width: 100vw !important; }
   .q-page, .q-layout, .q-page-container {
-    max-width: 100vw !important; overflow-x: hidden !important;
+    max-width: 100vw !important;
     background: var(--bg) !important;
+  }
+  .q-page::-webkit-scrollbar, .q-page-container::-webkit-scrollbar,
+  .q-scrollarea__container::-webkit-scrollbar,
+  .scroll::-webkit-scrollbar { width: 0 !important; display: none !important; }
+  .q-page, .q-page-container, .q-scrollarea__container, .scroll {
+    scrollbar-width: none !important; -ms-overflow-style: none !important;
   }
   .q-btn {
     border-radius: 3px !important; text-transform: none !important;
@@ -463,13 +487,11 @@ def _inject_theme():
   .q-btn:hover { box-shadow: none !important; }
   .btn-primary { background: var(--accent) !important;
                  color: #0b0b0b !important; font-weight: 700 !important; }
-  .btn-primary:hover { background: var(--accent-dim) !important;
-                       color: #0b0b0b !important; }
+  .btn-primary:hover { background: var(--accent-dim) !important; }
   .btn-soft { background: var(--surface-2) !important;
               color: var(--text) !important;
               border: 1px solid var(--border-2) !important; }
-  .btn-soft:hover { background: var(--surface-3) !important;
-                    border-color: #333 !important; }
+  .btn-soft:hover { background: var(--surface-3) !important; }
   .btn-success { background: var(--success) !important;
                  color: #0b0b0b !important; font-weight: 700 !important; }
   .btn-danger { background: var(--danger) !important;
@@ -478,8 +500,7 @@ def _inject_theme():
                  color: var(--text) !important;
                  border: 1px dashed var(--border-2) !important; }
   .btn-outline:hover { border-color: var(--accent) !important;
-                       color: var(--accent) !important;
-                       background: rgba(94,234,212,0.04) !important; }
+                       color: var(--accent) !important; }
   .q-field--outlined .q-field__control {
     border-radius: 3px !important; background: var(--surface-2) !important;
     font-family: 'JetBrains Mono', monospace !important;
@@ -555,7 +576,6 @@ def _inject_theme():
     font-weight: 600; letter-spacing: 0.05em; padding: 6px 10px;
     border-radius: 2px; cursor: pointer; white-space: nowrap;
     flex-shrink: 0;
-    transition: color 0.12s ease, background 0.12s ease;
   }
   .top-tab-btn:hover { color: var(--text); background: var(--surface-2); }
   .top-tab-btn.active { color: var(--accent); background: var(--surface-2); }
@@ -564,7 +584,7 @@ def _inject_theme():
                   margin-left: 5px;
                   animation: blink 1.1s steps(2, start) infinite; }
   @keyframes blink { to { visibility: hidden; } }
-  .main-content { padding: 14px; padding-bottom: 30px;
+  .main-content { padding: 14px; padding-bottom: 40px;
                   max-width: 760px; margin: 0 auto; width: 100%;
                   box-sizing: border-box; }
   .q-uploader {
@@ -687,7 +707,7 @@ def _inject_theme():
   .log-row {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 3px; padding: 12px 14px; margin-bottom: 6px;
-    cursor: pointer; transition: border-color 0.12s;
+    cursor: pointer;
   }
   .log-row:hover { border-color: var(--border-2); }
   .sub-card { background: var(--surface); border: 1px solid var(--border);
@@ -747,19 +767,35 @@ def _inject_theme():
     margin-bottom: 12px;
   }
   .summary-card b { color: var(--accent); }
+
   /* Chat */
   .chat-msg {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 4px; padding: 10px 12px; margin-bottom: 8px;
-    display: flex; flex-direction: column; gap: 4px;
+    display: flex; gap: 10px;
   }
   .chat-msg.mine { border-color: rgba(94,234,212,0.4); }
+  .chat-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--surface-3); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; border: 1px solid var(--border-2);
+    color: var(--accent); font-weight: 700; font-size: 12px;
+    cursor: pointer;
+  }
+  .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .chat-content { flex: 1; min-width: 0; }
   .chat-head {
     display: flex; justify-content: space-between;
     align-items: center; gap: 8px;
   }
   .chat-author {
     font-size: 11px; font-weight: 700; color: var(--accent);
+    cursor: pointer;
+  }
+  .chat-author:hover { text-decoration: underline; }
+  .chat-title-tag {
+    font-size: 9px; color: var(--muted); margin-left: 4px;
   }
   .chat-time {
     font-size: 9px; color: var(--muted-2);
@@ -772,11 +808,9 @@ def _inject_theme():
   .chat-reply-quote {
     background: var(--surface-2); border-left: 2px solid var(--accent);
     padding: 4px 8px; font-size: 10px; color: var(--muted);
-    border-radius: 2px; margin-bottom: 4px;
+    border-radius: 2px; margin: 4px 0;
   }
-  .chat-actions {
-    display: flex; gap: 6px; margin-top: 2px;
-  }
+  .chat-actions { display: flex; gap: 6px; margin-top: 4px; }
   .chat-act {
     font-size: 10px; color: var(--muted); cursor: pointer;
     background: none; border: none; padding: 2px 4px;
@@ -805,6 +839,24 @@ def _inject_theme():
     color: var(--text);
   }
   .mention-item:hover { background: var(--surface-3); color: var(--accent); }
+  .avatar-mini {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--surface-3); display: inline-flex;
+    align-items: center; justify-content: center;
+    overflow: hidden; border: 1px solid var(--border-2);
+    color: var(--accent); font-weight: 700; font-size: 10px;
+    margin-right: 6px; vertical-align: middle;
+    flex-shrink: 0;
+  }
+  .avatar-mini img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar-big {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: var(--surface-3);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; border: 1px solid var(--border-2);
+    color: var(--accent); font-weight: 700; font-size: 26px;
+  }
+  .avatar-big img { width: 100%; height: 100%; object-fit: cover; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -815,6 +867,26 @@ BTN_SOFT = "btn-soft"
 BTN_SUCCESS = "btn-success"
 BTN_OUTLINE = "btn-outline"
 BTN_DANGER = "btn-danger"
+
+
+# =====================================================================
+# AVATAR HELPERS
+# =====================================================================
+def _initial(name):
+    s = (name or "?").strip()
+    return s[0].upper() if s else "?"
+
+
+def _avatar_html(name, photo_bytes, size="mini"):
+    cls = "avatar-mini" if size == "mini" else "avatar-big"
+    if photo_bytes:
+        try:
+            b64 = base64.b64encode(photo_bytes).decode("ascii")
+            return ('<div class="' + cls + '">'
+                    '<img src="data:image/jpeg;base64,' + b64 + '"/></div>')
+        except Exception:
+            pass
+    return '<div class="' + cls + '">' + _html_mod.escape(_initial(name)) + '</div>'
 
 
 # =====================================================================
@@ -870,17 +942,15 @@ def _svg_line_chart(values, labels, height=200):
                  str(round(y, 1)) + '" r="3" fill="#5eead4" '
                  'stroke="#0b0b0b" stroke-width="1"/>')
 
-    svg = (
+    return (
         '<svg viewBox="0 0 ' + str(W) + ' ' + str(H) + '" '
         'preserveAspectRatio="xMidYMid meet" '
         'style="width:100%;height:auto;display:block;">'
         '<polygon points="' + area + '" fill="rgba(94,234,212,0.08)"/>'
         '<polyline points="' + poly + '" fill="none" '
         'stroke="#5eead4" stroke-width="1.8"/>'
-        + y_ticks + x_labels + dots +
-        '</svg>'
+        + y_ticks + x_labels + dots + '</svg>'
     )
-    return svg
 
 
 def _svg_scatter(points, height=220):
@@ -890,8 +960,8 @@ def _svg_scatter(points, height=220):
     CW = W - PL - PR
     CH = H - PT - PB
     if not points:
-        return '<div style="color:#5a5a5a;font-size:11px;' \
-               'text-align:center;padding:40px;">No data.</div>'
+        return ('<div style="color:#5a5a5a;font-size:11px;'
+                'text-align:center;padding:40px;">No data.</div>')
     maxx = max(p["x"] for p in points) or 1
     maxy = max(p["y"] for p in points) or 1
     if maxx < 1:
@@ -936,14 +1006,12 @@ def _svg_scatter(points, height=220):
             '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
             'font-family="monospace">DAYS OPEN</text>')
 
-    svg = (
+    return (
         '<svg viewBox="0 0 ' + str(W) + ' ' + str(H) + '" '
         'preserveAspectRatio="xMidYMid meet" '
         'style="width:100%;height:auto;display:block;">'
-        + grid + dots + ylab + xlab +
-        '</svg>'
+        + grid + dots + ylab + xlab + '</svg>'
     )
-    return svg
 
 
 # =====================================================================
@@ -1103,7 +1171,6 @@ def _build_dashboard(state):
                 "flat round dense size=sm").style("color:#808080;")
 
     kpis = db.kpi_summary(pid)
-
     if not kpis or kpis.get("total", 0) == 0:
         with ui.element('div').classes("card").style(
             "text-align:center;padding:32px;"
@@ -1112,7 +1179,6 @@ def _build_dashboard(state):
             ui.label(_t("dash_empty")).classes("muted").style("margin-top:10px;")
         return
 
-    # Summary card
     zones = db.kpi_per_zone(pid)
     weeks = db.kpi_per_week(pid, weeks=8)
     scores = db.subcontractor_scores(pid)
@@ -1127,12 +1193,11 @@ def _build_dashboard(state):
             "<b>" + str(kpis["open"]) + "</b> open, "
             "<b>" + str(kpis["closed"]) + "</b> closed, "
             "<b>" + str(kpis["overdue"]) + "</b> overdue. "
-            "Average close time: <b>" + str(kpis["avg_days"]) + "d</b>. "
+            "Average close: <b>" + str(kpis["avg_days"]) + "d</b>. "
             "Busiest zone: <b>" + str(top_zone) + "</b>. "
-            "Top subcontractor by open: <b>" + str(top_sub) + "</b>."
+            "Top sub: <b>" + str(top_sub) + "</b>."
         )
 
-    # Metric strip
     with ui.element('div').classes("metric-strip"):
         _metric_cell(_t("kpi_total"), kpis["total"], "")
         _metric_cell(_t("kpi_open"), kpis["open"], "open")
@@ -1141,17 +1206,15 @@ def _build_dashboard(state):
         _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
         _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
 
-    # Line chart — raised per week
     if weeks:
         with ui.element('div').classes("card").style("margin-bottom:12px;"):
             ui.label(_t("dash_weeks")).classes("label").style(
                 "margin-bottom:8px;"
             )
-            vals = [w["count"] for w in weeks]
-            labels = [w["label"] for w in weeks]
-            ui.html(_svg_line_chart(vals, labels, height=200))
+            ui.html(_svg_line_chart(
+                [w["count"] for w in weeks],
+                [w["label"] for w in weeks], height=200))
 
-    # Scatter chart
     scatter = db.defect_scatter_data(pid)
     if scatter:
         with ui.element('div').classes("card").style("margin-bottom:12px;"):
@@ -1161,14 +1224,12 @@ def _build_dashboard(state):
             ):
                 ui.label(_t("dash_scatter")).classes("label")
                 with ui.element('div').style(
-                    "display:flex;gap:10px;font-size:9px;"
-                    "color:#808080;letter-spacing:0.05em;"
+                    "display:flex;gap:10px;font-size:9px;color:#808080;"
                 ):
                     ui.html('<span style="color:#4ade80;">● CLOSED</span>')
                     ui.html('<span style="color:#f87171;">● OPEN</span>')
             ui.html(_svg_scatter(scatter, height=220))
 
-    # Per-sub table
     if scores:
         with ui.element('div').classes("card"):
             ui.label(_t("dash_subs")).classes("label").style(
@@ -1197,9 +1258,6 @@ def _metric_cell(label, value, variant):
         ui.label(str(value)).classes(cls)
 
 
-# =====================================================================
-# DASHBOARD PDF
-# =====================================================================
 def _build_dashboard_pdf(state, filename="dashboard.pdf"):
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
@@ -1327,11 +1385,8 @@ def _build_dashboard_pdf(state, filename="dashboard.pdf"):
         s_data = [["Subcontractor", "Open", "Overdue", "Closed", "Total"]]
         for s in scores[:20]:
             s_data.append([
-                str(s["name"]),
-                str(s["open"]),
-                str(s["overdue"]),
-                str(s["closed"]),
-                str(s["total"]),
+                str(s["name"]), str(s["open"]), str(s["overdue"]),
+                str(s["closed"]), str(s["total"]),
             ])
         t_s = Table(s_data, colWidths=[70*mm, 20*mm, 25*mm, 22*mm, 20*mm])
         t_s.setStyle(TableStyle([
@@ -1524,6 +1579,97 @@ def _confirm_delete_sub(state, sub_id, refresh_fn):
 
 
 # =====================================================================
+# PROFILE
+# =====================================================================
+def _open_my_profile(state, on_saved=None):
+    u = db.get_user(state["user_id"]) or {}
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:320px;max-width:95vw;width:440px;"
+    ):
+        ui.label(_t("my_profile")).classes("h1").style("margin-bottom:14px;")
+
+        name_in = ui.input(_t("profile_name"),
+                            value=u.get("name") or "").style("width:100%;")
+        title_opts = [""] + TITLES
+        try:
+            ti = title_opts.index(u.get("title") or "")
+        except Exception:
+            ti = 0
+        title_in = ui.select(title_opts, value=title_opts[ti],
+                              label=_t("profile_title"),
+                              with_input=True).style("width:100%;")
+
+        photo_holder = {"bytes": u.get("photo_bytes")}
+        photo_lbl = ui.label(_t("profile_photo")).classes("mono-sm").style(
+            "margin-top:8px;display:block;"
+        )
+
+        async def handle_photo(e):
+            photo_holder["bytes"] = await e.file.read()
+            photo_lbl.set_text(_t("profile_photo") + " ✓")
+
+        ui.upload(on_upload=handle_photo, auto_upload=True).style(
+            "width:100%;"
+        ).props("flat bordered accept=image/* label='" +
+                _t("profile_photo") + "'")
+
+        def _save():
+            if not name_in.value.strip():
+                ui.notify(_t("profile_name"), type="warning")
+                return
+            db.update_user_profile(
+                state["user_id"], name_in.value.strip(),
+                title_in.value or "", photo_holder["bytes"])
+            state["user"] = db.get_user(state["user_id"])
+            ui.notify(_t("profile_saved"), type="positive")
+            dlg.close()
+            hook = state.get("refresh_drawer")
+            if hook:
+                try: hook()
+                except Exception: pass
+            if on_saved:
+                try: on_saved()
+                except Exception: pass
+
+        with ui.element('div').style("display:flex;gap:8px;margin-top:16px;"):
+            ui.button(_t("save"), on_click=_save).classes(
+                BTN_PRIMARY).style("flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+    dlg.open()
+
+
+def _open_member_profile(user_id):
+    u = db.get_user(user_id)
+    if not u:
+        return
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:22px;min-width:280px;max-width:95vw;width:380px;"
+    ):
+        with ui.element('div').style(
+            "display:flex;flex-direction:column;align-items:center;gap:8px;"
+        ):
+            ui.html(_avatar_html(u.get("name") or "", u.get("photo_bytes"),
+                                  size="big"))
+            ui.label(u.get("name") or "—").style(
+                "font-size:15px;font-weight:700;color:#e8e8e8;"
+                "margin-top:6px;")
+            if u.get("title"):
+                ui.label(u["title"]).style(
+                    "font-size:11px;color:#5eead4;font-weight:600;"
+                    "letter-spacing:0.05em;"
+                )
+            if u.get("email"):
+                ui.label(u["email"]).classes("mono-sm").style(
+                    "margin-top:4px;"
+                )
+        ui.element('div').style("height:14px;")
+        ui.button(_t("close"), on_click=dlg.close).classes(BTN_SOFT).style(
+            "width:100%;"
+        )
+    dlg.open()
+
+
+# =====================================================================
 # DRAWER
 # =====================================================================
 def _build_drawer(state, drawer):
@@ -1618,16 +1764,35 @@ def _build_drawer(state, drawer):
 
             ui.element('div').style(
                 "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
+
+            # My profile card
             if user:
-                ui.label(_t("signed_in_as")).classes("label").style(
-                    "font-size:9px;margin-bottom:3px;")
-                ui.label(user.get("name") or user.get("email") or "").style(
-                    "font-size:11px;color:#e8e8e8;font-weight:500;"
-                    "margin-bottom:10px;")
+                with ui.element('div').style(
+                    "display:flex;align-items:center;gap:10px;"
+                    "margin-bottom:10px;"
+                ):
+                    ui.html(_avatar_html(user.get("name") or "",
+                                          user.get("photo_bytes"),
+                                          size="mini"))
+                    with ui.element('div').style("flex:1;min-width:0;"):
+                        ui.label(user.get("name") or user.get("email") or "").style(
+                            "font-size:11px;color:#e8e8e8;font-weight:600;"
+                            "white-space:nowrap;overflow:hidden;"
+                            "text-overflow:ellipsis;")
+                        if user.get("title"):
+                            ui.label(user["title"]).classes("mono-sm").style(
+                                "font-size:9px;"
+                            )
+
+            def _open_profile():
+                _open_my_profile(state, refresh)
+            ui.button(_t("my_profile"), icon="person",
+                      on_click=_open_profile).classes(BTN_SOFT).style(
+                "width:100%;font-size:10px;min-height:30px;"
+                "margin-bottom:6px;")
 
             def _change_pw():
                 _open_change_password_dialog(state)
-
             ui.button("Change password", icon="password",
                       on_click=_change_pw).classes(BTN_SOFT).style(
                 "width:100%;font-size:10px;min-height:30px;"
@@ -2157,14 +2322,14 @@ def _render_candidates(state, stage, refresh_fn):
                  "consultant": _t("consultant_ncr")},
                 value="qc_internal", label=_t("raised_as"))
 
-        # NEW: engineer name + place
-        engineer_in = ui.input(
-            _t("engineer_field"),
-            value=(state["project"] or {}).get("engineer_name", "") or ""
-        ).style("width:100%;margin-top:8px;")
-        place_in = ui.input(
-            _t("place_field"), placeholder=_t("place_placeholder")
-        ).style("width:100%;margin-top:8px;")
+        default_eng = ((state.get("user") or {}).get("name") or
+                       (state["project"] or {}).get("engineer_name", "") or "")
+        engineer_in = ui.input(_t("engineer_field"),
+                                value=default_eng).style(
+            "width:100%;margin-top:8px;")
+        place_in = ui.input(_t("place_field"),
+                             placeholder=_t("place_placeholder")).style(
+            "width:100%;margin-top:8px;")
 
         gen_btn = ui.button(_t("generate_pdf"), icon="picture_as_pdf")
 
@@ -2327,7 +2492,7 @@ def _open_add_dialog(stage, refresh_fn):
 
 
 # =====================================================================
-# LOGS (with search & filter — FIXED)
+# LOGS
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
@@ -2389,10 +2554,6 @@ def _build_logs(state):
             fstate["filter"] = (e.value if e and e.value else "all")
             log_list.refresh()
 
-        def on_search_change(e):
-            fstate["query"] = (e.value or "").strip().lower()
-            log_list.refresh()
-
         with ui.element('div').style("margin-bottom:10px;"):
             ui.select(
                 {"all": _t("filter_all"),
@@ -2401,10 +2562,6 @@ def _build_logs(state):
                 value=fstate["filter"],
                 on_change=on_filter_change
             ).style("width:100%;").props("dense")
-
-        ui.input(placeholder=_t("search_placeholder"),
-                  on_change=on_search_change).style(
-            "width:100%;margin-bottom:12px;").props("dense clearable")
 
         if rows:
             open_count = sum(1 for r in rows if r["status"] == "open")
@@ -2464,6 +2621,14 @@ def _build_logs(state):
         for r in rows:
             _render_log_card(r, log_list.refresh)
 
+    def _on_search(e):
+        fstate["query"] = (e.value or "").strip().lower()
+        log_list.refresh()
+
+    search_in = ui.input(placeholder=_t("search_placeholder")).style(
+        "width:100%;margin-bottom:12px;").props("dense clearable")
+    search_in.on("update:model-value", _on_search)
+
     log_list()
 
 
@@ -2485,18 +2650,18 @@ def _render_log_card(row, refresh_fn):
             with ui.element('div').style("flex:1;min-width:0;"):
                 ui.label(str(title) + extra).classes("mono-lg").style(
                     "margin-bottom:4px;")
-                eng = row.get("engineer_name") or ""
-                place = row.get("place") or ""
-                subline = (row.get("uid", "") + "  " +
-                           str(row.get("zone", "")) + "  " +
-                           str(row.get("subcontractor", "")))
-                ui.label(subline).classes("mono-sm")
-                # Engineer + place line
+                ui.label(
+                    row.get("uid", "") + "  " +
+                    str(row.get("zone", "")) + "  " +
+                    str(row.get("subcontractor", ""))
+                ).classes("mono-sm")
                 bits = []
-                if eng:
-                    bits.append(_t("raised_by") + ": " + str(eng))
-                if place:
-                    bits.append(_t("at_place") + ": " + str(place))
+                if row.get("engineer_name"):
+                    bits.append(_t("raised_by") + ": " +
+                                str(row["engineer_name"]))
+                if row.get("place"):
+                    bits.append(_t("at_place") + ": " +
+                                str(row["place"]))
                 if bits:
                     ui.label("  ·  ".join(bits)).classes("mono-sm").style(
                         "margin-top:2px;")
@@ -2527,12 +2692,12 @@ def _show_defect_dialog(defect_id, on_close_cb):
             ui.label(
                 "ZONE " + str(d["zone"]) + "  " + str(d["subcontractor"])
             ).classes("mono-sm").style("margin-top:4px;")
-            if d.get("engineer_name") or d.get("place"):
-                bits = []
-                if d.get("engineer_name"):
-                    bits.append(_t("raised_by") + ": " + str(d["engineer_name"]))
-                if d.get("place"):
-                    bits.append(_t("at_place") + ": " + str(d["place"]))
+            bits = []
+            if d.get("engineer_name"):
+                bits.append(_t("raised_by") + ": " + str(d["engineer_name"]))
+            if d.get("place"):
+                bits.append(_t("at_place") + ": " + str(d["place"]))
+            if bits:
                 ui.label("  ·  ".join(bits)).classes("mono-sm").style(
                     "margin-top:2px;")
             if d.get("consultant_ncr"):
@@ -3008,10 +3173,8 @@ def _open_change_password_dialog(state):
 # =====================================================================
 # CHAT
 # =====================================================================
-def _chat_render_body(body, known_authors):
-    """Escape HTML, then wrap @mentions in a chip."""
-    import html as _html
-    safe = _html.escape(str(body or ""))
+def _chat_render_body(body):
+    safe = _html_mod.escape(str(body or ""))
     parts = safe.split(" ")
     out = []
     for p in parts:
@@ -3040,7 +3203,6 @@ def _build_chat(state):
 
     ui.label(_t("chat_sub")).classes("muted").style("margin-bottom:12px;")
 
-    # Filters state
     fstate = {
         "author": "all",
         "query": "",
@@ -3057,44 +3219,33 @@ def _build_chat(state):
     for a in authors:
         author_opts[a] = a
 
-    def on_author_change(e):
-        fstate["author"] = (e.value if e and e.value else "all")
-        chat_list.refresh()
+    with ui.element('div').style(
+        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+        "margin-bottom:8px;"
+    ):
+        def on_author_change(e):
+            fstate["author"] = (e.value if e and e.value else "all")
+            chat_list.refresh()
 
-    def on_search_change(e):
-        fstate["query"] = (e.value or "").strip().lower()
-        chat_list.refresh()
-
-    def on_from_change(e):
-        fstate["from"] = (e.value or "").strip()
-        chat_list.refresh()
-
-    def on_to_change(e):
-        fstate["to"] = (e.value or "").strip()
-        chat_list.refresh()
+        ui.select(author_opts, value=fstate["author"],
+                   label=_t("chat_filter_author"),
+                   with_input=True, on_change=on_author_change).props("dense")
 
     with ui.element('div').style(
         "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
         "margin-bottom:8px;"
     ):
-        ui.select(author_opts, value=fstate["author"],
-                   label=_t("chat_filter_author"),
-                   on_change=on_author_change).props("dense")
-        ui.input(placeholder=_t("chat_search"),
-                  on_change=on_search_change).props("dense")
-
-    with ui.element('div').style(
-        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
-        "margin-bottom:12px;"
-    ):
+        def on_from_change(e):
+            fstate["from"] = (e.value or "").strip()
+            chat_list.refresh()
+        def on_to_change(e):
+            fstate["to"] = (e.value or "").strip()
+            chat_list.refresh()
         ui.input(label=_t("chat_filter_from"), on_change=on_from_change).props(
-            "dense"
-        ).props("type=date")
+            "dense type=date")
         ui.input(label=_t("chat_filter_to"), on_change=on_to_change).props(
-            "dense"
-        ).props("type=date")
+            "dense type=date")
 
-    # Reply indicator
     reply_holder = ui.element('div').style("width:100%;")
 
     def render_reply_indicator():
@@ -3129,7 +3280,6 @@ def _build_chat(state):
     def chat_list():
         msgs = db.chat_list(pid, limit=300)
 
-        # Apply filters
         if fstate["author"] != "all":
             msgs = [m for m in msgs if (m.get("author") or "") ==
                     fstate["author"]]
@@ -3149,8 +3299,16 @@ def _build_chat(state):
                 "text-align:center;padding:32px 0;color:#5a5a5a;")
             return
 
-        # Build message map for reply lookup
         by_id = {m["id"]: m for m in msgs}
+
+        # Cache of user profiles for this render
+        _profile_cache = {}
+
+        def _profile_for(m):
+            uid = m.get("user_id")
+            if uid and uid not in _profile_cache:
+                _profile_cache[uid] = db.get_user(uid) or {}
+            return _profile_cache.get(uid, {})
 
         for m in msgs:
             mid = m.get("id")
@@ -3160,52 +3318,87 @@ def _build_chat(state):
             reply_to = m.get("reply_to_id")
             is_mine = (author == my_name)
             cls = "chat-msg mine" if is_mine else "chat-msg"
+            prof = _profile_for(m)
 
             with ui.element('div').classes(cls):
-                with ui.element('div').classes("chat-head"):
-                    with ui.element('div').style(
-                        "display:flex;align-items:center;gap:6px;"
-                    ):
-                        ui.label(author).classes("chat-author")
-                        if is_mine:
-                            ui.html('<span class="badge-you">' +
-                                    _t("chat_you") + '</span>')
-                    ui.label(created).classes("chat-time")
+                # Avatar + clickable name
+                def _open_prof(uid=m.get("user_id")):
+                    if uid:
+                        _open_member_profile(uid)
 
-                if reply_to and reply_to in by_id:
-                    parent = by_id[reply_to]
-                    ui.html(
-                        '<div class="chat-reply-quote">' +
-                        '<b>' + str(parent.get("author", "")) + '</b>: ' +
-                        str(parent.get("body", ""))[:80] +
-                        '</div>'
-                    )
-
-                ui.html('<div class="chat-body">' +
-                        _chat_render_body(body, authors) + '</div>')
-
-                with ui.element('div').classes("chat-actions"):
-                    def _reply(rid=mid):
-                        fstate["reply_to"] = rid
-                        render_reply_indicator()
-                    ui.element('button').classes("chat-act").on(
-                        "click", _reply
-                    )
-                    ui.label(_t("chat_reply")).classes("chat-act").style(
+                with ui.element('div').classes("chat-avatar"):
+                    if prof.get("photo_bytes"):
+                        try:
+                            b64 = base64.b64encode(
+                                prof["photo_bytes"]).decode("ascii")
+                            ui.html('<img src="data:image/jpeg;base64,' +
+                                    b64 + '"/>')
+                        except Exception:
+                            ui.label(_initial(author))
+                    else:
+                        ui.label(_initial(author))
+                    ui.element('div').style(
+                        "position:absolute;top:0;left:0;right:0;bottom:0;"
                         "cursor:pointer;"
-                    ).on("click", _reply)
+                    ).on("click", _open_prof)
 
-                    if is_mine:
-                        def _del(did=mid):
-                            _confirm_delete_chat(state, did, chat_list.refresh)
-                        ui.label(_t("chat_delete")).classes(
-                            "chat-act danger"
-                        ).style("cursor:pointer;").on("click", _del)
+                with ui.element('div').classes("chat-content"):
+                    with ui.element('div').classes("chat-head"):
+                        with ui.element('div').style(
+                            "display:flex;align-items:center;gap:4px;"
+                        ):
+                            name_lbl = ui.label(author).classes("chat-author")
+                            name_lbl.on("click", _open_prof)
+                            if prof.get("title"):
+                                ui.label("· " + prof["title"]).classes(
+                                    "chat-title-tag")
+                            if is_mine:
+                                ui.html('<span class="badge-you">' +
+                                        _t("chat_you") + '</span>')
+                        ui.label(created).classes("chat-time")
+
+                    if reply_to and reply_to in by_id:
+                        parent = by_id[reply_to]
+                        ui.html(
+                            '<div class="chat-reply-quote">' +
+                            '<b>' + _html_mod.escape(
+                                str(parent.get("author", ""))) +
+                            '</b>: ' +
+                            _html_mod.escape(
+                                str(parent.get("body", ""))[:80]) +
+                            '</div>'
+                        )
+
+                    ui.html('<div class="chat-body">' +
+                            _chat_render_body(body) + '</div>')
+
+                    with ui.element('div').classes("chat-actions"):
+                        def _reply(rid=mid):
+                            fstate["reply_to"] = rid
+                            render_reply_indicator()
+                        ui.label(_t("chat_reply")).classes("chat-act").style(
+                            "cursor:pointer;"
+                        ).on("click", _reply)
+                        if is_mine:
+                            def _del(did=mid):
+                                _confirm_delete_chat(state, did,
+                                                      chat_list.refresh)
+                            ui.label(_t("chat_delete")).classes(
+                                "chat-act danger"
+                            ).style("cursor:pointer;").on("click", _del)
 
     chat_list()
 
     # Composer
     with ui.element('div').classes("chat-composer"):
+        def _on_search(e):
+            fstate["query"] = (e.value or "").strip().lower()
+            chat_list.refresh()
+
+        search_in = ui.input(placeholder=_t("chat_search")).style(
+            "width:100%;margin-bottom:6px;").props("dense clearable")
+        search_in.on("update:model-value", _on_search)
+
         with ui.element('div').style("position:relative;width:100%;"):
             body_in = ui.textarea(
                 placeholder=_t("chat_placeholder")
@@ -3218,7 +3411,6 @@ def _build_chat(state):
 
             def _update_mentions():
                 txt = body_in.value or ""
-                # Show mention dropdown if last typed token starts with @
                 last = txt.split()[-1] if txt.split() else ""
                 if last.startswith("@") and len(last) >= 1:
                     query = last[1:].lower()
@@ -3227,7 +3419,6 @@ def _build_chat(state):
                     mention_holder.clear()
                     mention_holder.style("display:block;")
                     with mention_holder:
-                        ui.html('<div class="mention-drop" id="mq"></div>')
                         with ui.element('div').classes("mention-drop"):
                             if not matches:
                                 ui.label("No matches").classes(
@@ -3255,10 +3446,8 @@ def _build_chat(state):
             txt = (body_in.value or "").strip()
             if not txt:
                 return
-            # Extract mentions
             import re as _re
             mentions = _re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
-            # Remove self from mentions
             mentions = [m for m in mentions if m and m != my_name]
             try:
                 db.chat_add(pid, state["user_id"], my_name, txt,
