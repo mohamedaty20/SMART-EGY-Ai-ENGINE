@@ -1,6 +1,6 @@
 """
 services/defect_service.py — Full file.
-Adds analyze_defect_text() for text-only defect entry (no photo).
+PDFs use JetBrains Mono for all Latin text; Arabic uses Amiri.
 """
 
 import io
@@ -145,10 +145,31 @@ def _fix(text):
         return s
 
 
-def _mono_font(text, bold=False):
+def _font_for(text, bold=False):
     if _has_arabic(text):
         return _FONT_BOLD if bold else _FONT_NAME
     return _MONO_BOLD if bold else _MONO_NAME
+
+
+_style_counter = [0]
+
+
+def _style_for(text, base_style, bold=False):
+    _style_counter[0] += 1
+    try:
+        from reportlab.lib.styles import ParagraphStyle
+    except Exception:
+        return base_style
+    return ParagraphStyle(
+        "s" + str(_style_counter[0]),
+        parent=base_style,
+        fontName=_font_for(text, bold=bold))
+
+
+def _para(text, base_style, bold=False):
+    from reportlab.platypus import Paragraph
+    t = _fix(text or "")
+    return Paragraph(t, _style_for(t, base_style, bold=bold))
 
 
 # =====================================================================
@@ -326,8 +347,6 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
         print("[defect] document parse failed: " + repr(e))
         return {"clauses": [], "raw_text_length": 0,
                 "error": "Document parse failed: " + repr(e)}
-
-    print("[defect] extracted " + str(len(text)) + " chars")
 
     if not text or len(text) < 100:
         return {"clauses": [], "raw_text_length": len(text),
@@ -591,7 +610,7 @@ async def analyze_defect_photo(photo_bytes,
 
 
 # =====================================================================
-# DEFECT ANALYSIS — TEXT ONLY (no photo)
+# DEFECT ANALYSIS — TEXT ONLY
 # =====================================================================
 _DEFECT_TEXT_PROMPT = """You are a senior QC engineer reviewing a defect description
 that a site engineer wrote in the field. There is no photo — the engineer
@@ -661,7 +680,6 @@ async def analyze_defect_text(description,
                                ms_clauses,
                                element_type,
                                call_gemini_json_fn):
-    """Text-only defect analysis. No photo. Returns same schema as photo."""
     if not (description or "").strip():
         return {"defects": [], "error": "Defect description is required."}
 
@@ -716,7 +734,7 @@ async def analyze_defect_text(description,
 
 
 # =====================================================================
-# QR HELPER
+# QR
 # =====================================================================
 def _make_qr_buffer(text):
     try:
@@ -754,30 +772,30 @@ def build_notice_pdf(project,
         topMargin=18 * mm, bottomMargin=18 * mm,
     )
 
-    NAVY = colors.HexColor("#1B2A4A")
-    ORANGE = colors.HexColor("#B45309")
-    GREY = colors.HexColor("#334155")
+    NAVY = colors.HexColor("#0a0a0a")
+    ORANGE = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+    LINE = colors.HexColor("#d4d4d4")
 
-    title_style = ParagraphStyle("Title", fontName=_FONT_BOLD,
-                                  fontSize=16, textColor=NAVY,
-                                  spaceAfter=4, leading=20)
-    sub_style = ParagraphStyle("Sub", fontName=_FONT_BOLD,
-                                fontSize=10, textColor=ORANGE, spaceAfter=8)
-    meta_style = ParagraphStyle("Meta", fontName=_FONT_NAME, fontSize=9,
-                                 textColor=GREY, leading=13)
-    body_style = ParagraphStyle("Body", fontName=_FONT_NAME, fontSize=9.5,
-                                 textColor=colors.black, leading=13)
-    label_style = ParagraphStyle("Label", fontName=_FONT_BOLD,
-                                  fontSize=9, textColor=NAVY)
+    title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
+                                  fontSize=14, textColor=NAVY,
+                                  spaceAfter=2, leading=17)
+    sub_style = ParagraphStyle("Sub", fontName=_MONO_NAME,
+                                fontSize=9, textColor=ORANGE,
+                                spaceAfter=6, leading=12)
+    label_style = ParagraphStyle("Label", fontName=_MONO_BOLD,
+                                  fontSize=8, textColor=NAVY, leading=11)
+    meta_style = ParagraphStyle("Meta", fontName=_MONO_NAME, fontSize=8.5,
+                                 textColor=GREY, leading=12)
+    body_style = ParagraphStyle("Body", fontName=_MONO_NAME, fontSize=8.5,
+                                 textColor=colors.black, leading=12)
     mono_head_style = ParagraphStyle("MonoHead", fontName=_MONO_BOLD,
-                                      fontSize=10, textColor=NAVY,
-                                      leading=13, spaceAfter=2)
+                                      fontSize=9.5, textColor=NAVY,
+                                      leading=12, spaceAfter=2)
     mono_cite_style = ParagraphStyle("MonoCite", fontName=_MONO_NAME,
-                                      fontSize=8.5, textColor=GREY,
-                                      leading=11)
-    mono_repair_style = ParagraphStyle("MonoRepair", fontName=_MONO_NAME,
-                                        fontSize=8.5, textColor=GREY,
-                                        leading=11)
+                                      fontSize=8, textColor=GREY, leading=10)
+    small_style = ParagraphStyle("Small", fontName=_MONO_NAME, fontSize=7,
+                                  textColor=GREY, leading=9)
 
     story = []
 
@@ -785,17 +803,17 @@ def build_notice_pdf(project,
     if logo_bytes:
         try:
             logo_img = ReportLabImage(io.BytesIO(logo_bytes),
-                                       width=30 * mm, height=15 * mm)
+                                       width=26 * mm, height=13 * mm)
         except Exception:
             logo_img = ""
 
     header_text = [
-        Paragraph("NOTICE TO SUBCONTRACTOR", title_style),
-        Paragraph("Notice No: " + notice_uid, sub_style),
+        _para("NOTICE TO SUBCONTRACTOR", title_style, bold=True),
+        _para("NOTICE NO: " + notice_uid, sub_style),
     ]
     if logo_img:
         t_head = Table([[logo_img, header_text]],
-                       colWidths=[35 * mm, 145 * mm])
+                       colWidths=[32 * mm, 148 * mm])
     else:
         t_head = Table([[header_text]], colWidths=[180 * mm])
     t_head.setStyle(TableStyle([
@@ -805,23 +823,23 @@ def build_notice_pdf(project,
     ]))
     story.append(t_head)
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ORANGE,
                              spaceAfter=10))
 
     meta_rows = [
-        [Paragraph("<b>Project:</b>", label_style),
-         Paragraph(_fix(project.get("name", "")), meta_style),
-         Paragraph("<b>Date:</b>", label_style),
-         Paragraph(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
-        [Paragraph("<b>Contractor:</b>", label_style),
-         Paragraph(_fix(project.get("contractor", "")), meta_style),
-         Paragraph("<b>Location:</b>", label_style),
-         Paragraph(_fix(project.get("location", "")), meta_style)],
-        [Paragraph("<b>Consultant:</b>", label_style),
-         Paragraph(_fix(project.get("consultant", "")), meta_style),
-         Paragraph("<b>Raised as:</b>", label_style),
-         Paragraph("QC Internal" if raise_type == "qc_internal"
-                   else "Consultant / NCR", meta_style)],
+        [_para("PROJECT", label_style, bold=True),
+         _para(project.get("name", ""), meta_style),
+         _para("DATE", label_style, bold=True),
+         _para(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
+        [_para("CONTRACTOR", label_style, bold=True),
+         _para(project.get("contractor", ""), meta_style),
+         _para("LOCATION", label_style, bold=True),
+         _para(project.get("location", ""), meta_style)],
+        [_para("CONSULTANT", label_style, bold=True),
+         _para(project.get("consultant", ""), meta_style),
+         _para("RAISED AS", label_style, bold=True),
+         _para("QC Internal" if raise_type == "qc_internal"
+               else "Consultant / NCR", meta_style)],
     ]
     t_meta = Table(meta_rows,
                    colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
@@ -834,14 +852,15 @@ def build_notice_pdf(project,
     story.append(t_meta)
     story.append(Spacer(1, 10))
 
-    story.append(Paragraph("<b>To:</b> " + _fix(subcontractor), body_style))
+    story.append(_para("TO:", label_style, bold=True))
+    story.append(_para(subcontractor, body_style))
     story.append(Spacer(1, 4))
-    story.append(Paragraph(
-        "<b>Deadline:</b> " + str(deadline_days) + " working day" +
+    story.append(_para(
+        "DEADLINE: " + str(deadline_days) + " working day" +
         ("s" if deadline_days != 1 else "") + " from receipt of this notice.",
         body_style))
     story.append(Spacer(1, 10))
-    story.append(Paragraph(
+    story.append(_para(
         "You are required to remedy the following defects. "
         "This notice is a permanent record and must be acknowledged on site.",
         body_style))
@@ -858,13 +877,10 @@ def build_notice_pdf(project,
         repair = _fix(d.get("repair_action", "") or "")
         mismatch = bool(d.get("context_mismatch", False))
 
-        head = str(idx) + ".  " + name
+        head = str(idx).zfill(2) + ".  " + name
         if zone or loc:
-            head += "   //  " + ", ".join(p for p in [zone, loc] if p)
-        head_style_use = ParagraphStyle(
-            "H" + str(idx), parent=mono_head_style,
-            fontName=_mono_font(raw_name, bold=True))
-        story.append(Paragraph(head, head_style_use))
+            head += "   //   " + ", ".join(p for p in [zone, loc] if p)
+        story.append(_para(head, mono_head_style, bold=True))
 
         cit_bits = []
         if ms_v:
@@ -874,24 +890,22 @@ def build_notice_pdf(project,
         if mismatch and not cit_bits:
             cit_bits.append("MS: (no matching clause in the uploaded MS)")
         if cit_bits:
-            story.append(Paragraph("    " + "  |  ".join(cit_bits),
-                                    mono_cite_style))
-        if repair:
-            story.append(Paragraph("    Repair: " + repair,
-                                    mono_repair_style))
-        story.append(Paragraph("    Severity: " + severity,
+            story.append(_para("    " + "   |   ".join(cit_bits),
                                 mono_cite_style))
+        if repair:
+            story.append(_para("    REPAIR: " + repair, mono_cite_style))
+        story.append(_para("    SEVERITY: " + severity, mono_cite_style))
         story.append(Spacer(1, 8))
 
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 18))
 
     sig_data = [
-        [Paragraph("<b>Issued by (QC):</b>", label_style),
-         Paragraph("<b>Acknowledged by (Subcontractor):</b>", label_style)],
-        [Paragraph("_" * 30, body_style),
-         Paragraph("_" * 30, body_style)],
-        [Paragraph(_fix(project.get("engineer_name", "")), meta_style),
-         Paragraph("Name / Date / Signature", meta_style)],
+        [_para("ISSUED BY (QC)", label_style, bold=True),
+         _para("ACKNOWLEDGED BY (SUBCONTRACTOR)", label_style, bold=True)],
+        [_para("_" * 32, body_style),
+         _para("_" * 32, body_style)],
+        [_para(project.get("engineer_name", ""), meta_style),
+         _para("Name / Date / Signature", small_style)],
     ]
     t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
     t_sig.setStyle(TableStyle([
@@ -908,12 +922,10 @@ def build_notice_pdf(project,
         project.get("name", ""))
     if qr_buf:
         try:
-            qr_img = ReportLabImage(qr_buf, width=20 * mm, height=20 * mm)
+            qr_img = ReportLabImage(qr_buf, width=18 * mm, height=18 * mm)
             t_qr = Table([[qr_img,
-                           Paragraph("<b>UID:</b> " + notice_uid + "<br/>" +
-                                     "Verify by scanning the QR code.",
-                                     meta_style)]],
-                          colWidths=[25 * mm, 155 * mm])
+                           _para("UID: " + notice_uid, meta_style)]],
+                          colWidths=[22 * mm, 158 * mm])
             t_qr.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('LEFTPADDING', (0, 0), (-1, -1), 0),
@@ -921,9 +933,9 @@ def build_notice_pdf(project,
             story.append(t_qr)
         except Exception as e:
             print("[defect] QR embed failed: " + repr(e))
-            story.append(Paragraph("UID: " + notice_uid, meta_style))
+            story.append(_para("UID: " + notice_uid, meta_style))
     else:
-        story.append(Paragraph("UID: " + notice_uid, meta_style))
+        story.append(_para("UID: " + notice_uid, meta_style))
 
     doc.build(story)
     buf.seek(0)
@@ -951,58 +963,60 @@ def build_register_pdf(project, rows, logo_bytes=None):
         topMargin=14 * mm, bottomMargin=14 * mm,
     )
 
-    NAVY = colors.HexColor("#1B2A4A")
-    ORANGE = colors.HexColor("#B45309")
-    GREY = colors.HexColor("#334155")
+    NAVY = colors.HexColor("#0a0a0a")
+    ORANGE = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
 
-    title_style = ParagraphStyle("Title", fontName=_FONT_BOLD,
-                                  fontSize=15, textColor=NAVY, spaceAfter=4)
-    sub_style = ParagraphStyle("Sub", fontName=_FONT_BOLD,
-                                fontSize=9, textColor=ORANGE, spaceAfter=8)
-    cell_style = ParagraphStyle("Cell", fontName=_FONT_NAME, fontSize=8.5,
-                                 textColor=GREY, leading=11)
-    mono_cell = ParagraphStyle("MCell", fontName=_MONO_NAME, fontSize=8.5,
-                                textColor=GREY, leading=11)
-    head_style = ParagraphStyle("Head", fontName=_FONT_BOLD,
-                                 fontSize=8.5, textColor=colors.white,
-                                 leading=11)
+    title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
+                                  fontSize=13, textColor=NAVY, spaceAfter=2)
+    sub_style = ParagraphStyle("Sub", fontName=_MONO_NAME,
+                                fontSize=8.5, textColor=ORANGE, spaceAfter=6)
+    cell_style = ParagraphStyle("Cell", fontName=_MONO_NAME, fontSize=8,
+                                 textColor=GREY, leading=10)
+    head_style = ParagraphStyle("Head", fontName=_MONO_BOLD,
+                                 fontSize=8, textColor=colors.white,
+                                 leading=10)
+    small_style = ParagraphStyle("Small", fontName=_MONO_NAME, fontSize=7,
+                                  textColor=GREY, leading=9)
 
     story = []
-    story.append(Paragraph("DEFECT REGISTER", title_style))
-    story.append(Paragraph(_fix(project.get("name", "")), sub_style))
-    story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
+    story.append(_para("DEFECT REGISTER", title_style, bold=True))
+    story.append(_para(project.get("name", ""), sub_style))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ORANGE,
                              spaceAfter=10))
 
-    head = ["UID", "Defect", "Zone", "Subcontractor", "Source", "Status", "Created"]
-    data = [[Paragraph(h, head_style) for h in head]]
+    head = ["UID", "DEFECT", "ZONE", "SUBCONTRACTOR",
+            "SOURCE", "STATUS", "CREATED"]
+    data = [[_para(h, head_style, bold=True) for h in head]]
     for r in rows:
         data.append([
-            Paragraph(_fix(r.get("uid", "")), cell_style),
-            Paragraph(_fix(r.get("first_defect", "") or "-"), mono_cell),
-            Paragraph(_fix(r.get("zone", "")), cell_style),
-            Paragraph(_fix(r.get("subcontractor", "")), cell_style),
-            Paragraph(str(r.get("raise_type", "qc_internal")), cell_style),
-            Paragraph(str(r.get("status", "")).upper(), cell_style),
-            Paragraph(str(r.get("created_at", ""))[:10], cell_style),
+            _para(r.get("uid", ""), cell_style),
+            _para(r.get("first_defect", "") or "-", cell_style),
+            _para(r.get("zone", ""), cell_style),
+            _para(r.get("subcontractor", ""), cell_style),
+            _para("CONSULTANT" if r.get("raise_type") == "consultant"
+                  else "QC", cell_style),
+            _para(str(r.get("status", "")).upper(), cell_style),
+            _para(str(r.get("created_at", ""))[:10], cell_style),
         ])
 
-    t = Table(data, colWidths=[36*mm, 60*mm, 15*mm, 45*mm, 30*mm, 24*mm, 26*mm])
+    t = Table(data, colWidths=[36*mm, 60*mm, 15*mm, 45*mm, 26*mm, 24*mm, 24*mm])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), NAVY),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('LEFTPADDING', (0, 0), (-1, -1), 4),
         ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1),
-         [colors.white, colors.HexColor("#F1F5F9")]),
-        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+         [colors.white, colors.HexColor("#F5F5F5")]),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
     ]))
     story.append(t)
-    story.append(Spacer(1, 10))
-    story.append(Paragraph(
-        "Generated " + datetime.date.today().strftime("%Y-%m-%d") +
-        " — " + str(len(rows)) + " record(s).", cell_style))
+    story.append(Spacer(1, 8))
+    story.append(_para(
+        "GENERATED " + datetime.date.today().strftime("%Y-%m-%d") +
+        "  ·  " + str(len(rows)) + " RECORD(S)", small_style))
 
     doc.build(story)
     buf.seek(0)
@@ -1033,25 +1047,27 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
         topMargin=18 * mm, bottomMargin=18 * mm,
     )
 
-    NAVY = colors.HexColor("#1B2A4A")
-    ORANGE = colors.HexColor("#B45309")
-    GREY = colors.HexColor("#334155")
-    GREEN = colors.HexColor("#047857")
-    RED = colors.HexColor("#B91C1C")
+    NAVY = colors.HexColor("#0a0a0a")
+    ORANGE = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+    GREEN = colors.HexColor("#16a34a")
+    RED = colors.HexColor("#dc2626")
 
-    title_style = ParagraphStyle("Title", fontName=_FONT_BOLD,
-                                  fontSize=16, textColor=NAVY, spaceAfter=4)
-    sub_style = ParagraphStyle("Sub", fontName=_FONT_BOLD,
-                                fontSize=10, textColor=ORANGE, spaceAfter=8)
-    meta_style = ParagraphStyle("Meta", fontName=_FONT_NAME, fontSize=9,
-                                 textColor=GREY, leading=13)
-    body_style = ParagraphStyle("Body", fontName=_FONT_NAME, fontSize=9.5,
-                                 textColor=colors.black, leading=13)
-    label_style = ParagraphStyle("Label", fontName=_FONT_BOLD,
-                                  fontSize=9, textColor=NAVY)
+    title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
+                                  fontSize=14, textColor=NAVY, spaceAfter=2)
+    sub_style = ParagraphStyle("Sub", fontName=_MONO_NAME,
+                                fontSize=9, textColor=ORANGE, spaceAfter=6)
+    label_style = ParagraphStyle("Label", fontName=_MONO_BOLD,
+                                  fontSize=8, textColor=NAVY, leading=11)
+    meta_style = ParagraphStyle("Meta", fontName=_MONO_NAME, fontSize=8.5,
+                                 textColor=GREY, leading=11)
+    body_style = ParagraphStyle("Body", fontName=_MONO_NAME, fontSize=8.5,
+                                 textColor=colors.black, leading=12)
     mono_head_style = ParagraphStyle("MonoHead", fontName=_MONO_BOLD,
-                                      fontSize=10, textColor=NAVY,
-                                      spaceAfter=3)
+                                      fontSize=9, textColor=NAVY,
+                                      spaceAfter=2, leading=11)
+    small_style = ParagraphStyle("Small", fontName=_MONO_NAME, fontSize=7,
+                                  textColor=GREY, leading=9)
 
     open_rows = [r for r in rows if r.get("status") != "closed"]
     closed_rows = [r for r in rows if r.get("status") == "closed"]
@@ -1062,17 +1078,17 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     if logo_bytes:
         try:
             logo_img = ReportLabImage(io.BytesIO(logo_bytes),
-                                       width=30 * mm, height=15 * mm)
+                                       width=26 * mm, height=13 * mm)
         except Exception:
             logo_img = ""
 
     header_text = [
-        Paragraph("DEFECT CLOSURE REPORT", title_style),
-        Paragraph("Report No: " + report_uid, sub_style),
+        _para("DEFECT CLOSURE REPORT", title_style, bold=True),
+        _para("REPORT NO: " + report_uid, sub_style),
     ]
     if logo_img:
         t_head = Table([[logo_img, header_text]],
-                       colWidths=[35 * mm, 145 * mm])
+                       colWidths=[32 * mm, 148 * mm])
     else:
         t_head = Table([[header_text]], colWidths=[180 * mm])
     t_head.setStyle(TableStyle([
@@ -1082,18 +1098,18 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     ]))
     story.append(t_head)
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=1.2, color=ORANGE,
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ORANGE,
                              spaceAfter=10))
 
     meta_rows = [
-        [Paragraph("<b>Project:</b>", label_style),
-         Paragraph(_fix(project.get("name", "")), meta_style),
-         Paragraph("<b>Date:</b>", label_style),
-         Paragraph(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
-        [Paragraph("<b>Contractor:</b>", label_style),
-         Paragraph(_fix(project.get("contractor", "")), meta_style),
-         Paragraph("<b>Consultant:</b>", label_style),
-         Paragraph(_fix(project.get("consultant", "")), meta_style)],
+        [_para("PROJECT", label_style, bold=True),
+         _para(project.get("name", ""), meta_style),
+         _para("DATE", label_style, bold=True),
+         _para(datetime.date.today().strftime("%Y-%m-%d"), meta_style)],
+        [_para("CONTRACTOR", label_style, bold=True),
+         _para(project.get("contractor", ""), meta_style),
+         _para("CONSULTANT", label_style, bold=True),
+         _para(project.get("consultant", ""), meta_style)],
     ]
     t_meta = Table(meta_rows,
                    colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
@@ -1107,57 +1123,61 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     story.append(Spacer(1, 10))
 
     summary = [
-        ["Total defects", str(len(rows))],
-        ["Closed", str(len(closed_rows))],
-        ["Still open", str(len(open_rows))],
+        [_para("TOTAL DEFECTS", label_style, bold=True),
+         _para(str(len(rows)), meta_style)],
+        [_para("CLOSED", label_style, bold=True),
+         _para(str(len(closed_rows)), meta_style)],
+        [_para("STILL OPEN", label_style, bold=True),
+         _para(str(len(open_rows)), meta_style)],
     ]
     t_sum = Table(summary, colWidths=[50 * mm, 30 * mm])
     t_sum.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
-        ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
-        ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F5F5F5")),
+        ('BOX', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
         ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
     ]))
     story.append(t_sum)
-    story.append(Spacer(1, 16))
+    story.append(Spacer(1, 14))
 
     if not rows:
-        story.append(Paragraph("No defects recorded.", body_style))
+        story.append(_para("No defects recorded.", body_style))
     else:
         for idx, r in enumerate(rows, start=1):
             status = str(r.get("status", "")).upper()
             color = GREEN if status == "CLOSED" else RED
-            head = (str(idx) + ".  " + _fix(r.get("uid", "")) +
-                    "   //  " + _fix(r.get("first_defect", "") or "-") +
-                    "  ·  Zone " + _fix(r.get("zone", "")))
-            story.append(Paragraph(head, mono_head_style))
+            head = (str(idx).zfill(2) + ".  " + _fix(r.get("uid", "")) +
+                    "   //   " + _fix(r.get("first_defect", "") or "-") +
+                    "   ·   ZONE " + _fix(r.get("zone", "")))
+            story.append(_para(head, mono_head_style, bold=True))
 
-            st_style = ParagraphStyle("St", parent=meta_style, textColor=color,
-                                       fontName=_FONT_BOLD)
-            story.append(Paragraph("Status: " + status, st_style))
-            story.append(Paragraph(
-                "Raised as: " + str(r.get("raise_type", "qc_internal")),
-                meta_style))
-            story.append(Paragraph(
-                "Created: " + str(r.get("created_at", ""))[:19],
-                meta_style))
+            st_style = ParagraphStyle("St" + str(idx), parent=meta_style,
+                                       textColor=color, fontName=_MONO_BOLD)
+            story.append(_para("STATUS: " + status, st_style, bold=True))
+            story.append(_para("SOURCE: " +
+                                ("CONSULTANT" if r.get("raise_type") ==
+                                 "consultant" else "QC INTERNAL"),
+                                meta_style))
+            story.append(_para("CREATED: " +
+                                str(r.get("created_at", ""))[:19],
+                                meta_style))
             if r.get("closed_at"):
-                story.append(Paragraph(
-                    "Closed: " + str(r["closed_at"])[:19], meta_style))
+                story.append(_para("CLOSED: " +
+                                    str(r["closed_at"])[:19], meta_style))
 
-            story.append(Spacer(1, 8))
+            story.append(Spacer(1, 6))
 
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 18))
 
     sig_data = [
-        [Paragraph("<b>QC Engineer:</b>", label_style),
-         Paragraph("<b>Consultant:</b>", label_style)],
-        [Paragraph("_" * 30, body_style),
-         Paragraph("_" * 30, body_style)],
-        [Paragraph(_fix(project.get("engineer_name", "")), meta_style),
-         Paragraph("Name / Date / Signature", meta_style)],
+        [_para("QC ENGINEER", label_style, bold=True),
+         _para("CONSULTANT", label_style, bold=True)],
+        [_para("_" * 32, body_style),
+         _para("_" * 32, body_style)],
+        [_para(project.get("engineer_name", ""), meta_style),
+         _para("Name / Date / Signature", small_style)],
     ]
     t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
     t_sig.setStyle(TableStyle([
