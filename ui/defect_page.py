@@ -32,7 +32,7 @@ T = {
         "no_ms": "No method statements yet",
         "clauses_count": "clauses",
         "photo_title": "Take a photo of the defect",
-        "photo_sub": "Upload a site photo to begin.",
+        "photo_sub": "Tap below to pick a site photo.",
         "choose_photo": "Choose photo",
         "change_photo": "Change photo",
         "note_label": "Note (optional)",
@@ -114,6 +114,8 @@ T = {
         "lang_button": "AR",
         "upload_failed": "Upload failed: ",
         "empty_file": "Empty file received.",
+        "file_loaded": "File loaded: ",
+        "photo_loaded": "Photo loaded",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -135,7 +137,7 @@ T = {
         "no_ms": "لا توجد بيانات طريقة بعد",
         "clauses_count": "بند",
         "photo_title": "التقط صورة للعيب",
-        "photo_sub": "حمّل صورة الموقع للبدء.",
+        "photo_sub": "اضغط أدناه لاختيار صورة الموقع.",
         "choose_photo": "اختر صورة",
         "change_photo": "تغيير الصورة",
         "note_label": "ملاحظة (اختياري)",
@@ -217,6 +219,8 @@ T = {
         "lang_button": "EN",
         "upload_failed": "فشل التحميل: ",
         "empty_file": "الملف فارغ.",
+        "file_loaded": "تم تحميل الملف: ",
+        "photo_loaded": "تم تحميل الصورة",
     },
 }
 
@@ -286,7 +290,6 @@ def _inject_theme():
     --green: #10b981;
     --amber: #f59e0b;
     --red: #ef4444;
-    --radius: 12px;
   }
 
   html, body {
@@ -297,7 +300,6 @@ def _inject_theme():
     font-size: 15px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
-    letter-spacing: -0.005em;
     overflow-x: hidden !important;
     direction: __DIR__;
   }
@@ -318,11 +320,9 @@ def _inject_theme():
     border-radius: 10px !important;
     text-transform: none !important;
     font-weight: 600 !important;
-    letter-spacing: -0.01em !important;
     min-height: 42px !important;
     padding: 0 16px !important;
     font-size: 14px !important;
-    transition: all 0.15s ease !important;
   }
 
   .btn-primary {
@@ -337,10 +337,6 @@ def _inject_theme():
     color: var(--text) !important;
     border: 1px solid var(--border) !important;
   }
-  .btn-soft:hover {
-    background: #202020 !important;
-    border-color: #333 !important;
-  }
 
   .btn-success {
     background: var(--green) !important;
@@ -354,9 +350,6 @@ def _inject_theme():
   .q-field--outlined .q-field__control:before {
     border-color: var(--border) !important;
   }
-  .q-field--outlined:hover .q-field__control:before {
-    border-color: #3a3a3a !important;
-  }
   .q-field--outlined.q-field--focused .q-field__control:after {
     border-color: var(--violet) !important;
   }
@@ -364,13 +357,10 @@ def _inject_theme():
     color: var(--text) !important;
   }
   .q-field__label { color: var(--muted) !important; font-weight: 500; }
-  .q-field__native::placeholder, .q-field__input::placeholder {
-    color: var(--muted-2) !important;
-  }
 
   .card {
     background: var(--surface);
-    border-radius: var(--radius);
+    border-radius: 12px;
     border: 1px solid var(--border);
     padding: 20px;
     width: 100%;
@@ -389,8 +379,7 @@ def _inject_theme():
 
   .h1 { font-size: 22px; font-weight: 800; color: var(--text);
         letter-spacing: -0.025em; }
-  .h2 { font-size: 17px; font-weight: 700; color: var(--text);
-        letter-spacing: -0.015em; }
+  .h2 { font-size: 17px; font-weight: 700; color: var(--text); }
   .h3 { font-size: 14px; font-weight: 600; color: var(--text); }
   .muted { color: var(--muted); font-size: 13px; }
   .soft { color: var(--text-soft); font-size: 13px; }
@@ -425,7 +414,6 @@ def _inject_theme():
     font-size: 11px;
     font-weight: 600;
     gap: 3px;
-    transition: color 0.15s;
     font-family: inherit;
   }
   .bottom-nav-item.active { color: var(--text); }
@@ -459,23 +447,35 @@ def _inject_theme():
   .app-header .brand {
     font-weight: 700;
     font-size: 15px;
-    letter-spacing: -0.01em;
     color: var(--text);
   }
 
-  .drop-zone {
-    border: 1.5px dashed #333;
-    border-radius: 14px;
-    padding: 44px 20px;
-    text-align: center;
-    background: var(--surface-2);
-    transition: border-color 0.2s, background 0.2s;
-    cursor: pointer;
+  /* Make the NiceGUI uploader look like a nice big button */
+  .q-uploader {
+    background: var(--surface-2) !important;
+    border: 1.5px dashed #333 !important;
+    border-radius: 14px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    color: var(--text) !important;
   }
-  .drop-zone:hover {
-    border-color: var(--violet);
-    background: #1c1a1f;
+  .q-uploader__header {
+    background: transparent !important;
+    color: var(--text) !important;
+    border-radius: 12px !important;
   }
+  .q-uploader__title { color: var(--text) !important; }
+  .q-uploader__subtitle { color: var(--muted) !important; }
+  .q-uploader__list { background: transparent !important; }
+  .q-uploader__list .q-item {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border-radius: 8px !important;
+    margin: 4px !important;
+  }
+  .q-uploader__list .q-item__label { color: var(--text) !important; }
+  .q-uploader__list .q-item__label--caption { color: var(--muted) !important; }
+  .q-uploader .q-btn { color: var(--text) !important; }
 
   .badge-open {
     display: inline-block;
@@ -486,7 +486,6 @@ def _inject_theme():
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 20px;
-    letter-spacing: 0.04em;
     text-transform: uppercase;
   }
   .badge-closed {
@@ -498,7 +497,6 @@ def _inject_theme():
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 20px;
-    letter-spacing: 0.04em;
     text-transform: uppercase;
   }
   .badge-ai {
@@ -509,7 +507,6 @@ def _inject_theme():
     font-weight: 800;
     padding: 2px 7px;
     border-radius: 6px;
-    letter-spacing: 0.05em;
   }
   .badge-manual {
     display: inline-block;
@@ -519,7 +516,6 @@ def _inject_theme():
     font-weight: 800;
     padding: 2px 7px;
     border-radius: 6px;
-    letter-spacing: 0.05em;
   }
 
   .q-notification {
@@ -537,7 +533,16 @@ def _inject_theme():
   }
 
   .q-separator { background: var(--border) !important; }
-  hr { border-color: var(--border) !important; }
+
+  .scroll-box {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    margin-top: 8px;
+    background: var(--surface-2);
+  }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -655,9 +660,8 @@ def _build_drawer(state, drawer):
                     if proj.get("name"):
                         ui.label(proj.get("name", "")).style(
                             "font-size:15px;font-weight:700;"
-                            "color:#fafafa;letter-spacing:-0.01em;"
-                            "white-space:nowrap;overflow:hidden;"
-                            "text-overflow:ellipsis;"
+                            "color:#fafafa;white-space:nowrap;"
+                            "overflow:hidden;text-overflow:ellipsis;"
                         )
                         ui.label(_t("project")).classes("muted").style(
                             "font-size:11px;"
@@ -824,7 +828,7 @@ def _open_ms_dialog(state, refresh_drawer):
 
     with ui.dialog() as dlg, ui.card().style(
         "background:#141414;padding:24px;min-width:320px;"
-        "max-width:95vw;width:500px;border-radius:16px;"
+        "max-width:95vw;width:520px;border-radius:16px;"
         "border:1px solid #262626;"
     ):
         ui.label(_t("ms_dialog_title")).classes("h1").style(
@@ -832,15 +836,23 @@ def _open_ms_dialog(state, refresh_drawer):
         )
 
         holder = {"bytes": None, "name": ""}
+        file_status = ui.label("").classes("muted").style(
+            "font-size:12px;margin-top:6px;"
+        )
 
         async def handle_file(e):
             holder["bytes"] = await e.file.read()
             holder["name"] = e.file.name
+            file_status.set_text(
+                _t("file_loaded") + " " + e.file.name + " (" +
+                str(len(holder["bytes"]) // 1024) + " KB)"
+            )
 
         ui.upload(on_upload=handle_file, auto_upload=True).style(
             "width:100%;"
         ).props("flat bordered accept=.pdf,.docx,.doc,.txt,.md "
                 "label='" + _t("ms_upload_file") + "'")
+        file_status
 
         ms_num_in = ui.input(_t("ms_number"), value="MS-01").style(
             "width:100%;"
@@ -878,20 +890,23 @@ def _open_ms_dialog(state, refresh_drawer):
             with preview:
                 ui.label(_t("extracted") + " " + str(len(clauses)) +
                           " " + _t("clauses_count")).classes("h3").style(
-                    "margin-bottom:8px;"
+                    "margin-bottom:6px;"
                 )
-                for cl in clauses[:5]:
-                    with ui.element('div').classes("item-box"):
-                        ui.label("§" + cl["id"] + " — " + cl["title"]).style(
-                            "font-weight:600;font-size:13px;color:#fafafa;"
-                        )
-                        ui.label(cl["text"][:100]).classes("muted").style(
-                            "font-size:12px;"
-                        )
-                if len(clauses) > 5:
-                    ui.label("+ " + str(len(clauses) - 5) + " more").classes(
-                        "muted"
-                    )
+                # Show ALL clauses in a scrollable box
+                with ui.element('div').classes("scroll-box"):
+                    for cl in clauses:
+                        with ui.element('div').style(
+                            "padding:8px 6px;border-bottom:1px solid #1f1f1f;"
+                        ):
+                            ui.label(
+                                "§" + cl["id"] + " — " + cl["title"]
+                            ).style(
+                                "font-weight:600;font-size:13px;"
+                                "color:#fafafa;"
+                            )
+                            ui.label(cl["text"][:180]).classes("muted").style(
+                                "font-size:12px;margin-top:2px;"
+                            )
 
                 def confirm():
                     db.save_ms(
@@ -934,17 +949,15 @@ def _build_new_defect(state):
         "photo": None, "mime": None,
         "candidates": None, "manual": [],
     }
-    container = ui.element('div').style("width:100%;")
 
-    def render():
-        container.clear()
-        with container:
-            _render_wizard(state, stage, render)
+    @ui.refreshable
+    def wizard():
+        _render_wizard(state, stage, wizard.refresh)
 
-    render()
+    wizard()
 
 
-def _render_wizard(state, stage, render_fn):
+def _render_wizard(state, stage, refresh_fn):
     if not state.get("project"):
         with ui.element('div').classes("card").style("text-align:center;"):
             ui.icon("info").style("font-size:36px;color:#737373;")
@@ -975,36 +988,21 @@ def _render_wizard(state, stage, render_fn):
                              else "image/png")
             stage["candidates"] = None
             stage["manual"] = []
-            ui.timer(0.05, render_fn, once=True)
+            refresh_fn()
 
-        if not stage["photo"]:
-            with ui.element('div').classes("drop-zone").style(
-                "position:relative;overflow:hidden;"
-            ):
-                ui.icon("add_a_photo").style(
-                    "font-size:42px;color:#a855f7;display:block;"
-                    "margin-bottom:10px;"
-                )
-                ui.label(_t("choose_photo")).classes("h3")
-                ui.upload(on_upload=handle_photo, auto_upload=True).style(
-                    "position:absolute;top:0;left:0;width:100%;"
-                    "height:100%;opacity:0;cursor:pointer;"
-                ).props("flat bordered accept=image/*")
-        else:
+        # Visible uploader — the built-in NiceGUI upload shows a progress bar
+        ui.upload(on_upload=handle_photo, auto_upload=True).style(
+            "width:100%;"
+        ).props("flat bordered accept=image/* label='" +
+                (_t("change_photo") if stage["photo"]
+                 else _t("choose_photo")) + "'")
+
+        if stage["photo"]:
             ui.image(io.BytesIO(stage["photo"])).style(
                 "width:100%;max-height:340px;object-fit:cover;"
                 "border-radius:12px;border:1px solid #262626;"
+                "margin-top:12px;"
             )
-            with ui.element('div').style(
-                "position:relative;margin-top:12px;"
-            ):
-                ui.button(_t("change_photo"), icon="edit").classes(
-                    BTN_SOFT
-                ).style("width:100%;")
-                ui.upload(on_upload=handle_photo, auto_upload=True).style(
-                    "position:absolute;top:0;left:0;width:100%;"
-                    "height:100%;opacity:0;cursor:pointer;"
-                ).props("flat bordered accept=image/*")
 
     # ---- Stage 2: note + analyze ----
     if stage["photo"] and stage["candidates"] is None:
@@ -1052,7 +1050,7 @@ def _render_wizard(state, stage, render_fn):
                 for c in stage["candidates"]:
                     c["_sel"] = True
                     c["_manual"] = False
-                ui.timer(0.05, render_fn, once=True)
+                refresh_fn()
 
             analyze_btn.on("click", do_analyze)
             analyze_btn.classes(BTN_PRIMARY).style(
@@ -1061,10 +1059,10 @@ def _render_wizard(state, stage, render_fn):
 
     # ---- Stage 3: candidates + notice ----
     if stage["photo"] and stage["candidates"] is not None:
-        _render_candidates(state, stage, render_fn)
+        _render_candidates(state, stage, refresh_fn)
 
 
-def _render_candidates(state, stage, render_fn):
+def _render_candidates(state, stage, refresh_fn):
     all_items = stage["candidates"] + stage["manual"]
 
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
@@ -1078,10 +1076,10 @@ def _render_candidates(state, stage, render_fn):
             )
 
         for c in list(all_items):
-            _render_defect_card(c, stage, render_fn)
+            _render_defect_card(c, stage, refresh_fn)
 
         def _open_add():
-            _open_add_dialog(stage, render_fn)
+            _open_add_dialog(stage, refresh_fn)
 
         ui.button(_t("add_manual"), icon="add",
                   on_click=_open_add).classes(BTN_SOFT).style(
@@ -1171,7 +1169,7 @@ def _render_candidates(state, stage, render_fn):
             stage["mime"] = None
             stage["candidates"] = None
             stage["manual"] = []
-            ui.timer(0.05, render_fn, once=True)
+            refresh_fn()
 
         gen_btn.on("click", do_generate)
         gen_btn.classes(BTN_PRIMARY).style(
@@ -1179,7 +1177,7 @@ def _render_candidates(state, stage, render_fn):
         )
 
 
-def _render_defect_card(item, stage, render_fn):
+def _render_defect_card(item, stage, refresh_fn):
     with ui.element('div').classes("item-box"):
         with ui.element('div').style(
             "display:flex;gap:10px;align-items:flex-start;"
@@ -1225,14 +1223,14 @@ def _render_defect_card(item, stage, render_fn):
                     stage["candidates"].remove(item)
                 if item in stage["manual"]:
                     stage["manual"].remove(item)
-                render_fn()
+                refresh_fn()
 
             ui.button(icon="close", on_click=_remove).props(
                 "flat round dense"
             ).style("color:#737373;")
 
 
-def _open_add_dialog(stage, render_fn):
+def _open_add_dialog(stage, refresh_fn):
     with ui.dialog() as dlg, ui.card().style(
         "background:#141414;padding:24px;min-width:320px;"
         "max-width:95vw;width:440px;border-radius:16px;"
@@ -1266,7 +1264,7 @@ def _open_add_dialog(stage, render_fn):
                 "_manual": True,
             })
             dlg.close()
-            render_fn()
+            refresh_fn()
 
         with ui.element('div').style(
             "display:flex;gap:8px;margin-top:16px;"
@@ -1295,85 +1293,83 @@ def _build_logs(state):
     ui.label(_t("logs_sub")).classes("muted").style("margin-bottom:16px;")
 
     fstate = {"filter": "all"}
-    holder = ui.element('div').style("width:100%;")
 
-    def refresh():
-        holder.clear()
+    @ui.refreshable
+    def log_list():
         rows = db.list_defects(
             state["project"]["id"],
             raise_filter=None if fstate["filter"] == "all"
             else fstate["filter"],
         )
 
-        with holder:
-            with ui.element('div').style(
-                "display:flex;gap:8px;align-items:center;"
-                "margin-bottom:14px;"
-            ):
-                filt = ui.select(
-                    {"all": _t("filter_all"),
-                     "qc_internal": _t("filter_qc"),
-                     "consultant": _t("filter_consultant")},
-                    value=fstate["filter"]
-                ).style("flex:1;")
+        with ui.element('div').style(
+            "display:flex;gap:8px;align-items:center;"
+            "margin-bottom:14px;"
+        ):
+            filt = ui.select(
+                {"all": _t("filter_all"),
+                 "qc_internal": _t("filter_qc"),
+                 "consultant": _t("filter_consultant")},
+                value=fstate["filter"]
+            ).style("flex:1;")
 
-                def on_filter(e):
-                    fstate["filter"] = e.value
-                    refresh()
+            def on_filter(e):
+                fstate["filter"] = e.value
+                log_list.refresh()
 
-                filt.on("update:model-value", on_filter)
+            filt.on("update:model-value", on_filter)
 
-            if rows:
-                open_count = sum(1 for r in rows if r["status"] == "open")
-                ui.label(
-                    str(len(rows)) + " · " + _t("open") + " " +
-                    str(open_count) + " · " + _t("closed") + " " +
-                    str(len(rows) - open_count)
-                ).classes("muted").style("margin-bottom:12px;")
+        if rows:
+            open_count = sum(1 for r in rows if r["status"] == "open")
+            ui.label(
+                str(len(rows)) + " · " + _t("open") + " " +
+                str(open_count) + " · " + _t("closed") + " " +
+                str(len(rows) - open_count)
+            ).classes("muted").style("margin-bottom:12px;")
 
-            with ui.element('div').style(
-                "display:grid;grid-template-columns:1fr 1fr;"
-                "gap:8px;margin-bottom:16px;"
-            ):
-                def export_register():
-                    if not rows:
-                        ui.notify(_t("no_rows"), type="warning")
-                        return
-                    pdf = svc.build_register_pdf(
-                        state["project"], rows,
-                        logo_bytes=state["project"].get("logo_bytes"),
-                    )
-                    ui.download(pdf, filename="defect_register.pdf")
-
-                def export_closure():
-                    if not rows:
-                        ui.notify(_t("no_rows"), type="warning")
-                        return
-                    pdf = svc.build_closure_pdf(
-                        state["project"], rows,
-                        logo_bytes=state["project"].get("logo_bytes"),
-                    )
-                    ui.download(pdf, filename="closure_report.pdf")
-
-                ui.button(_t("export_register"),
-                          on_click=export_register).classes(
-                    BTN_SOFT
-                ).style("width:100%;")
-                ui.button(_t("closure_report"),
-                          on_click=export_closure).classes(
-                    BTN_PRIMARY
-                ).style("width:100%;")
-
-            if not rows:
-                ui.label(_t("no_logs")).classes("muted").style(
-                    "text-align:center;padding:40px 0;"
+        with ui.element('div').style(
+            "display:grid;grid-template-columns:1fr 1fr;"
+            "gap:8px;margin-bottom:16px;"
+        ):
+            def export_register():
+                if not rows:
+                    ui.notify(_t("no_rows"), type="warning")
+                    return
+                pdf = svc.build_register_pdf(
+                    state["project"], rows,
+                    logo_bytes=state["project"].get("logo_bytes"),
                 )
-                return
+                ui.download(pdf, filename="defect_register.pdf")
 
-            for r in rows:
-                _render_log_card(r, refresh)
+            def export_closure():
+                if not rows:
+                    ui.notify(_t("no_rows"), type="warning")
+                    return
+                pdf = svc.build_closure_pdf(
+                    state["project"], rows,
+                    logo_bytes=state["project"].get("logo_bytes"),
+                )
+                ui.download(pdf, filename="closure_report.pdf")
 
-    refresh()
+            ui.button(_t("export_register"),
+                      on_click=export_register).classes(
+                BTN_SOFT
+            ).style("width:100%;")
+            ui.button(_t("closure_report"),
+                      on_click=export_closure).classes(
+                BTN_PRIMARY
+            ).style("width:100%;")
+
+        if not rows:
+            ui.label(_t("no_logs")).classes("muted").style(
+                "text-align:center;padding:40px 0;"
+            )
+            return
+
+        for r in rows:
+            _render_log_card(r, log_list.refresh)
+
+    log_list()
 
 
 def _render_log_card(row, refresh_fn):
