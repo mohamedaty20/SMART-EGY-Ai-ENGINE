@@ -1,6 +1,5 @@
 """
-ui/defect_page.py — Full file.
-Scrolling fixed. Search fixed. Profile. Chat with avatars + typeable filter.
+ui/defect_page.py — Full file. Clean. Fast. No service worker.
 """
 import io
 import base64
@@ -74,7 +73,7 @@ T = {
         "desc_required": "Description required.",
         "tag_ai": "AI", "tag_manual": "MANUAL",
         "tag_nophoto": "NO PHOTO", "mismatch_warn": "NO MS MATCH",
-        "tag_dup": "SEEN {n}\u00d7",
+        "tag_dup": "SEEN {n}x",
         "logs_title": "DEFECT LOGS",
         "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
@@ -126,7 +125,6 @@ T = {
         "dash_zones": "OPEN BY ZONE", "dash_weeks": "RAISED / WEEK",
         "dash_subs": "BY SUBCONTRACTOR",
         "dash_summary": "SUMMARY",
-        "dash_scatter": "DURATION BY DAYS OPEN",
         "dash_print": "PRINT DASHBOARD PDF",
         "dash_empty": "No defects yet.",
         "no_data": "No data.",
@@ -188,22 +186,19 @@ T = {
         "chat_replying_to": "Replying to",
         "chat_cancel": "Cancel",
         "chat_delete": "Delete",
-        "chat_filter_author": "Author",
         "chat_filter_from": "From",
         "chat_filter_to": "To",
-        "chat_filter_all": "All members",
-        "chat_search": "Search messages...",
+        "chat_search": "Search by name or message...",
         "chat_confirm_delete": "Delete this message?",
         "chat_deleted": "Message deleted.",
         "chat_you": "you",
-        "profile": "Profile",
         "my_profile": "My profile",
         "profile_name": "Name",
         "profile_title": "Job title",
-        "profile_photo": "Profile photo",
+        "profile_photo": "Profile photo (optional)",
         "profile_saved": "Profile saved.",
-        "profile_view": "Member",
         "profile_email": "Email",
+        "profile_open": "Profile",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -256,7 +251,7 @@ T = {
         "desc_required": "الوصف مطلوب.",
         "tag_ai": "AI", "tag_manual": "يدوي",
         "tag_nophoto": "بدون صورة", "mismatch_warn": "لا بند مطابق",
-        "tag_dup": "سُبق {n}\u00d7",
+        "tag_dup": "سُبق {n}x",
         "logs_title": "سجل العيوب",
         "logs_sub": "كل إشعار صدر.",
         "no_logs": "لا توجد إشعارات.",
@@ -308,7 +303,6 @@ T = {
         "dash_zones": "المفتوح حسب المنطقة", "dash_weeks": "المُصدر أسبوعياً",
         "dash_subs": "حسب المقاول الفرعي",
         "dash_summary": "ملخص",
-        "dash_scatter": "المدة حسب أيام الفتح",
         "dash_print": "طباعة تقرير الرئيسية",
         "dash_empty": "لا عيوب بعد.",
         "no_data": "لا بيانات.",
@@ -370,22 +364,19 @@ T = {
         "chat_replying_to": "رداً على",
         "chat_cancel": "إلغاء",
         "chat_delete": "حذف",
-        "chat_filter_author": "الكاتب",
         "chat_filter_from": "من",
         "chat_filter_to": "إلى",
-        "chat_filter_all": "كل الأعضاء",
-        "chat_search": "ابحث في الرسائل...",
+        "chat_search": "ابحث بالاسم أو الرسالة...",
         "chat_confirm_delete": "حذف هذه الرسالة؟",
         "chat_deleted": "تم الحذف.",
         "chat_you": "أنت",
-        "profile": "الملف الشخصي",
         "my_profile": "ملفي الشخصي",
         "profile_name": "الاسم",
         "profile_title": "المسمى الوظيفي",
-        "profile_photo": "صورة شخصية",
+        "profile_photo": "صورة شخصية (اختياري)",
         "profile_saved": "تم الحفظ.",
-        "profile_view": "عضو",
         "profile_email": "البريد",
+        "profile_open": "الملف",
     },
 }
 
@@ -424,7 +415,8 @@ def _severity_options():
 
 
 # =====================================================================
-# THEME
+# THEME  — minimal. no service worker, no manifest, scrollbars hidden
+# but scrolling works.
 # =====================================================================
 def _inject_theme():
     rtl = "rtl" if _is_rtl() else "ltr"
@@ -432,66 +424,45 @@ def _inject_theme():
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#0b0b0b">
-<link rel="apple-touch-icon" href="/icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/service-worker.js').catch(function(){});
-  }
-</script>
 <style>
   :root {
-    --bg: #0b0b0b; --surface: #101010; --surface-2: #161616;
-    --surface-3: #1c1c1c; --border: #1e1e1e; --border-2: #262626;
-    --text: #e8e8e8; --text-soft: #b8b8b8; --muted: #808080;
-    --muted-2: #5a5a5a; --accent: #5eead4; --accent-dim: #14b8a6;
-    --blue: #60a5fa; --success: #4ade80; --warn: #fbbf24;
-    --danger: #f87171;
+    --bg:#0b0b0b; --surface:#101010; --surface-2:#161616;
+    --surface-3:#1c1c1c; --border:#1e1e1e; --border-2:#262626;
+    --text:#e8e8e8; --text-soft:#b8b8b8; --muted:#808080;
+    --muted-2:#5a5a5a; --accent:#5eead4; --accent-dim:#14b8a6;
+    --blue:#60a5fa; --success:#4ade80; --warn:#fbbf24; --danger:#f87171;
   }
   * { font-variant-ligatures: none; }
   html, body {
     background: var(--bg) !important; color: var(--text) !important;
-    font-family: 'JetBrains Mono', 'Amiri', 'Courier New', monospace !important;
+    font-family: 'JetBrains Mono','Amiri','Courier New',monospace !important;
     font-size: 13px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.01em;
     overflow-x: hidden !important;
     direction: __DIR__;
   }
-  /* Hide scrollbars visually, but KEEP scrolling */
-  html, body { scrollbar-width: none !important; }
-  html::-webkit-scrollbar, body::-webkit-scrollbar {
-    width: 0 !important; height: 0 !important; display: none !important;
+  /* hide scrollbar visuals, keep scrolling */
+  html, body, .q-page, .q-page-container, .scroll, * {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
   }
-  .nicegui-content { padding: 0 !important; max-width: 100vw !important; }
-  .q-page, .q-layout, .q-page-container {
-    max-width: 100vw !important;
-    background: var(--bg) !important;
-  }
-  .q-page::-webkit-scrollbar, .q-page-container::-webkit-scrollbar,
-  .q-scrollarea__container::-webkit-scrollbar,
-  .scroll::-webkit-scrollbar { width: 0 !important; display: none !important; }
-  .q-page, .q-page-container, .q-scrollarea__container, .scroll {
-    scrollbar-width: none !important; -ms-overflow-style: none !important;
-  }
+  *::-webkit-scrollbar { width: 0 !important; height: 0 !important;
+                         display: none !important; background: transparent !important; }
+  .nicegui-content { padding: 0 !important; }
+  .q-page, .q-layout, .q-page-container { background: var(--bg) !important; }
   .q-btn {
     border-radius: 3px !important; text-transform: none !important;
     font-family: 'JetBrains Mono', monospace !important;
-    font-weight: 500 !important; letter-spacing: -0.01em !important;
-    min-height: 32px !important; padding: 0 12px !important;
-    font-size: 11px !important; box-shadow: none !important;
+    font-weight: 500 !important; min-height: 32px !important;
+    padding: 0 12px !important; font-size: 11px !important;
+    box-shadow: none !important;
   }
-  .q-btn:hover { box-shadow: none !important; }
   .btn-primary { background: var(--accent) !important;
                  color: #0b0b0b !important; font-weight: 700 !important; }
-  .btn-primary:hover { background: var(--accent-dim) !important; }
   .btn-soft { background: var(--surface-2) !important;
               color: var(--text) !important;
               border: 1px solid var(--border-2) !important; }
-  .btn-soft:hover { background: var(--surface-3) !important; }
   .btn-success { background: var(--success) !important;
                  color: #0b0b0b !important; font-weight: 700 !important; }
   .btn-danger { background: var(--danger) !important;
@@ -499,11 +470,8 @@ def _inject_theme():
   .btn-outline { background: transparent !important;
                  color: var(--text) !important;
                  border: 1px dashed var(--border-2) !important; }
-  .btn-outline:hover { border-color: var(--accent) !important;
-                       color: var(--accent) !important; }
   .q-field--outlined .q-field__control {
     border-radius: 3px !important; background: var(--surface-2) !important;
-    font-family: 'JetBrains Mono', monospace !important;
     min-height: 36px !important;
   }
   .q-field--outlined .q-field__control:before {
@@ -517,16 +485,13 @@ def _inject_theme():
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 12px !important;
   }
-  .q-field__label { color: var(--muted) !important;
-                    font-size: 11px !important; }
-  .q-select__dropdown-icon { color: var(--muted) !important; }
+  .q-field__label { color: var(--muted) !important; }
   .q-menu { background: var(--surface-2) !important;
             border: 1px solid var(--border-2) !important;
             border-radius: 3px !important; }
   .q-item { color: var(--text) !important;
             font-family: 'JetBrains Mono', monospace !important;
-            min-height: 32px !important; font-size: 12px !important; }
-  .q-item--active { color: var(--accent) !important; }
+            font-size: 12px !important; }
   .card { background: var(--surface); border-radius: 4px;
           border: 1px solid var(--border); padding: 16px;
           width: 100%; box-sizing: border-box; }
@@ -538,11 +503,9 @@ def _inject_theme():
   .h2 { font-size: 13px; font-weight: 600; color: var(--text); }
   .h3 { font-size: 12px; font-weight: 600; color: var(--text); }
   .muted { color: var(--muted); font-size: 11px; }
-  .soft { color: var(--text-soft); font-size: 11px; }
   .mono-lg { font-size: 12px; font-weight: 600; color: var(--text);
-             letter-spacing: -0.01em; word-break: break-word; }
-  .mono-sm { font-size: 10px; font-weight: 400; color: var(--muted);
-             letter-spacing: 0.01em; }
+             word-break: break-word; }
+  .mono-sm { font-size: 10px; color: var(--muted); }
   .label { font-size: 9px; font-weight: 700; color: var(--muted-2);
            text-transform: uppercase; letter-spacing: 0.14em; }
   .q-drawer { background: var(--bg) !important;
@@ -550,21 +513,19 @@ def _inject_theme():
   .app-header {
     position: sticky; top: 0; z-index: 900; width: 100%;
     background: rgba(11,11,11,0.94);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border); padding: 8px 14px;
     display: flex; align-items: center; justify-content: space-between;
     box-sizing: border-box;
   }
   .app-header .brand { font-weight: 700; font-size: 12px;
-                       color: var(--text); letter-spacing: -0.01em; }
+                       color: var(--text); }
   .app-header .brand::before {
-    content: '● '; color: var(--accent); font-size: 9px;
+    content: '\\25CF '; color: var(--accent); font-size: 9px;
     vertical-align: middle; margin-right: 4px;
   }
   .top-tabs {
     display: flex; align-items: center; gap: 4px; padding: 8px 14px;
     background: rgba(11,11,11,0.94);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border);
     position: sticky; top: 0; z-index: 890;
     overflow-x: auto; overflow-y: hidden;
@@ -575,287 +536,188 @@ def _inject_theme():
     font-family: 'JetBrains Mono', monospace; font-size: 11px;
     font-weight: 600; letter-spacing: 0.05em; padding: 6px 10px;
     border-radius: 2px; cursor: pointer; white-space: nowrap;
-    flex-shrink: 0;
+    flex-shrink: 0; display: inline-flex; align-items: center;
   }
-  .top-tab-btn:hover { color: var(--text); background: var(--surface-2); }
   .top-tab-btn.active { color: var(--accent); background: var(--surface-2); }
-  .blink-cursor { display: inline-block; width: 6px; height: 11px;
-                  background: #ffffff; vertical-align: middle;
+  .blink-cursor { display: inline-block; width: 4px; height: 9px;
+                  background: var(--accent); vertical-align: middle;
                   margin-left: 5px;
                   animation: blink 1.1s steps(2, start) infinite; }
   @keyframes blink { to { visibility: hidden; } }
   .main-content { padding: 14px; padding-bottom: 40px;
                   max-width: 760px; margin: 0 auto; width: 100%;
                   box-sizing: border-box; }
-  .q-uploader {
-    background: var(--surface-2) !important;
-    border: 1px dashed var(--border-2) !important;
-    border-radius: 4px !important; width: 100% !important;
-    max-width: 100% !important; color: var(--text) !important;
-    box-shadow: none !important;
-  }
+  .q-uploader { background: var(--surface-2) !important;
+                border: 1px dashed var(--border-2) !important;
+                border-radius: 4px !important; width: 100% !important;
+                max-width: 100% !important; color: var(--text) !important; }
   .q-uploader__header { background: transparent !important;
-                        color: var(--text) !important;
-                        min-height: 40px !important; }
-  .q-uploader__title { color: var(--text) !important;
-                       font-size: 11px !important;
-                       font-weight: 500 !important;
-                       font-family: inherit !important; }
-  .q-uploader__subtitle { color: var(--muted) !important;
-                          font-size: 10px !important;
-                          font-family: inherit !important; }
+                        color: var(--text) !important; }
+  .q-uploader__title, .q-uploader__subtitle { color: var(--text) !important; }
   .q-uploader .q-btn { color: var(--muted) !important; }
   .q-uploader__list { background: transparent !important; }
-  .q-uploader__list .q-item {
-    background: var(--surface) !important; color: var(--text) !important;
-    border-radius: 2px !important; margin: 3px !important;
-    min-height: 34px !important;
+  .q-uploader__list .q-item { background: var(--surface) !important;
+                              color: var(--text) !important;
+                              border-radius: 2px !important;
+                              margin: 3px !important; }
+  .badge-open, .badge-closed, .badge-overdue, .badge-ai, .badge-manual,
+  .badge-nophoto, .badge-mismatch, .badge-seen, .badge-closure, .badge-dup,
+  .badge-you {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    letter-spacing: 0.08em; padding: 2px 6px; border-radius: 2px;
+    text-transform: uppercase; line-height: 1.3;
   }
-  .q-uploader__list .q-item__label {
-    color: var(--text) !important; font-size: 10px !important;
-    font-family: inherit !important;
-  }
-  .badge-open, .badge-closed, .badge-overdue,
-  .badge-ai, .badge-manual, .badge-nophoto, .badge-mismatch,
-  .badge-seen, .badge-closure, .badge-dup, .badge-you {
-    display: inline-block; font-family: inherit; font-size: 9px;
-    font-weight: 700; letter-spacing: 0.08em; padding: 2px 6px;
-    border-radius: 2px; text-transform: uppercase; line-height: 1.3;
-  }
-  .badge-open { color: var(--warn);
-                border: 1px solid rgba(251,191,36,0.35); }
-  .badge-closed { color: var(--success);
-                  border: 1px solid rgba(74,222,128,0.35); }
-  .badge-overdue { color: var(--danger);
-                   border: 1px solid rgba(248,113,113,0.35); }
-  .badge-ai { color: var(--accent);
-              border: 1px solid rgba(94,234,212,0.3); }
-  .badge-manual { color: var(--blue);
-                  border: 1px solid rgba(96,165,250,0.3); }
-  .badge-nophoto { color: var(--muted);
-                   border: 1px solid var(--border-2); }
-  .badge-mismatch { color: var(--warn);
-                    border: 1px solid rgba(251,191,36,0.3); }
-  .badge-seen { color: var(--muted-2);
-                border: 1px solid var(--border); }
-  .badge-closure { color: var(--success);
-                   border: 1px solid rgba(74,222,128,0.3); }
-  .badge-dup { color: #c4b5fd;
-               border: 1px solid rgba(196,181,253,0.4); }
-  .badge-you { color: var(--accent);
-               border: 1px solid rgba(94,234,212,0.3); }
-  .q-notification {
-    border-radius: 3px !important; font-weight: 500 !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important;
-    background: var(--surface-2) !important; color: var(--text) !important;
-    border: 1px solid var(--border-2) !important;
-    min-height: 30px !important;
-  }
+  .badge-open { color: var(--warn); border: 1px solid rgba(251,191,36,0.35); }
+  .badge-closed { color: var(--success); border: 1px solid rgba(74,222,128,0.35); }
+  .badge-overdue { color: var(--danger); border: 1px solid rgba(248,113,113,0.35); }
+  .badge-ai { color: var(--accent); border: 1px solid rgba(94,234,212,0.3); }
+  .badge-manual { color: var(--blue); border: 1px solid rgba(96,165,250,0.3); }
+  .badge-nophoto { color: var(--muted); border: 1px solid var(--border-2); }
+  .badge-mismatch { color: var(--warn); border: 1px solid rgba(251,191,36,0.3); }
+  .badge-seen { color: var(--muted-2); border: 1px solid var(--border); }
+  .badge-closure { color: var(--success); border: 1px solid rgba(74,222,128,0.3); }
+  .badge-dup { color: #c4b5fd; border: 1px solid rgba(196,181,253,0.4); }
+  .badge-you { color: var(--accent); border: 1px solid rgba(94,234,212,0.3); }
+  .q-notification { border-radius: 3px !important; font-weight: 500 !important;
+                    font-family: 'JetBrains Mono', monospace !important;
+                    font-size: 11px !important;
+                    background: var(--surface-2) !important;
+                    color: var(--text) !important;
+                    border: 1px solid var(--border-2) !important;
+                    min-height: 30px !important; }
   .q-separator { background: var(--border) !important; }
-  .scroll-box {
-    max-height: 220px; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: 3px;
-    padding: 6px; margin-top: 6px; background: var(--surface-2);
-  }
-  .or-divider {
-    display: flex; align-items: center; gap: 8px;
-    color: var(--muted-2); font-size: 9px; font-weight: 700;
-    letter-spacing: 0.18em; margin: 10px 0;
-  }
+  .scroll-box { max-height: 220px; overflow-y: auto;
+                border: 1px solid var(--border); border-radius: 3px;
+                padding: 6px; margin-top: 6px;
+                background: var(--surface-2); }
+  .or-divider { display: flex; align-items: center; gap: 8px;
+                color: var(--muted-2); font-size: 9px; font-weight: 700;
+                letter-spacing: 0.18em; margin: 10px 0; }
   .or-divider::before, .or-divider::after {
     content: ''; flex: 1; height: 1px; background: var(--border);
   }
-  .metric-strip {
-    display: grid; grid-template-columns: repeat(3, 1fr);
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 4px; overflow: hidden; margin-bottom: 12px;
-  }
-  .metric-cell {
-    padding: 12px 14px; border-right: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
+  .metric-strip { display: grid; grid-template-columns: repeat(3, 1fr);
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 4px; overflow: hidden;
+                  margin-bottom: 12px; }
+  .metric-cell { padding: 12px 14px; border-right: 1px solid var(--border);
+                 border-bottom: 1px solid var(--border); }
   .metric-cell:nth-child(3n) { border-right: none; }
   .metric-cell:nth-last-child(-n+3) { border-bottom: none; }
-  .metric-label {
-    font-size: 9px; font-weight: 700; color: var(--muted-2);
-    letter-spacing: 0.14em; text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  .metric-value {
-    font-size: 20px; font-weight: 700; letter-spacing: -0.03em;
-    color: var(--text); line-height: 1.1;
-    font-variant-numeric: tabular-nums;
-  }
+  .metric-label { font-size: 9px; font-weight: 700; color: var(--muted-2);
+                  letter-spacing: 0.14em; text-transform: uppercase;
+                  margin-bottom: 4px; }
+  .metric-value { font-size: 20px; font-weight: 700; color: var(--text);
+                  line-height: 1.1; font-variant-numeric: tabular-nums; }
   .metric-value.open { color: var(--warn); }
   .metric-value.closed { color: var(--success); }
   .metric-value.overdue { color: var(--danger); }
   .metric-value.accent { color: var(--accent); }
-  .sub-row {
-    display: grid; grid-template-columns: 1fr auto; gap: 12px;
-    padding: 10px 0; border-bottom: 1px solid var(--border);
-    align-items: center;
-  }
+  .bar-row { display: grid; grid-template-columns: 60px 1fr 40px;
+             align-items: center; gap: 10px; padding: 6px 0;
+             border-bottom: 1px solid var(--border); }
+  .bar-row:last-child { border-bottom: none; }
+  .bar-label { font-size: 11px; font-weight: 600; color: var(--text-soft); }
+  .bar-track { height: 4px; background: var(--surface-3);
+               border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+  .bar-value { font-size: 11px; font-weight: 600; color: var(--text);
+               text-align: right; font-variant-numeric: tabular-nums; }
+  .sub-row { display: grid; grid-template-columns: 1fr auto; gap: 12px;
+             padding: 10px 0; border-bottom: 1px solid var(--border);
+             align-items: center; }
   .sub-row:last-child { border-bottom: none; }
-  .sub-name {
-    font-size: 12px; font-weight: 600; color: var(--text);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .sub-badges {
-    display: flex; gap: 4px; font-variant-numeric: tabular-nums;
-  }
-  .log-row {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 3px; padding: 12px 14px; margin-bottom: 6px;
-    cursor: pointer;
-  }
-  .log-row:hover { border-color: var(--border-2); }
+  .sub-name { font-size: 12px; font-weight: 600; color: var(--text);
+              white-space: nowrap; overflow: hidden;
+              text-overflow: ellipsis; }
+  .sub-badges { display: flex; gap: 4px; font-variant-numeric: tabular-nums; }
+  .log-row { background: var(--surface); border: 1px solid var(--border);
+             border-radius: 3px; padding: 12px 14px; margin-bottom: 6px;
+             cursor: pointer; }
   .sub-card { background: var(--surface); border: 1px solid var(--border);
               border-radius: 4px; padding: 14px; margin-bottom: 8px; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: var(--surface-2); border: 1px solid var(--border-2);
-    color: var(--text); font-size: 11px; font-weight: 500;
-    padding: 3px 8px; border-radius: 2px; letter-spacing: 0.01em;
-  }
-  .chip .q-icon { font-size: 13px; color: var(--accent); }
-  .photo-compare {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 8px; margin-bottom: 12px;
-  }
-  .photo-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 6px; margin-bottom: 12px;
-  }
+  .chip { display: inline-flex; align-items: center; gap: 6px;
+          background: var(--surface-2); border: 1px solid var(--border-2);
+          color: var(--text); font-size: 11px; font-weight: 500;
+          padding: 3px 8px; border-radius: 2px; }
+  .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr);
+                gap: 6px; margin-bottom: 12px; }
   .photo-cell { position: relative; }
-  .photo-cell .q-img {
-    width: 100%; height: 100px; object-fit: cover;
-    border-radius: 3px; border: 1px solid var(--border-2);
-  }
-  .photo-remove {
-    position: absolute; top: 3px; right: 3px;
-    background: rgba(11,11,11,0.85);
-    color: var(--danger); border: 1px solid rgba(248,113,113,0.5);
-    width: 20px; height: 20px; border-radius: 2px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; cursor: pointer;
-    z-index: 3;
-  }
-  .photo-tag {
-    position: absolute; top: 6px; left: 6px;
-    background: rgba(11,11,11,0.85); color: var(--muted);
-    font-size: 9px; font-weight: 700; padding: 2px 6px;
-    border-radius: 2px; letter-spacing: 0.1em;
-    z-index: 2; text-transform: uppercase;
-  }
+  .photo-cell .q-img { width: 100%; height: 100px; object-fit: cover;
+                       border-radius: 3px; border: 1px solid var(--border-2); }
+  .photo-remove { position: absolute; top: 3px; right: 3px;
+                  background: rgba(11,11,11,0.85); color: var(--danger);
+                  border: 1px solid rgba(248,113,113,0.5); width: 20px;
+                  height: 20px; border-radius: 2px; display: flex;
+                  align-items: center; justify-content: center;
+                  font-size: 12px; font-weight: 700; cursor: pointer;
+                  z-index: 3; }
+  .photo-tag { position: absolute; top: 6px; left: 6px;
+               background: rgba(11,11,11,0.85); color: var(--muted);
+               font-size: 9px; font-weight: 700; padding: 2px 6px;
+               border-radius: 2px; text-transform: uppercase; z-index: 2; }
   .photo-tag.closure { color: var(--success); }
-  .q-dialog .q-card {
-    background: var(--surface) !important;
-    border: 1px solid var(--border-2) !important;
-    border-radius: 6px !important; color: var(--text) !important;
-  }
-  .section-head {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 10px; padding-bottom: 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .section-head .label { margin: 0; }
-  .summary-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 4px; padding: 14px;
-    font-size: 12px; line-height: 1.7; color: var(--text-soft);
-    margin-bottom: 12px;
-  }
+  .q-dialog .q-card { background: var(--surface) !important;
+                      border: 1px solid var(--border-2) !important;
+                      border-radius: 6px !important;
+                      color: var(--text) !important; }
+  .section-head { display: flex; justify-content: space-between;
+                  align-items: center; margin-bottom: 10px;
+                  padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .summary-card { background: var(--surface);
+                  border: 1px solid var(--border); border-radius: 4px;
+                  padding: 14px; font-size: 12px; line-height: 1.7;
+                  color: var(--text-soft); margin-bottom: 12px; }
   .summary-card b { color: var(--accent); }
-
   /* Chat */
-  .chat-msg {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 4px; padding: 10px 12px; margin-bottom: 8px;
-    display: flex; gap: 10px;
-  }
+  .chat-msg { background: var(--surface); border: 1px solid var(--border);
+              border-radius: 4px; padding: 10px 12px; margin-bottom: 8px; }
   .chat-msg.mine { border-color: rgba(94,234,212,0.4); }
-  .chat-avatar {
-    width: 32px; height: 32px; border-radius: 50%;
-    background: var(--surface-3); flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    overflow: hidden; border: 1px solid var(--border-2);
-    color: var(--accent); font-weight: 700; font-size: 12px;
-    cursor: pointer;
-  }
-  .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
-  .chat-content { flex: 1; min-width: 0; }
-  .chat-head {
-    display: flex; justify-content: space-between;
-    align-items: center; gap: 8px;
-  }
-  .chat-author {
-    font-size: 11px; font-weight: 700; color: var(--accent);
-    cursor: pointer;
-  }
+  .chat-head { display: flex; justify-content: space-between;
+               align-items: center; gap: 8px; margin-bottom: 4px; }
+  .chat-author { font-size: 11px; font-weight: 700; color: var(--accent);
+                 cursor: pointer; }
   .chat-author:hover { text-decoration: underline; }
-  .chat-title-tag {
-    font-size: 9px; color: var(--muted); margin-left: 4px;
-  }
-  .chat-time {
-    font-size: 9px; color: var(--muted-2);
-    font-variant-numeric: tabular-nums;
-  }
-  .chat-body {
-    font-size: 12px; color: var(--text); line-height: 1.55;
-    white-space: pre-wrap; word-break: break-word;
-  }
-  .chat-reply-quote {
-    background: var(--surface-2); border-left: 2px solid var(--accent);
-    padding: 4px 8px; font-size: 10px; color: var(--muted);
-    border-radius: 2px; margin: 4px 0;
-  }
+  .chat-title-tag { font-size: 10px; color: var(--muted); }
+  .chat-time { font-size: 9px; color: var(--muted-2);
+               font-variant-numeric: tabular-nums; }
+  .chat-body { font-size: 12px; color: var(--text); line-height: 1.55;
+               white-space: pre-wrap; word-break: break-word; }
+  .chat-reply-quote { background: var(--surface-2);
+                      border-left: 2px solid var(--accent);
+                      padding: 4px 8px; font-size: 10px;
+                      color: var(--muted); border-radius: 2px;
+                      margin: 4px 0; }
   .chat-actions { display: flex; gap: 6px; margin-top: 4px; }
-  .chat-act {
-    font-size: 10px; color: var(--muted); cursor: pointer;
-    background: none; border: none; padding: 2px 4px;
-    font-family: inherit; font-weight: 600;
-  }
+  .chat-act { font-size: 10px; color: var(--muted); cursor: pointer;
+              background: none; border: none; padding: 2px 4px;
+              font-family: inherit; font-weight: 600; }
   .chat-act:hover { color: var(--accent); }
   .chat-act.danger:hover { color: var(--danger); }
-  .chat-composer {
-    position: sticky; bottom: 0;
-    background: var(--bg); border-top: 1px solid var(--border);
-    padding: 10px 0 4px; z-index: 5;
-  }
-  .mention-chip {
-    display: inline-block; color: var(--accent); font-weight: 700;
-    background: rgba(94,234,212,0.1); padding: 0 4px; border-radius: 2px;
-    margin: 0 1px;
-  }
-  .mention-drop {
-    position: absolute; bottom: 100%; left: 0; right: 0;
-    background: var(--surface-2); border: 1px solid var(--border-2);
-    border-radius: 4px; max-height: 160px; overflow-y: auto;
-    z-index: 100;
-  }
-  .mention-item {
-    padding: 6px 10px; font-size: 11px; cursor: pointer;
-    color: var(--text);
-  }
+  .chat-composer { position: sticky; bottom: 0; background: var(--bg);
+                   border-top: 1px solid var(--border); padding: 10px 0 4px;
+                   z-index: 5; }
+  .mention-chip { display: inline-block; color: var(--accent);
+                  font-weight: 700; background: rgba(94,234,212,0.1);
+                  padding: 0 4px; border-radius: 2px; }
+  .mention-drop { position: absolute; bottom: 100%; left: 0; right: 0;
+                  background: var(--surface-2);
+                  border: 1px solid var(--border-2); border-radius: 4px;
+                  max-height: 160px; overflow-y: auto; z-index: 100; }
+  .mention-item { padding: 6px 10px; font-size: 11px; cursor: pointer;
+                  color: var(--text); }
   .mention-item:hover { background: var(--surface-3); color: var(--accent); }
-  .avatar-mini {
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--surface-3); display: inline-flex;
-    align-items: center; justify-content: center;
-    overflow: hidden; border: 1px solid var(--border-2);
-    color: var(--accent); font-weight: 700; font-size: 10px;
-    margin-right: 6px; vertical-align: middle;
-    flex-shrink: 0;
-  }
+  .avatar-mini { width: 22px; height: 22px; border-radius: 50%;
+                 background: var(--surface-3); display: inline-flex;
+                 align-items: center; justify-content: center;
+                 overflow: hidden; border: 1px solid var(--border-2);
+                 color: var(--accent); font-weight: 700; font-size: 10px; }
   .avatar-mini img { width: 100%; height: 100%; object-fit: cover; }
-  .avatar-big {
-    width: 72px; height: 72px; border-radius: 50%;
-    background: var(--surface-3);
-    display: flex; align-items: center; justify-content: center;
-    overflow: hidden; border: 1px solid var(--border-2);
-    color: var(--accent); font-weight: 700; font-size: 26px;
-  }
+  .avatar-big { width: 72px; height: 72px; border-radius: 50%;
+                background: var(--surface-3); display: flex;
+                align-items: center; justify-content: center;
+                overflow: hidden; border: 1px solid var(--border-2);
+                color: var(--accent); font-weight: 700; font-size: 26px; }
   .avatar-big img { width: 100%; height: 100%; object-fit: cover; }
 </style>
 """.replace("__DIR__", rtl)
@@ -875,143 +737,6 @@ BTN_DANGER = "btn-danger"
 def _initial(name):
     s = (name or "?").strip()
     return s[0].upper() if s else "?"
-
-
-def _avatar_html(name, photo_bytes, size="mini"):
-    cls = "avatar-mini" if size == "mini" else "avatar-big"
-    if photo_bytes:
-        try:
-            b64 = base64.b64encode(photo_bytes).decode("ascii")
-            return ('<div class="' + cls + '">'
-                    '<img src="data:image/jpeg;base64,' + b64 + '"/></div>')
-        except Exception:
-            pass
-    return '<div class="' + cls + '">' + _html_mod.escape(_initial(name)) + '</div>'
-
-
-# =====================================================================
-# SVG CHARTS
-# =====================================================================
-def _svg_line_chart(values, labels, height=200):
-    W = 600
-    H = height
-    PL, PR, PT, PB = 42, 16, 18, 34
-    CW = W - PL - PR
-    CH = H - PT - PB
-    maxv = max(values) if values else 1
-    if maxv < 1:
-        maxv = 1
-    n = len(values)
-    stepx = CW / max(n - 1, 1)
-    pts = []
-    for i, v in enumerate(values):
-        x = PL + i * stepx
-        y = PT + CH - (v / float(maxv)) * CH
-        pts.append((x, y, v))
-
-    poly = " ".join(str(round(x, 1)) + "," + str(round(y, 1))
-                    for x, y, _ in pts)
-    area = (str(PL) + "," + str(PT + CH) + " " + poly + " " +
-            str(round(PL + (n - 1) * stepx, 1)) + "," + str(PT + CH))
-
-    y_ticks = ""
-    for i in range(5):
-        yv = round(maxv * i / 4.0)
-        yy = PT + CH - (i / 4.0) * CH
-        y_ticks += (
-            '<line x1="' + str(PL) + '" y1="' + str(round(yy, 1)) +
-            '" x2="' + str(PL + CW) + '" y2="' + str(round(yy, 1)) +
-            '" stroke="#1e1e1e" stroke-width="1"/>'
-            '<text x="' + str(PL - 6) + '" y="' + str(round(yy + 3, 1)) +
-            '" font-size="9" fill="#5a5a5a" text-anchor="end" '
-            'font-family="monospace">' + str(yv) + '</text>'
-        )
-
-    x_labels = ""
-    for i, (x, _, _) in enumerate(pts):
-        if i % 2 == 0 or i == n - 1:
-            x_labels += (
-                '<text x="' + str(round(x, 1)) + '" y="' + str(H - 12) +
-                '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
-                'font-family="monospace">' + str(labels[i]) + '</text>'
-            )
-
-    dots = ""
-    for x, y, v in pts:
-        dots += ('<circle cx="' + str(round(x, 1)) + '" cy="' +
-                 str(round(y, 1)) + '" r="3" fill="#5eead4" '
-                 'stroke="#0b0b0b" stroke-width="1"/>')
-
-    return (
-        '<svg viewBox="0 0 ' + str(W) + ' ' + str(H) + '" '
-        'preserveAspectRatio="xMidYMid meet" '
-        'style="width:100%;height:auto;display:block;">'
-        '<polygon points="' + area + '" fill="rgba(94,234,212,0.08)"/>'
-        '<polyline points="' + poly + '" fill="none" '
-        'stroke="#5eead4" stroke-width="1.8"/>'
-        + y_ticks + x_labels + dots + '</svg>'
-    )
-
-
-def _svg_scatter(points, height=220):
-    W = 600
-    H = height
-    PL, PR, PT, PB = 48, 16, 18, 34
-    CW = W - PL - PR
-    CH = H - PT - PB
-    if not points:
-        return ('<div style="color:#5a5a5a;font-size:11px;'
-                'text-align:center;padding:40px;">No data.</div>')
-    maxx = max(p["x"] for p in points) or 1
-    maxy = max(p["y"] for p in points) or 1
-    if maxx < 1:
-        maxx = 1
-    if maxy < 1:
-        maxy = 1
-
-    grid = ""
-    for i in range(5):
-        yy = PT + CH - (i / 4.0) * CH
-        yv = round(maxy * i / 4.0)
-        grid += ('<line x1="' + str(PL) + '" y1="' + str(round(yy, 1)) +
-                 '" x2="' + str(PL + CW) + '" y2="' + str(round(yy, 1)) +
-                 '" stroke="#1e1e1e" stroke-width="1"/>'
-                 '<text x="' + str(PL - 6) + '" y="' + str(round(yy + 3, 1)) +
-                 '" font-size="9" fill="#5a5a5a" text-anchor="end" '
-                 'font-family="monospace">' + str(yv) + '</text>')
-    for i in range(5):
-        xx = PL + (i / 4.0) * CW
-        xv = round(maxx * i / 4.0)
-        grid += ('<line x1="' + str(round(xx, 1)) + '" y1="' + str(PT) +
-                 '" x2="' + str(round(xx, 1)) + '" y2="' + str(PT + CH) +
-                 '" stroke="#1e1e1e" stroke-width="1"/>'
-                 '<text x="' + str(round(xx, 1)) + '" y="' + str(H - 12) +
-                 '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
-                 'font-family="monospace">' + str(xv) + '</text>')
-
-    dots = ""
-    for p in points:
-        cx = PL + (p["x"] / float(maxx)) * CW
-        cy = PT + CH - (p["y"] / float(maxy)) * CH
-        color = "#4ade80" if p["status"] == "closed" else "#f87171"
-        dots += ('<circle cx="' + str(round(cx, 1)) + '" cy="' +
-                 str(round(cy, 1)) + '" r="4" fill="' + color +
-                 '" opacity="0.8" stroke="#0b0b0b" stroke-width="1"/>')
-
-    ylab = ('<text x="14" y="' + str(PT + CH / 2) +
-            '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
-            'font-family="monospace" transform="rotate(-90 14 ' +
-            str(PT + CH / 2) + ')">DURATION (days)</text>')
-    xlab = ('<text x="' + str(PL + CW / 2) + '" y="' + str(H - 2) +
-            '" font-size="9" fill="#5a5a5a" text-anchor="middle" '
-            'font-family="monospace">DAYS OPEN</text>')
-
-    return (
-        '<svg viewBox="0 0 ' + str(W) + ' ' + str(H) + '" '
-        'preserveAspectRatio="xMidYMid meet" '
-        'style="width:100%;height:auto;display:block;">'
-        + grid + dots + ylab + xlab + '</svg>'
-    )
 
 
 # =====================================================================
@@ -1056,11 +781,20 @@ def build_defect_ui(user_id):
             ui.button(icon="menu", on_click=drawer.toggle).props(
                 "flat round dense size=sm").style("color:#e8e8e8;")
             ui.label(_t("app_title")).classes("brand")
-        ui.button(_t("lang_button"), on_click=_toggle_lang).props(
-            "flat dense no-caps size=sm").style(
-            "color:#e8e8e8;font-weight:600;font-size:10px;"
-            "border:1px solid #262626;border-radius:2px;"
-            "padding:0 8px;min-height:26px;letter-spacing:0.06em;")
+        with ui.element('div').style(
+            "display:flex;align-items:center;gap:6px;"
+        ):
+            def _open_my_prof():
+                _open_my_profile(state)
+            ui.button(_initial(user.get("name") if user else "?"),
+                      on_click=_open_my_prof).props("flat round dense").style(
+                "color:#0b0b0b;background:#5eead4;font-weight:700;"
+                "min-height:28px;min-width:28px;font-size:11px;")
+            ui.button(_t("lang_button"), on_click=_toggle_lang).props(
+                "flat dense no-caps size=sm").style(
+                "color:#e8e8e8;font-weight:600;font-size:10px;"
+                "border:1px solid #262626;border-radius:2px;"
+                "padding:0 8px;min-height:26px;")
 
     nav_holder = ui.element('div').classes("top-tabs")
     content = ui.element('div').classes("main-content")
@@ -1095,18 +829,11 @@ def build_defect_ui(user_id):
                 cls = "top-tab-btn active" if active else "top-tab-btn"
                 btn = ui.element('button').classes(cls)
                 with btn:
-                    with ui.element('span').style(
-                        "display:inline-flex;align-items:center;"
-                        "font-family:'JetBrains Mono',monospace;"
-                        "font-size:11px;font-weight:600;"
-                        "letter-spacing:0.05em;color:inherit;"
-                        "background:transparent;"
-                    ):
-                        ui.label(label).style(
-                            "font-family:inherit;color:inherit;"
-                            "background:transparent;")
-                        if key == "logs":
-                            ui.element('span').classes("blink-cursor")
+                    ui.label(label).style("font-family:inherit;"
+                                          "color:inherit;"
+                                          "background:transparent;")
+                    if key == "logs":
+                        ui.element('span').classes("blink-cursor")
 
                 def _handler(k=key):
                     if state["tab"]["value"] == k:
@@ -1141,7 +868,7 @@ def _render_no_project(state, refresh_fn):
 
 
 # =====================================================================
-# DASHBOARD
+# DASHBOARD — no charts, just clean summaries
 # =====================================================================
 def _build_dashboard(state):
     if not state.get("project_id"):
@@ -1206,29 +933,37 @@ def _build_dashboard(state):
         _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
         _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
 
+    if zones:
+        with ui.element('div').classes("card").style("margin-bottom:12px;"):
+            ui.label(_t("dash_zones")).classes("label").style(
+                "margin-bottom:8px;"
+            )
+            max_z = max(z["count"] for z in zones) or 1
+            for z in zones:
+                pct = int((z["count"] / float(max_z)) * 100)
+                with ui.element('div').classes("bar-row"):
+                    ui.label(str(z["zone"])).classes("bar-label")
+                    with ui.element('div').classes("bar-track"):
+                        ui.element('div').classes("bar-fill").style(
+                            "width:" + str(pct) + "%;")
+                    ui.label(str(z["count"])).classes("bar-value")
+
     if weeks:
         with ui.element('div').classes("card").style("margin-bottom:12px;"):
             ui.label(_t("dash_weeks")).classes("label").style(
                 "margin-bottom:8px;"
             )
-            ui.html(_svg_line_chart(
-                [w["count"] for w in weeks],
-                [w["label"] for w in weeks], height=200))
-
-    scatter = db.defect_scatter_data(pid)
-    if scatter:
-        with ui.element('div').classes("card").style("margin-bottom:12px;"):
-            with ui.element('div').style(
-                "display:flex;justify-content:space-between;"
-                "align-items:center;margin-bottom:8px;"
-            ):
-                ui.label(_t("dash_scatter")).classes("label")
+            for w in weeks:
                 with ui.element('div').style(
-                    "display:flex;gap:10px;font-size:9px;color:#808080;"
+                    "display:flex;justify-content:space-between;"
+                    "padding:4px 0;border-bottom:1px solid #1e1e1e;"
+                    "font-size:11px;"
                 ):
-                    ui.html('<span style="color:#4ade80;">● CLOSED</span>')
-                    ui.html('<span style="color:#f87171;">● OPEN</span>')
-            ui.html(_svg_scatter(scatter, height=220))
+                    ui.label(w["label"]).style("color:#b8b8b8;")
+                    ui.label(str(w["count"])).style(
+                        "color:#5eead4;font-weight:700;"
+                        "font-variant-numeric:tabular-nums;"
+                    )
 
     if scores:
         with ui.element('div').classes("card"):
@@ -1260,8 +995,7 @@ def _metric_cell(label, value, variant):
 
 def _build_dashboard_pdf(state, filename="dashboard.pdf"):
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        HRFlowable,
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
     )
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
@@ -1584,9 +1318,9 @@ def _confirm_delete_sub(state, sub_id, refresh_fn):
 def _open_my_profile(state, on_saved=None):
     u = db.get_user(state["user_id"]) or {}
     with ui.dialog() as dlg, ui.card().style(
-        "padding:20px;min-width:320px;max-width:95vw;width:440px;"
+        "padding:22px;min-width:320px;max-width:95vw;width:420px;"
     ):
-        ui.label(_t("my_profile")).classes("h1").style("margin-bottom:14px;")
+        ui.label(_t("my_profile")).classes("h1").style("margin-bottom:16px;")
 
         name_in = ui.input(_t("profile_name"),
                             value=u.get("name") or "").style("width:100%;")
@@ -1606,7 +1340,7 @@ def _open_my_profile(state, on_saved=None):
 
         async def handle_photo(e):
             photo_holder["bytes"] = await e.file.read()
-            photo_lbl.set_text(_t("profile_photo") + " ✓")
+            photo_lbl.set_text(_t("profile_photo") + " OK")
 
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
             "width:100%;"
@@ -1623,49 +1357,18 @@ def _open_my_profile(state, on_saved=None):
             state["user"] = db.get_user(state["user_id"])
             ui.notify(_t("profile_saved"), type="positive")
             dlg.close()
-            hook = state.get("refresh_drawer")
-            if hook:
-                try: hook()
-                except Exception: pass
             if on_saved:
                 try: on_saved()
                 except Exception: pass
+            try:
+                ui.navigate.reload()
+            except Exception:
+                pass
 
         with ui.element('div').style("display:flex;gap:8px;margin-top:16px;"):
             ui.button(_t("save"), on_click=_save).classes(
                 BTN_PRIMARY).style("flex:1;")
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
-    dlg.open()
-
-
-def _open_member_profile(user_id):
-    u = db.get_user(user_id)
-    if not u:
-        return
-    with ui.dialog() as dlg, ui.card().style(
-        "padding:22px;min-width:280px;max-width:95vw;width:380px;"
-    ):
-        with ui.element('div').style(
-            "display:flex;flex-direction:column;align-items:center;gap:8px;"
-        ):
-            ui.html(_avatar_html(u.get("name") or "", u.get("photo_bytes"),
-                                  size="big"))
-            ui.label(u.get("name") or "—").style(
-                "font-size:15px;font-weight:700;color:#e8e8e8;"
-                "margin-top:6px;")
-            if u.get("title"):
-                ui.label(u["title"]).style(
-                    "font-size:11px;color:#5eead4;font-weight:600;"
-                    "letter-spacing:0.05em;"
-                )
-            if u.get("email"):
-                ui.label(u["email"]).classes("mono-sm").style(
-                    "margin-top:4px;"
-                )
-        ui.element('div').style("height:14px;")
-        ui.button(_t("close"), on_click=dlg.close).classes(BTN_SOFT).style(
-            "width:100%;"
-        )
     dlg.open()
 
 
@@ -1764,25 +1467,6 @@ def _build_drawer(state, drawer):
 
             ui.element('div').style(
                 "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
-
-            # My profile card
-            if user:
-                with ui.element('div').style(
-                    "display:flex;align-items:center;gap:10px;"
-                    "margin-bottom:10px;"
-                ):
-                    ui.html(_avatar_html(user.get("name") or "",
-                                          user.get("photo_bytes"),
-                                          size="mini"))
-                    with ui.element('div').style("flex:1;min-width:0;"):
-                        ui.label(user.get("name") or user.get("email") or "").style(
-                            "font-size:11px;color:#e8e8e8;font-weight:600;"
-                            "white-space:nowrap;overflow:hidden;"
-                            "text-overflow:ellipsis;")
-                        if user.get("title"):
-                            ui.label(user["title"]).classes("mono-sm").style(
-                                "font-size:9px;"
-                            )
 
             def _open_profile():
                 _open_my_profile(state, refresh)
@@ -1951,7 +1635,7 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
                         consultant_in.value.strip(), location_in.value.strip(),
                         engineer_in.value.strip(), logo_holder["bytes"])
                     state["project"] = db.get_project(state["project_id"])
-                ui.notify(_t("save") + " ✓", type="positive")
+                ui.notify(_t("save") + " OK", type="positive")
                 dlg.close()
                 hook = state.get("refresh_drawer")
                 if hook:
@@ -2034,7 +1718,7 @@ def _open_ms_dialog(state, refresh_drawer):
                         with ui.element('div').style(
                             "padding:6px;border-bottom:1px solid #1e1e1e;"
                         ):
-                            ui.label("§" + cl["id"] + "  " + cl["title"]).style(
+                            ui.label("S" + cl["id"] + "  " + cl["title"]).style(
                                 "font-size:10px;font-weight:600;color:#e8e8e8;")
                             ui.label(cl["text"][:180]).classes("mono-sm").style(
                                 "font-size:9px;margin-top:2px;")
@@ -2047,7 +1731,7 @@ def _open_ms_dialog(state, refresh_drawer):
                         element_type=element_in.value,
                         discipline=disc_in.value,
                         pdf_bytes=holder["bytes"], clauses=clauses)
-                    ui.notify(_t("ms_saved") + " ✓", type="positive")
+                    ui.notify(_t("ms_saved") + " OK", type="positive")
                     dlg.close()
                     if refresh_drawer:
                         try: refresh_drawer()
@@ -2097,7 +1781,7 @@ def _build_new_defect(state):
                                 stage["photos"].pop(idx)
                                 render_photos()
                                 rebuild_body()
-                            ui.html('<div class="photo-remove">\u00d7</div>'
+                            ui.html('<div class="photo-remove">x</div>'
                                     ).on("click", _rm)
                             try:
                                 b64 = base64.b64encode(p).decode("ascii")
@@ -2492,7 +2176,7 @@ def _open_add_dialog(stage, refresh_fn):
 
 
 # =====================================================================
-# LOGS
+# LOGS — search fixed (uses on_change=)
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
@@ -2549,19 +2233,6 @@ def _build_logs(state):
                 ]).lower()
                 return q in hay
             rows = [r for r in rows if _match(r)]
-
-        def on_filter_change(e):
-            fstate["filter"] = (e.value if e and e.value else "all")
-            log_list.refresh()
-
-        with ui.element('div').style("margin-bottom:10px;"):
-            ui.select(
-                {"all": _t("filter_all"),
-                 "qc_internal": _t("filter_qc"),
-                 "consultant": _t("filter_consultant")},
-                value=fstate["filter"],
-                on_change=on_filter_change
-            ).style("width:100%;").props("dense")
 
         if rows:
             open_count = sum(1 for r in rows if r["status"] == "open")
@@ -2621,13 +2292,26 @@ def _build_logs(state):
         for r in rows:
             _render_log_card(r, log_list.refresh)
 
+    def _on_filter(e):
+        fstate["filter"] = (e.value if e and e.value else "all")
+        log_list.refresh()
+
     def _on_search(e):
         fstate["query"] = (e.value or "").strip().lower()
         log_list.refresh()
 
-    search_in = ui.input(placeholder=_t("search_placeholder")).style(
+    ui.select(
+        {"all": _t("filter_all"),
+         "qc_internal": _t("filter_qc"),
+         "consultant": _t("filter_consultant")},
+        value=fstate["filter"],
+        label=_t("filtered_by"),
+        on_change=_on_filter,
+    ).style("width:100%;margin-bottom:8px;").props("dense")
+
+    ui.input(placeholder=_t("search_placeholder"),
+              on_change=_on_search).style(
         "width:100%;margin-bottom:12px;").props("dense clearable")
-    search_in.on("update:model-value", _on_search)
 
     log_list()
 
@@ -2725,11 +2409,19 @@ def _show_defect_dialog(defect_id, on_close_cb):
                             pass
 
             if d.get("closure_photo"):
-                _photo_box(d["closure_photo"],
-                            _t("closure_photo_short"), is_closure=True)
+                with ui.element('div').style("position:relative;"):
+                    ui.html('<div class="photo-tag closure">' +
+                            _t("closure_photo_short") + '</div>')
+                    try:
+                        b64 = base64.b64encode(d["closure_photo"]).decode("ascii")
+                        ui.image("data:image/jpeg;base64," + b64).style(
+                            "width:100%;max-height:200px;object-fit:cover;"
+                            "border-radius:3px;border:1px solid #1e1e1e;")
+                    except Exception:
+                        pass
 
             if d.get("note"):
-                ui.label("> " + str(d["note"])).classes("soft").style(
+                ui.label("> " + str(d["note"])).classes("mono-sm").style(
                     "margin-bottom:12px;font-style:italic;")
 
             for i, s in enumerate(d["selected"], 1):
@@ -2787,21 +2479,6 @@ def _show_defect_dialog(defect_id, on_close_cb):
                 "width:100%;color:#808080;font-size:10px;")
 
     dialog.open()
-
-
-def _photo_box(photo_bytes, tag, is_closure=False):
-    with ui.element('div').classes("photo-box"):
-        tag_cls = "photo-tag closure" if is_closure else "photo-tag"
-        ui.html('<div class="' + tag_cls + '">' + tag + '</div>')
-        try:
-            b64 = base64.b64encode(photo_bytes).decode("ascii")
-            ui.image("data:image/jpeg;base64," + b64).style(
-                "width:100%;height:150px;object-fit:cover;"
-                "border-radius:3px;border:1px solid #1e1e1e;")
-        except Exception:
-            ui.element('div').style(
-                "width:100%;height:150px;background:#161616;"
-                "border-radius:3px;border:1px solid #1e1e1e;")
 
 
 def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
@@ -3107,7 +2784,7 @@ def _open_delete_defect_dialog(d, on_close_cb):
 
 
 # =====================================================================
-# CHANGE PASSWORD DIALOG
+# CHANGE PASSWORD
 # =====================================================================
 def _open_change_password_dialog(state):
     from services import auth_service as auth
@@ -3203,47 +2880,31 @@ def _build_chat(state):
 
     ui.label(_t("chat_sub")).classes("muted").style("margin-bottom:12px;")
 
-    fstate = {
-        "author": "all",
-        "query": "",
-        "from": "",
-        "to": "",
-        "reply_to": None,
-    }
+    fstate = {"query": "", "from": "", "to": "", "reply_to": None}
 
     authors = db.chat_authors(pid)
     if my_name not in authors:
         authors = [my_name] + authors
 
-    author_opts = {"all": _t("chat_filter_all")}
-    for a in authors:
-        author_opts[a] = a
+    def _on_search(e):
+        fstate["query"] = (e.value or "").strip().lower()
+        chat_list.refresh()
+
+    def _on_from(e):
+        fstate["from"] = (e.value or "").strip()
+        chat_list.refresh()
+
+    def _on_to(e):
+        fstate["to"] = (e.value or "").strip()
+        chat_list.refresh()
 
     with ui.element('div').style(
         "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
         "margin-bottom:8px;"
     ):
-        def on_author_change(e):
-            fstate["author"] = (e.value if e and e.value else "all")
-            chat_list.refresh()
-
-        ui.select(author_opts, value=fstate["author"],
-                   label=_t("chat_filter_author"),
-                   with_input=True, on_change=on_author_change).props("dense")
-
-    with ui.element('div').style(
-        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
-        "margin-bottom:8px;"
-    ):
-        def on_from_change(e):
-            fstate["from"] = (e.value or "").strip()
-            chat_list.refresh()
-        def on_to_change(e):
-            fstate["to"] = (e.value or "").strip()
-            chat_list.refresh()
-        ui.input(label=_t("chat_filter_from"), on_change=on_from_change).props(
+        ui.input(label=_t("chat_filter_from"), on_change=_on_from).props(
             "dense type=date")
-        ui.input(label=_t("chat_filter_to"), on_change=on_to_change).props(
+        ui.input(label=_t("chat_filter_to"), on_change=_on_to).props(
             "dense type=date")
 
     reply_holder = ui.element('div').style("width:100%;")
@@ -3280,13 +2941,12 @@ def _build_chat(state):
     def chat_list():
         msgs = db.chat_list(pid, limit=300)
 
-        if fstate["author"] != "all":
-            msgs = [m for m in msgs if (m.get("author") or "") ==
-                    fstate["author"]]
         if fstate["query"]:
             q = fstate["query"]
-            msgs = [m for m in msgs
-                    if q in (m.get("body") or "").lower()]
+            def _m(m):
+                return (q in (m.get("body") or "").lower() or
+                        q in (m.get("author") or "").lower())
+            msgs = [m for m in msgs if _m(m)]
         if fstate["from"]:
             msgs = [m for m in msgs
                     if (m.get("created_at") or "")[:10] >= fstate["from"]]
@@ -3300,15 +2960,13 @@ def _build_chat(state):
             return
 
         by_id = {m["id"]: m for m in msgs}
+        _prof_cache = {}
 
-        # Cache of user profiles for this render
-        _profile_cache = {}
-
-        def _profile_for(m):
+        def _prof(m):
             uid = m.get("user_id")
-            if uid and uid not in _profile_cache:
-                _profile_cache[uid] = db.get_user(uid) or {}
-            return _profile_cache.get(uid, {})
+            if uid and uid not in _prof_cache:
+                _prof_cache[uid] = db.get_user(uid) or {}
+            return _prof_cache.get(uid, {})
 
         for m in msgs:
             mid = m.get("id")
@@ -3318,95 +2976,69 @@ def _build_chat(state):
             reply_to = m.get("reply_to_id")
             is_mine = (author == my_name)
             cls = "chat-msg mine" if is_mine else "chat-msg"
-            prof = _profile_for(m)
+            prof = _prof(m)
 
             with ui.element('div').classes(cls):
-                # Avatar + clickable name
-                def _open_prof(uid=m.get("user_id")):
-                    if uid:
-                        _open_member_profile(uid)
-
-                with ui.element('div').classes("chat-avatar"):
-                    if prof.get("photo_bytes"):
-                        try:
-                            b64 = base64.b64encode(
-                                prof["photo_bytes"]).decode("ascii")
-                            ui.html('<img src="data:image/jpeg;base64,' +
-                                    b64 + '"/>')
-                        except Exception:
-                            ui.label(_initial(author))
-                    else:
-                        ui.label(_initial(author))
-                    ui.element('div').style(
-                        "position:absolute;top:0;left:0;right:0;bottom:0;"
-                        "cursor:pointer;"
-                    ).on("click", _open_prof)
-
-                with ui.element('div').classes("chat-content"):
-                    with ui.element('div').classes("chat-head"):
-                        with ui.element('div').style(
-                            "display:flex;align-items:center;gap:4px;"
-                        ):
-                            name_lbl = ui.label(author).classes("chat-author")
-                            name_lbl.on("click", _open_prof)
-                            if prof.get("title"):
-                                ui.label("· " + prof["title"]).classes(
-                                    "chat-title-tag")
-                            if is_mine:
-                                ui.html('<span class="badge-you">' +
-                                        _t("chat_you") + '</span>')
-                        ui.label(created).classes("chat-time")
-
-                    if reply_to and reply_to in by_id:
-                        parent = by_id[reply_to]
-                        ui.html(
-                            '<div class="chat-reply-quote">' +
-                            '<b>' + _html_mod.escape(
-                                str(parent.get("author", ""))) +
-                            '</b>: ' +
-                            _html_mod.escape(
-                                str(parent.get("body", ""))[:80]) +
-                            '</div>'
-                        )
-
-                    ui.html('<div class="chat-body">' +
-                            _chat_render_body(body) + '</div>')
-
-                    with ui.element('div').classes("chat-actions"):
-                        def _reply(rid=mid):
-                            fstate["reply_to"] = rid
-                            render_reply_indicator()
-                        ui.label(_t("chat_reply")).classes("chat-act").style(
-                            "cursor:pointer;"
-                        ).on("click", _reply)
+                with ui.element('div').classes("chat-head"):
+                    with ui.element('div').style(
+                        "display:flex;align-items:center;gap:4px;"
+                    ):
+                        def _open_prof(uid=m.get("user_id")):
+                            if uid:
+                                _open_member_profile(uid)
+                        name_lbl = ui.label(author).classes("chat-author")
+                        name_lbl.on("click", _open_prof)
+                        if prof.get("title"):
+                            ui.label("· " + prof["title"]).classes(
+                                "chat-title-tag")
                         if is_mine:
-                            def _del(did=mid):
-                                _confirm_delete_chat(state, did,
-                                                      chat_list.refresh)
-                            ui.label(_t("chat_delete")).classes(
-                                "chat-act danger"
-                            ).style("cursor:pointer;").on("click", _del)
+                            ui.html('<span class="badge-you">' +
+                                    _t("chat_you") + '</span>')
+                    ui.label(created).classes("chat-time")
+
+                if reply_to and reply_to in by_id:
+                    parent = by_id[reply_to]
+                    ui.html(
+                        '<div class="chat-reply-quote">' +
+                        '<b>' + _html_mod.escape(
+                            str(parent.get("author", ""))) +
+                        '</b>: ' +
+                        _html_mod.escape(
+                            str(parent.get("body", ""))[:80]) +
+                        '</div>'
+                    )
+
+                ui.html('<div class="chat-body">' +
+                        _chat_render_body(body) + '</div>')
+
+                with ui.element('div').classes("chat-actions"):
+                    def _reply(rid=mid):
+                        fstate["reply_to"] = rid
+                        render_reply_indicator()
+                    ui.label(_t("chat_reply")).classes("chat-act").style(
+                        "cursor:pointer;"
+                    ).on("click", _reply)
+                    if is_mine:
+                        def _del(did=mid):
+                            _confirm_delete_chat(state, did,
+                                                  chat_list.refresh)
+                        ui.label(_t("chat_delete")).classes(
+                            "chat-act danger"
+                        ).style("cursor:pointer;").on("click", _del)
+
+    ui.input(placeholder=_t("chat_search"), on_change=_on_search).style(
+        "width:100%;margin-bottom:12px;").props("dense clearable")
 
     chat_list()
 
-    # Composer
     with ui.element('div').classes("chat-composer"):
-        def _on_search(e):
-            fstate["query"] = (e.value or "").strip().lower()
-            chat_list.refresh()
-
-        search_in = ui.input(placeholder=_t("chat_search")).style(
-            "width:100%;margin-bottom:6px;").props("dense clearable")
-        search_in.on("update:model-value", _on_search)
-
         with ui.element('div').style("position:relative;width:100%;"):
             body_in = ui.textarea(
                 placeholder=_t("chat_placeholder")
             ).style("width:100%;").props("dense autogrow")
 
             mention_holder = ui.element('div').style(
-                "position:absolute;bottom:100%;left:0;right:0;"
-                "display:none;"
+                "position:absolute;bottom:100%;left:0;right:0;display:none;"
             )
 
             def _update_mentions():
@@ -3422,8 +3054,7 @@ def _build_chat(state):
                         with ui.element('div').classes("mention-drop"):
                             if not matches:
                                 ui.label("No matches").classes(
-                                    "mention-item"
-                                ).style("color:#5a5a5a;")
+                                    "mention-item").style("color:#5a5a5a;")
                             for a in matches:
                                 def _pick(nm=a):
                                     parts = (body_in.value or "").split()
@@ -3434,8 +3065,7 @@ def _build_chat(state):
                                     body_in.value = " ".join(parts) + " "
                                     mention_holder.style("display:none;")
                                 ui.label(a).classes("mention-item").on(
-                                    "click", _pick
-                                )
+                                    "click", _pick)
                 else:
                     mention_holder.style("display:none;")
 
@@ -3464,6 +3094,42 @@ def _build_chat(state):
 
         ui.button(_t("chat_send"), icon="send", on_click=_send).classes(
             BTN_PRIMARY).style("width:100%;margin-top:6px;")
+
+
+def _open_member_profile(user_id):
+    u = db.get_user(user_id)
+    if not u:
+        return
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:22px;min-width:260px;max-width:95vw;width:340px;"
+    ):
+        with ui.element('div').style(
+            "display:flex;flex-direction:column;align-items:center;gap:8px;"
+        ):
+            # avatar circle
+            av = '<div class="avatar-big">'
+            if u.get("photo_bytes"):
+                try:
+                    b64 = base64.b64encode(u["photo_bytes"]).decode("ascii")
+                    av += '<img src="data:image/jpeg;base64,' + b64 + '"/>'
+                except Exception:
+                    av += _html_mod.escape(_initial(u.get("name") or ""))
+            else:
+                av += _html_mod.escape(_initial(u.get("name") or ""))
+            av += '</div>'
+            ui.html(av)
+            ui.label(u.get("name") or "—").style(
+                "font-size:15px;font-weight:700;color:#e8e8e8;")
+            if u.get("title"):
+                ui.label(u["title"]).style(
+                    "font-size:11px;color:#5eead4;font-weight:600;"
+                    "letter-spacing:0.05em;"
+                )
+        ui.element('div').style("height:14px;")
+        ui.button(_t("close"), on_click=dlg.close).classes(BTN_SOFT).style(
+            "width:100%;"
+        )
+    dlg.open()
 
 
 def _confirm_delete_chat(state, msg_id, refresh_fn):
