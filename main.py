@@ -1,13 +1,50 @@
 """
-main.py — entry point.
+main.py — entry with auth.
 """
-from nicegui import ui
+import os
+from nicegui import ui, app
+
+from services import auth_service as auth
+from ui.auth_page import login_page, signup_page
 from ui.defect_page import build_defect_ui
+
+
+def _current_user_id():
+    token = app.storage.user.get("session")
+    if not token:
+        return None
+    return auth.read_session(token)
+
+
+@ui.page('/login')
+def login_route():
+    if _current_user_id():
+        ui.navigate.to('/')
+        return
+    login_page()
+
+
+@ui.page('/signup')
+def signup_route():
+    if _current_user_id():
+        ui.navigate.to('/')
+        return
+    signup_page()
+
+
+@ui.page('/logout')
+def logout_route():
+    app.storage.user.clear()
+    ui.navigate.to('/login')
 
 
 @ui.page('/')
 def index():
-    build_defect_ui()
+    uid = _current_user_id()
+    if not uid:
+        ui.navigate.to('/login')
+        return
+    build_defect_ui(uid)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
@@ -17,6 +54,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         title="Defect Notices",
         reload=False,
         reconnect_timeout=60.0,
-        ws_ping_interval=30,
-        ws_ping_timeout=120,
+        storage_secret=os.environ.get("SESSION_SECRET", "change-me-now"),
     )
