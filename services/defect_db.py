@@ -1,9 +1,6 @@
 """
 services/defect_db.py — SQLite layer.
-Tables: projects, method_statements, defects.
-Thread-safe. Auto-migrates missing columns.
 """
-
 import os
 import json
 import sqlite3
@@ -25,7 +22,6 @@ def _now():
 
 
 def _ensure_columns(cur, table, wanted):
-    """Add any missing columns. Silently tolerates existing ones."""
     cur.execute("PRAGMA table_info(" + table + ")")
     have = {r[1] for r in cur.fetchall()}
     for name, ddl in wanted:
@@ -48,6 +44,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
                 contractor TEXT,
+                subcontractor TEXT,
                 consultant TEXT,
                 location TEXT,
                 engineer_name TEXT,
@@ -91,7 +88,9 @@ def init_db():
             )
         """)
 
-        # Migrations for older DBs
+        _ensure_columns(cur, "projects", [
+            ("subcontractor", "TEXT"),
+        ])
         _ensure_columns(cur, "defects", [
             ("raise_type", "TEXT"),
             ("closed_at", "TEXT"),
@@ -110,33 +109,49 @@ init_db()
 # PROJECTS
 # =====================================================================
 def save_project(name, contractor, consultant, location,
-                 engineer_name, logo_bytes=None):
+                 engineer_name, logo_bytes=None, subcontractor=None):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("SELECT id, subcontractor FROM projects "
+                    "ORDER BY id LIMIT 1")
+        row = cur.fetchone()
+        if row:
+            sub = (subcontractor if subcontractor is not None
+                   else (row["subcontractor"] or ""))
+            cur.execute("""
+                UPDATE projects
+                SET name=?, contractor=?, consultant=?, location=?,
+                    engineer_name=?, logo_bytes=?, subcontractor=?
+                WHERE id=?
+            """, (name, contractor, consultant, location,
+                  engineer_name, logo_bytes, sub, row["id"]))
+            pid = row["id"]
+        else:
+            cur.execute("""
+                INSERT INTO projects
+                    (name, contractor, subcontractor, consultant, location,
+                     engineer_name, logo_bytes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (name, contractor, subcontractor or "", consultant,
+                  location, engineer_name, logo_bytes, _now()))
+            pid = cur.lastrowid
+        c.commit()
+        c.close()
+        return pid
+
+
+def save_subcontractor(name):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
         cur.execute("SELECT id FROM projects ORDER BY id LIMIT 1")
         row = cur.fetchone()
         if row:
-            cur.execute("""
-                UPDATE projects
-                SET name=?, contractor=?, consultant=?, location=?,
-                    engineer_name=?, logo_bytes=?
-                WHERE id=?
-            """, (name, contractor, consultant, location,
-                  engineer_name, logo_bytes, row["id"]))
-            pid = row["id"]
-        else:
-            cur.execute("""
-                INSERT INTO projects
-                    (name, contractor, consultant, location,
-                     engineer_name, logo_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (name, contractor, consultant, location,
-                  engineer_name, logo_bytes, _now()))
-            pid = cur.lastrowid
-        c.commit()
+            cur.execute("UPDATE projects SET subcontractor=? WHERE id=?",
+                        (name, row["id"]))
+            c.commit()
         c.close()
-        return pid
 
 
 def get_project():
@@ -275,6 +290,9 @@ def list_defects(project_id, raise_filter=None):
             sel = json.loads(r["selected_json"] or "[]")
         except Exception:
             sel = []
+        first_name = ""
+        if sel:
+            first_name = str(sel[0].get("name", ""))[:100]
         out.append({
             "id": r["id"],
             "uid": r["uid"],
@@ -285,6 +303,7 @@ def list_defects(project_id, raise_filter=None):
             "closed_at": r["closed_at"],
             "raise_type": r["raise_type"] or "qc_internal",
             "count": len(sel),
+            "first_defect": first_name,
         })
     return out
 
