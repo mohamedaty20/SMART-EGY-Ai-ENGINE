@@ -1,7 +1,15 @@
 """
-ui/defect_page.py — Full file. Clean. Fast. No service worker.
+ui/defect_page.py — Full file.
+- Real-time chat (2s poll, smart scroll).
+- 60-second delete window on chat messages.
+- Role-colored chat authors (consultant=red, QC mgr=blue, PM=green).
+- Defect type saved on every notice + filter in logs.
+- Engineer name + place shown under every log title.
+- Place-of-defect (free text) replaces element dropdown on raise.
+- Interactive ECharts dashboard (line + scatter + bar).
 """
 import io
+import re
 import base64
 import datetime
 import html as _html_mod
@@ -47,7 +55,10 @@ T = {
         "analyze": "Analyze with AI", "analyzing": "Analyzing...",
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
-        "zone": "Zone", "element": "Element",
+        "zone": "Zone",
+        "place_of_defect": "PLACE OF THE DEFECT",
+        "place_of_defect_placeholder":
+            "e.g. Block B, Column C3 base, Grid 4-5",
         "engineer_field": "Engineer name",
         "place_field": "Exact place",
         "place_placeholder": "e.g. Block B, Column C3 base, Grid 4-5",
@@ -78,9 +89,18 @@ T = {
         "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
         "no_match": "No matches.",
-        "search_placeholder": "Search UID, defect, sub, engineer, place...",
+        "search_placeholder":
+            "Search UID, defect, sub, engineer, place...",
         "filter_all": "All", "filter_qc": "QC Internal",
         "filter_consultant": "Consultant / NCR",
+        "defect_type_label": "Defect type",
+        "defect_type_all": "All types",
+        "defect_type_structural": "Structural",
+        "defect_type_arch": "Architectural",
+        "defect_type_mep": "MEP",
+        "defect_type_earthwork": "Earthwork",
+        "defect_type_general": "General",
+        "filter_type": "Type",
         "export_register": "REGISTER PDF", "closure_report": "CLOSURE PDF",
         "export_excel": "EXCEL",
         "open": "OPEN", "closed": "CLOSED", "no_rows": "No rows.",
@@ -112,7 +132,8 @@ T = {
         "photo_received": "Photo received", "file_loaded": "Loaded: ",
         "photos_received": "photos",
         "projects_title": "Your Projects", "switch_project": "Switch project",
-        "new_project": "New project", "create_first": "Create your first project",
+        "new_project": "New project",
+        "create_first": "Create your first project",
         "no_projects_hint": "No projects yet.",
         "delete_project": "Delete project",
         "delete_confirm": "Delete this project and all its data?",
@@ -127,6 +148,12 @@ T = {
         "dash_summary": "SUMMARY",
         "dash_print": "PRINT DASHBOARD PDF",
         "dash_empty": "No defects yet.",
+        "dash_scatter": "DEFECT LIFECYCLE (SCATTER)",
+        "dash_scatter_x": "Days open",
+        "dash_scatter_y": "Days to close",
+        "dash_line": "RAISED VS CLOSED / WEEK",
+        "dash_line_raised": "Raised",
+        "dash_line_closed": "Closed",
         "no_data": "No data.",
         "col_name": "NAME", "col_open": "OPEN", "col_overdue": "OVERDUE",
         "col_closed": "CLOSED", "col_total": "TOTAL",
@@ -165,7 +192,8 @@ T = {
         "edit_defect": "Edit",
         "delete_defect": "Delete",
         "edit_defect_title": "Edit notice",
-        "edit_defect_sub": "Change details. Notice PDF will be regenerated.",
+        "edit_defect_sub":
+            "Change details. Notice PDF will be regenerated.",
         "defect_items": "Defect items",
         "add_item": "+ Add item",
         "remove_item": "Remove",
@@ -192,6 +220,9 @@ T = {
         "chat_confirm_delete": "Delete this message?",
         "chat_deleted": "Message deleted.",
         "chat_you": "you",
+        "delete_too_late": "Can only delete within 60 seconds of posting.",
+        "delete_not_owner": "Only the author can delete this message.",
+        "delete_failed": "Delete failed.",
         "my_profile": "My profile",
         "profile_name": "Name",
         "profile_title": "Job title",
@@ -199,6 +230,7 @@ T = {
         "profile_saved": "Profile saved.",
         "profile_email": "Email",
         "profile_open": "Profile",
+        "new_messages": "NEW MESSAGES",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -226,7 +258,10 @@ T = {
         "analyze": "تحليل بالذكاء الاصطناعي", "analyzing": "جاري التحليل...",
         "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة C3",
-        "zone": "المنطقة", "element": "العنصر",
+        "zone": "المنطقة",
+        "place_of_defect": "مكان العيب",
+        "place_of_defect_placeholder":
+            "مثال: بلوك B، قاعدة عمود C3، محور 4-5",
         "engineer_field": "اسم المهندس",
         "place_field": "المكان بالتفصيل",
         "place_placeholder": "مثال: بلوك B، قاعدة عمود C3",
@@ -259,6 +294,14 @@ T = {
         "search_placeholder": "ابحث بالرقم أو العيب أو المهندس أو المكان...",
         "filter_all": "الكل", "filter_qc": "داخلي QC",
         "filter_consultant": "استشاري / NCR",
+        "defect_type_label": "نوع العيب",
+        "defect_type_all": "كل الأنواع",
+        "defect_type_structural": "إنشائي",
+        "defect_type_arch": "معماري",
+        "defect_type_mep": "كهروميكانيكي",
+        "defect_type_earthwork": "أعمال ترابية",
+        "defect_type_general": "عام",
+        "filter_type": "النوع",
         "export_register": "السجل PDF", "closure_report": "الإغلاق PDF",
         "export_excel": "Excel",
         "open": "مفتوح", "closed": "مغلق", "no_rows": "لا صفوف.",
@@ -290,7 +333,8 @@ T = {
         "photo_received": "تم استلام الصورة", "file_loaded": "تم التحميل: ",
         "photos_received": "صور",
         "projects_title": "مشاريعك", "switch_project": "تبديل المشروع",
-        "new_project": "مشروع جديد", "create_first": "أنشئ مشروعك الأول",
+        "new_project": "مشروع جديد",
+        "create_first": "أنشئ مشروعك الأول",
         "no_projects_hint": "لا مشاريع بعد.",
         "delete_project": "حذف المشروع",
         "delete_confirm": "حذف هذا المشروع وكل بياناته؟",
@@ -305,6 +349,12 @@ T = {
         "dash_summary": "ملخص",
         "dash_print": "طباعة تقرير الرئيسية",
         "dash_empty": "لا عيوب بعد.",
+        "dash_scatter": "دورة حياة العيب",
+        "dash_scatter_x": "أيام مفتوح",
+        "dash_scatter_y": "أيام حتى الإغلاق",
+        "dash_line": "مُصدر مقابل مُغلق أسبوعياً",
+        "dash_line_raised": "مُصدر",
+        "dash_line_closed": "مُغلق",
         "no_data": "لا بيانات.",
         "col_name": "الاسم", "col_open": "مفتوح", "col_overdue": "متأخر",
         "col_closed": "مغلق", "col_total": "الإجمالي",
@@ -370,6 +420,9 @@ T = {
         "chat_confirm_delete": "حذف هذه الرسالة؟",
         "chat_deleted": "تم الحذف.",
         "chat_you": "أنت",
+        "delete_too_late": "يمكن الحذف خلال 60 ثانية فقط بعد الإرسال.",
+        "delete_not_owner": "فقط كاتب الرسالة يمكنه الحذف.",
+        "delete_failed": "فشل الحذف.",
         "my_profile": "ملفي الشخصي",
         "profile_name": "الاسم",
         "profile_title": "المسمى الوظيفي",
@@ -377,6 +430,7 @@ T = {
         "profile_saved": "تم الحفظ.",
         "profile_email": "البريد",
         "profile_open": "الملف",
+        "new_messages": "رسائل جديدة",
     },
 }
 
@@ -414,9 +468,59 @@ def _severity_options():
             "High": _t("severity_high"), "Critical": _t("severity_critical")}
 
 
+def _defect_type_options():
+    return {
+        "Structural": _t("defect_type_structural"),
+        "Architectural": _t("defect_type_arch"),
+        "MEP": _t("defect_type_mep"),
+        "Earthwork": _t("defect_type_earthwork"),
+        "General": _t("defect_type_general"),
+    }
+
+
+# ---------------------------------------------------------------------
+# PLACE → ELEMENT GUESS
+# ---------------------------------------------------------------------
+_ELEMENT_KEYWORDS = {
+    "column": ["column", "col ", "عمود", "أعمدة", "أعمده"],
+    "beam":   ["beam", "كمرة", "كمره", "كمر", "جسر"],
+    "slab":   ["slab", "سقف", "بلاطة", "بلاطه"],
+    "wall":   ["wall", "حائط", "حيط", "جدار"],
+    "foundation": ["foundation", "footing", "أساس", "اساس", "قاعدة", "قاعده"],
+    "finishing": ["plaster", "finish", "تشطيب", "محارة", "محاره", "دهان"],
+}
+
+
+def _guess_element(place_text):
+    """Guess ECP element bucket from free-text 'place of defect'."""
+    p = (place_text or "").lower()
+    for key, words in _ELEMENT_KEYWORDS.items():
+        for w in words:
+            if w in p:
+                return key
+    return "column"
+
+
+# ---------------------------------------------------------------------
+# CHAT ROLE COLOR
+# ---------------------------------------------------------------------
+def _chat_author_color(title):
+    """Consultant=red, QC Manager=blue, Project Manager=green,
+    QC Engineer=teal, else muted."""
+    t = (title or "").lower()
+    if "consultant" in t or "استشاري" in t:
+        return "#f87171"
+    if "qc manager" in t or "مدير الجودة" in t or "quality manager" in t:
+        return "#60a5fa"
+    if "project manager" in t or "مدير المشروع" in t:
+        return "#4ade80"
+    if "qc engineer" in t or "مهندس الجودة" in t:
+        return "#5eead4"
+    return "#b8b8b8"
+
+
 # =====================================================================
-# THEME  — minimal. no service worker, no manifest, scrollbars hidden
-# but scrolling works.
+# THEME
 # =====================================================================
 def _inject_theme():
     rtl = "rtl" if _is_rtl() else "ltr"
@@ -442,7 +546,6 @@ def _inject_theme():
     overflow-x: hidden !important;
     direction: __DIR__;
   }
-  /* hide scrollbar visuals, keep scrolling */
   html, body, .q-page, .q-page-container, .scroll, * {
     scrollbar-width: none !important;
     -ms-overflow-style: none !important;
@@ -675,8 +778,7 @@ def _inject_theme():
   .chat-msg.mine { border-color: rgba(94,234,212,0.4); }
   .chat-head { display: flex; justify-content: space-between;
                align-items: center; gap: 8px; margin-bottom: 4px; }
-  .chat-author { font-size: 11px; font-weight: 700; color: var(--accent);
-                 cursor: pointer; }
+  .chat-author { font-size: 11px; font-weight: 700; cursor: pointer; }
   .chat-author:hover { text-decoration: underline; }
   .chat-title-tag { font-size: 10px; color: var(--muted); }
   .chat-time { font-size: 9px; color: var(--muted-2);
@@ -719,6 +821,8 @@ def _inject_theme():
                 overflow: hidden; border: 1px solid var(--border-2);
                 color: var(--accent); font-weight: 700; font-size: 26px; }
   .avatar-big img { width: 100%; height: 100%; object-fit: cover; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border);
+                border-radius: 4px; padding: 12px; margin-bottom: 12px; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -731,9 +835,6 @@ BTN_OUTLINE = "btn-outline"
 BTN_DANGER = "btn-danger"
 
 
-# =====================================================================
-# AVATAR HELPERS
-# =====================================================================
 def _initial(name):
     s = (name or "?").strip()
     return s[0].upper() if s else "?"
@@ -868,7 +969,7 @@ def _render_no_project(state, refresh_fn):
 
 
 # =====================================================================
-# DASHBOARD — no charts, just clean summaries
+# DASHBOARD — ECharts (line + scatter + bar)
 # =====================================================================
 def _build_dashboard(state):
     if not state.get("project_id"):
@@ -903,12 +1004,14 @@ def _build_dashboard(state):
             "text-align:center;padding:32px;"
         ):
             ui.icon("insights").style("font-size:28px;color:#5a5a5a;")
-            ui.label(_t("dash_empty")).classes("muted").style("margin-top:10px;")
+            ui.label(_t("dash_empty")).classes("muted").style(
+                "margin-top:10px;")
         return
 
     zones = db.kpi_per_zone(pid)
     weeks = db.kpi_per_week(pid, weeks=8)
     scores = db.subcontractor_scores(pid)
+    types = db.kpi_per_type(pid) if hasattr(db, "kpi_per_type") else []
     top_zone = zones[0]["zone"] if zones else "-"
     top_sub = scores[0]["name"] if scores else "-"
 
@@ -933,55 +1036,228 @@ def _build_dashboard(state):
         _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
         _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
 
-    if zones:
-        with ui.element('div').classes("card").style("margin-bottom:12px;"):
-            ui.label(_t("dash_zones")).classes("label").style(
-                "margin-bottom:8px;"
-            )
-            max_z = max(z["count"] for z in zones) or 1
-            for z in zones:
-                pct = int((z["count"] / float(max_z)) * 100)
-                with ui.element('div').classes("bar-row"):
-                    ui.label(str(z["zone"])).classes("bar-label")
-                    with ui.element('div').classes("bar-track"):
-                        ui.element('div').classes("bar-fill").style(
-                            "width:" + str(pct) + "%;")
-                    ui.label(str(z["count"])).classes("bar-value")
-
+    # -------- Line chart: raised vs closed per week --------
     if weeks:
-        with ui.element('div').classes("card").style("margin-bottom:12px;"):
-            ui.label(_t("dash_weeks")).classes("label").style(
-                "margin-bottom:8px;"
-            )
-            for w in weeks:
-                with ui.element('div').style(
-                    "display:flex;justify-content:space-between;"
-                    "padding:4px 0;border-bottom:1px solid #1e1e1e;"
-                    "font-size:11px;"
-                ):
-                    ui.label(w["label"]).style("color:#b8b8b8;")
-                    ui.label(str(w["count"])).style(
-                        "color:#5eead4;font-weight:700;"
-                        "font-variant-numeric:tabular-nums;"
-                    )
+        labels = [w["label"] for w in weeks]
+        raised = [w["count"] for w in weeks]
+        # Estimate "closed per week" from raw defects
+        try:
+            rows = db.list_defects(pid) or []
+            now = datetime.datetime.utcnow()
+            closed_counts = []
+            for i in range(len(weeks) - 1, -1, -1):
+                start = now - datetime.timedelta(days=7 * (i + 1))
+                end = now - datetime.timedelta(days=7 * i)
+                c = 0
+                for r in rows:
+                    ca = r.get("closed_at")
+                    if not ca:
+                        continue
+                    try:
+                        cd = datetime.datetime.strptime(str(ca)[:19],
+                                                         "%Y-%m-%d %H:%M:%S")
+                        if start <= cd < end:
+                            c += 1
+                    except Exception:
+                        pass
+                closed_counts.append(c)
+            closed_counts.reverse()
+        except Exception:
+            closed_counts = [0] * len(labels)
 
+        with ui.element('div').classes("chart-card"):
+            ui.label(_t("dash_line")).classes("label").style(
+                "margin-bottom:6px;display:block;")
+            ui.echart({
+                'backgroundColor': 'transparent',
+                'tooltip': {'trigger': 'axis'},
+                'legend': {
+                    'data': [_t("dash_line_raised"), _t("dash_line_closed")],
+                    'textStyle': {'color': '#808080', 'fontSize': 10},
+                    'top': 0,
+                },
+                'grid': {'left': 38, 'right': 12, 'top': 28, 'bottom': 26},
+                'xAxis': {
+                    'type': 'category',
+                    'data': labels,
+                    'axisLine': {'lineStyle': {'color': '#262626'}},
+                    'axisLabel': {'color': '#808080', 'fontSize': 9},
+                },
+                'yAxis': {
+                    'type': 'value',
+                    'axisLine': {'lineStyle': {'color': '#262626'}},
+                    'axisLabel': {'color': '#808080', 'fontSize': 9},
+                    'splitLine': {'lineStyle': {'color': '#1a1a1a'}},
+                },
+                'series': [
+                    {
+                        'name': _t("dash_line_raised"),
+                        'type': 'line', 'smooth': True,
+                        'symbol': 'circle', 'symbolSize': 6,
+                        'lineStyle': {'width': 2, 'color': '#5eead4'},
+                        'itemStyle': {'color': '#5eead4'},
+                        'areaStyle': {'color':
+                            'rgba(94,234,212,0.12)'},
+                        'data': raised,
+                    },
+                    {
+                        'name': _t("dash_line_closed"),
+                        'type': 'line', 'smooth': True,
+                        'symbol': 'circle', 'symbolSize': 6,
+                        'lineStyle': {'width': 2, 'color': '#4ade80'},
+                        'itemStyle': {'color': '#4ade80'},
+                        'data': closed_counts,
+                    },
+                ],
+            }).style("height:230px;width:100%;")
+
+    # -------- Scatter: days open vs days to close --------
+    try:
+        scatter = db.defect_scatter_data(pid) or []
+    except Exception:
+        scatter = []
+    if scatter:
+        open_pts = [[p["x"], p["y"], p.get("uid", "")]
+                    for p in scatter if p["status"] == "open"]
+        closed_pts = [[p["x"], p["y"], p.get("uid", "")]
+                      for p in scatter if p["status"] != "open"]
+        with ui.element('div').classes("chart-card"):
+            ui.label(_t("dash_scatter")).classes("label").style(
+                "margin-bottom:6px;display:block;")
+            ui.echart({
+                'backgroundColor': 'transparent',
+                'tooltip': {
+                    'trigger': 'item',
+                    'formatter': 'UID: {c}',
+                },
+                'legend': {
+                    'data': [_t("kpi_open"), _t("kpi_closed")],
+                    'textStyle': {'color': '#808080', 'fontSize': 10},
+                    'top': 0,
+                },
+                'grid': {'left': 42, 'right': 14, 'top': 28, 'bottom': 34},
+                'xAxis': {
+                    'type': 'value',
+                    'name': _t("dash_scatter_x"),
+                    'nameTextStyle': {'color': '#808080', 'fontSize': 9},
+                    'axisLine': {'lineStyle': {'color': '#262626'}},
+                    'axisLabel': {'color': '#808080', 'fontSize': 9},
+                    'splitLine': {'lineStyle': {'color': '#1a1a1a'}},
+                },
+                'yAxis': {
+                    'type': 'value',
+                    'name': _t("dash_scatter_y"),
+                    'nameTextStyle': {'color': '#808080', 'fontSize': 9},
+                    'axisLine': {'lineStyle': {'color': '#262626'}},
+                    'axisLabel': {'color': '#808080', 'fontSize': 9},
+                    'splitLine': {'lineStyle': {'color': '#1a1a1a'}},
+                },
+                'series': [
+                    {
+                        'name': _t("kpi_open"), 'type': 'scatter',
+                        'symbolSize': 10,
+                        'itemStyle': {'color': '#fbbf24'},
+                        'data': open_pts,
+                    },
+                    {
+                        'name': _t("kpi_closed"), 'type': 'scatter',
+                        'symbolSize': 10,
+                        'itemStyle': {'color': '#4ade80'},
+                        'data': closed_pts,
+                    },
+                ],
+            }).style("height:230px;width:100%;")
+
+    # -------- Zone bar chart --------
+    if zones:
+        with ui.element('div').classes("chart-card"):
+            ui.label(_t("dash_zones")).classes("label").style(
+                "margin-bottom:6px;display:block;")
+            ui.echart({
+                'backgroundColor': 'transparent',
+                'tooltip': {'trigger': 'axis'},
+                'grid': {'left': 32, 'right': 12, 'top': 12, 'bottom': 26},
+                'xAxis': {
+                    'type': 'category',
+                    'data': [str(z["zone"]) for z in zones],
+                    'axisLine': {'lineStyle': {'color': '#262626'}},
+                    'axisLabel': {'color': '#808080', 'fontSize': 9},
+                },
+                'yAxis': {
+                    'type': 'value',
+                    'axisLine': {'lineStyle': {'color': '#262626'}},
+                    'axisLabel': {'color': '#808080', 'fontSize': 9},
+                    'splitLine': {'lineStyle': {'color': '#1a1a1a'}},
+                },
+                'series': [{
+                    'type': 'bar',
+                    'data': [z["count"] for z in zones],
+                    'itemStyle': {
+                        'color': '#5eead4',
+                        'borderRadius': [3, 3, 0, 0],
+                    },
+                    'barWidth': '55%',
+                }],
+            }).style("height:200px;width:100%;")
+
+    # -------- Type distribution (if available) --------
+    if types:
+        with ui.element('div').classes("chart-card"):
+            ui.label(_t("defect_type_label")).classes("label").style(
+                "margin-bottom:6px;display:block;")
+            ui.echart({
+                'backgroundColor': 'transparent',
+                'tooltip': {'trigger': 'item'},
+                'series': [{
+                    'type': 'pie',
+                    'radius': ['48%', '72%'],
+                    'avoidLabelOverlap': True,
+                    'label': {
+                        'color': '#b8b8b8', 'fontSize': 10,
+                        'formatter': '{b}: {c}',
+                    },
+                    'labelLine': {'lineStyle': {'color': '#262626'}},
+                    'itemStyle': {
+                        'borderColor': '#0b0b0b', 'borderWidth': 2,
+                    },
+                    'data': [
+                        {'name': str(t["type"]), 'value': t["count"]}
+                        for t in types
+                    ],
+                }],
+            }).style("height:240px;width:100%;")
+
+    # -------- Sub scorecard table --------
     if scores:
-        with ui.element('div').classes("card"):
+        with ui.element('div').classes("chart-card"):
             ui.label(_t("dash_subs")).classes("label").style(
-                "margin-bottom:8px;"
-            )
-            for s in scores[:10]:
-                name = s["name"] or _t("unassigned")
-                with ui.element('div').classes("sub-row"):
-                    ui.label(str(name)).classes("sub-name")
-                    with ui.element('div').classes("sub-badges"):
-                        ui.html('<span class="badge-open">' +
-                                str(s["open"]) + '</span>')
-                        if s["overdue"]:
-                            ui.html('<span class="badge-overdue">' +
-                                    str(s["overdue"]) + '</span>')
-                        ui.html('<span class="badge-closed">' +
-                                str(s["closed"]) + '</span>')
+                "margin-bottom:8px;display:block;")
+            html = ("<table style='width:100%;border-collapse:collapse;"
+                    "font-size:11px;font-variant-numeric:tabular-nums;'>"
+                    "<thead><tr style='background:#0a0a0a;'>")
+            for h in [_t("col_name"), _t("col_open"), _t("col_overdue"),
+                      _t("col_closed"), _t("col_total")]:
+                html += ("<th style='text-align:left;padding:6px 8px;"
+                         "font-size:9px;letter-spacing:0.14em;"
+                         "color:#5a5a5a;text-transform:uppercase;"
+                         "border-bottom:1px solid #1e1e1e;'>" + h + "</th>")
+            html += "</tr></thead><tbody>"
+            for s in scores[:15]:
+                nm = s["name"] or _t("unassigned")
+                html += "<tr style='border-bottom:1px solid #1e1e1e;'>"
+                html += ("<td style='padding:6px 8px;color:#e8e8e8;'>" +
+                         _html_mod.escape(str(nm)) + "</td>")
+                html += ("<td style='padding:6px 8px;color:#fbbf24;"
+                         "font-weight:700;'>" + str(s["open"]) + "</td>")
+                html += ("<td style='padding:6px 8px;color:#f87171;"
+                         "font-weight:700;'>" + str(s["overdue"]) + "</td>")
+                html += ("<td style='padding:6px 8px;color:#4ade80;"
+                         "font-weight:700;'>" + str(s["closed"]) + "</td>")
+                html += ("<td style='padding:6px 8px;color:#b8b8b8;'>" +
+                         str(s["total"]) + "</td>")
+                html += "</tr>"
+            html += "</tbody></table>"
+            ui.html(html)
 
 
 def _metric_cell(label, value, variant):
@@ -1172,7 +1448,8 @@ def _build_subs(state):
         ):
             ui.icon("engineering").style("font-size:28px;color:#5a5a5a;")
             ui.label(_t("no_subs")).classes("h3").style("margin-top:10px;")
-            ui.label(_t("no_subs_hint")).classes("muted").style("margin-top:4px;")
+            ui.label(_t("no_subs_hint")).classes("muted").style(
+                "margin-top:4px;")
         return
 
     for m in masters:
@@ -1201,7 +1478,8 @@ def _build_subs(state):
 
                 if m.get("id"):
                     def _del(sub_id=m["id"]):
-                        _confirm_delete_sub(state, sub_id, state["render_main"])
+                        _confirm_delete_sub(state, sub_id,
+                                             state["render_main"])
                     ui.button(icon="close", on_click=_del).props(
                         "flat round dense size=sm").style("color:#5a5a5a;")
 
@@ -1448,7 +1726,8 @@ def _build_drawer(state, drawer):
                         def open_ms():
                             _open_ms_dialog(state, refresh)
                         ui.button(icon="add", on_click=open_ms).props(
-                            "flat round dense size=sm").style("color:#5eead4;")
+                            "flat round dense size=sm").style(
+                            "color:#5eead4;")
 
                 ms_list = db.list_ms(state["project_id"])
                 if not ms_list:
@@ -1508,7 +1787,8 @@ def _open_project_chooser(state, refresh_drawer, refresh_main):
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:460px;"
     ):
-        ui.label(_t("projects_title")).classes("h1").style("margin-bottom:14px;")
+        ui.label(_t("projects_title")).classes("h1").style(
+            "margin-bottom:14px;")
         if not projects:
             ui.label(_t("no_projects_hint")).classes("muted").style(
                 "margin-bottom:14px;")
@@ -1560,7 +1840,8 @@ def _confirm_delete(state, parent_dlg, refresh_drawer, refresh_main):
     with ui.dialog() as dlg2, ui.card().style(
         "padding:20px;min-width:280px;max-width:95vw;width:380px;"
     ):
-        ui.label(_t("delete_confirm")).classes("h3").style("margin-bottom:14px;")
+        ui.label(_t("delete_confirm")).classes("h3").style(
+            "margin-bottom:14px;")
 
         def _yes():
             db.delete_project(pid)
@@ -1595,15 +1876,20 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
         name_in = ui.input(_t("project_name"),
                             value=proj.get("name", "")).style("width:100%;")
         contractor_in = ui.input(_t("contractor"),
-                                  value=proj.get("contractor", "")).style("width:100%;")
+                                  value=proj.get("contractor", "")).style(
+            "width:100%;")
         sub_in = ui.input(_t("subcontractor"),
-                           value=proj.get("subcontractor", "")).style("width:100%;")
+                           value=proj.get("subcontractor", "")).style(
+            "width:100%;")
         consultant_in = ui.input(_t("consultant"),
-                                  value=proj.get("consultant", "")).style("width:100%;")
+                                  value=proj.get("consultant", "")).style(
+            "width:100%;")
         location_in = ui.input(_t("location"),
-                                value=proj.get("location", "")).style("width:100%;")
+                                value=proj.get("location", "")).style(
+            "width:100%;")
         engineer_in = ui.input(_t("engineer"),
-                                value=proj.get("engineer_name", "")).style("width:100%;")
+                                value=proj.get("engineer_name", "")).style(
+            "width:100%;")
 
         logo_holder = {"bytes": proj.get("logo_bytes")}
 
@@ -1623,7 +1909,8 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
                     pid = db.create_project(
                         state["user_id"], name_in.value.strip(),
                         contractor_in.value.strip(), sub_in.value.strip(),
-                        consultant_in.value.strip(), location_in.value.strip(),
+                        consultant_in.value.strip(),
+                        location_in.value.strip(),
                         engineer_in.value.strip(), logo_holder["bytes"])
                     state["project_id"] = pid
                     app.storage.user["project_id"] = pid
@@ -1632,7 +1919,8 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
                     db.update_project(
                         state["project_id"], name_in.value.strip(),
                         contractor_in.value.strip(), sub_in.value.strip(),
-                        consultant_in.value.strip(), location_in.value.strip(),
+                        consultant_in.value.strip(),
+                        location_in.value.strip(),
                         engineer_in.value.strip(), logo_holder["bytes"])
                     state["project"] = db.get_project(state["project_id"])
                 ui.notify(_t("save") + " OK", type="positive")
@@ -1670,7 +1958,8 @@ def _open_ms_dialog(state, refresh_drawer):
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:500px;"
     ):
-        ui.label(_t("ms_dialog_title")).classes("h1").style("margin-bottom:14px;")
+        ui.label(_t("ms_dialog_title")).classes("h1").style(
+            "margin-bottom:14px;")
         holder = {"bytes": None, "name": ""}
         file_status = ui.label("").classes("mono-sm").style("margin-top:6px;")
 
@@ -1678,13 +1967,16 @@ def _open_ms_dialog(state, refresh_drawer):
             holder["bytes"] = await e.file.read()
             holder["name"] = e.file.name
             file_status.set_text(_t("file_loaded") + e.file.name +
-                                  " (" + str(len(holder["bytes"]) // 1024) + " KB)")
+                                  " (" + str(len(holder["bytes"]) // 1024) +
+                                  " KB)")
 
         ui.upload(on_upload=handle_file, auto_upload=True).style(
-            "width:100%;").props("flat bordered accept=.pdf,.docx,.doc,.txt,.md "
-                                  "label='" + _t("ms_upload_file") + "'")
+            "width:100%;").props(
+            "flat bordered accept=.pdf,.docx,.doc,.txt,.md "
+            "label='" + _t("ms_upload_file") + "'")
         file_status
-        ms_num_in = ui.input(_t("ms_number"), value="MS-01").style("width:100%;")
+        ms_num_in = ui.input(_t("ms_number"), value="MS-01").style(
+            "width:100%;")
         title_in = ui.input(_t("ms_title")).style("width:100%;")
         element_in = ui.select(_element_options(), value="column",
                                 label=_t("element_type")).style("width:100%;")
@@ -1719,8 +2011,10 @@ def _open_ms_dialog(state, refresh_drawer):
                             "padding:6px;border-bottom:1px solid #1e1e1e;"
                         ):
                             ui.label("S" + cl["id"] + "  " + cl["title"]).style(
-                                "font-size:10px;font-weight:600;color:#e8e8e8;")
-                            ui.label(cl["text"][:180]).classes("mono-sm").style(
+                                "font-size:10px;font-weight:600;"
+                                "color:#e8e8e8;")
+                            ui.label(cl["text"][:180]).classes(
+                                "mono-sm").style(
                                 "font-size:9px;margin-top:2px;")
 
                 def confirm():
@@ -1761,7 +2055,9 @@ def _build_new_defect(state):
         return
     stage = {"photos": [], "mime": "image/jpeg",
              "candidates": None, "manual": [],
-             "text_only": False, "text_desc": ""}
+             "text_only": False, "text_desc": "",
+             "zone": "A", "place": "", "element": "column",
+             "note": "", "defect_type": "General"}
 
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:3px;")
@@ -1846,8 +2142,10 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:500px;"
     ):
-        ui.label(_t("no_photo_title")).classes("h1").style("margin-bottom:3px;")
-        ui.label(_t("no_photo_sub")).classes("muted").style("margin-bottom:14px;")
+        ui.label(_t("no_photo_title")).classes("h1").style(
+            "margin-bottom:3px;")
+        ui.label(_t("no_photo_sub")).classes("muted").style(
+            "margin-bottom:14px;")
         desc_in = ui.textarea(label=_t("defect_desc"),
                                 placeholder=_t("defect_desc_placeholder")).style(
             "width:100%;")
@@ -1855,11 +2153,14 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
                                 placeholder=_t("extra_note_placeholder")).style(
             "width:100%;")
         with ui.element('div').style(
-            "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"
+            "display:grid;grid-template-columns:1fr 2fr;gap:8px;"
+            "margin-top:8px;"
         ):
             zone_in = ui.select(_zone_options(), value="A", label=_t("zone"))
-            element_in = ui.select(_element_options(), value="column",
-                                    label=_t("element"))
+            place_in = ui.input(
+                _t("place_of_defect"),
+                placeholder=_t("place_of_defect_placeholder")).style(
+                "width:100%;")
         btn = ui.button(_t("analyze"), icon="auto_awesome")
 
         async def do_analyze():
@@ -1868,13 +2169,14 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
                 return
             btn.props("loading")
             btn.set_text(_t("analyzing"))
+            element_type = _guess_element(place_in.value)
             ms_clauses = db.get_clauses_for_element(
-                state["project_id"], element_in.value)
+                state["project_id"], element_type)
             result = await svc.analyze_defect_text(
                 description=desc_in.value.strip(),
                 note=note_in.value or "",
                 ms_clauses=ms_clauses,
-                element_type=element_in.value,
+                element_type=element_type,
                 call_gemini_json_fn=call_gemini_json)
             btn.props(remove="loading")
             btn.set_text(_t("analyze"))
@@ -1888,7 +2190,8 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
             stage["text_desc"] = desc_in.value.strip()
             stage["note"] = note_in.value or ""
             stage["zone"] = zone_in.value
-            stage["element"] = element_in.value
+            stage["place"] = place_in.value or ""
+            stage["element"] = element_type
             for c in stage["candidates"]:
                 c["_sel"] = True
                 c["_manual"] = False
@@ -1919,23 +2222,27 @@ def _render_body_contents(state, stage, refresh_fn):
                                     placeholder=_t("note_placeholder")).style(
                 "width:100%;")
             with ui.element('div').style(
-                "display:grid;grid-template-columns:1fr 1fr;gap:8px;"
+                "display:grid;grid-template-columns:1fr 2fr;gap:8px;"
                 "margin-top:8px;"
             ):
-                zone_in = ui.select(_zone_options(), value="A", label=_t("zone"))
-                element_in = ui.select(_element_options(), value="column",
-                                        label=_t("element"))
+                zone_in = ui.select(_zone_options(), value="A",
+                                     label=_t("zone"))
+                place_in = ui.input(
+                    _t("place_of_defect"),
+                    placeholder=_t("place_of_defect_placeholder")).style(
+                    "width:100%;")
             analyze_btn = ui.button(_t("analyze"), icon="auto_awesome")
 
             async def do_analyze():
+                element_type = _guess_element(place_in.value)
                 ms_clauses = db.get_clauses_for_element(
-                    state["project_id"], element_in.value)
+                    state["project_id"], element_type)
                 analyze_btn.props("loading")
                 analyze_btn.set_text(_t("analyzing"))
                 result = await svc.analyze_defect_photo(
                     photo_bytes=stage["photos"][0], mime_type=stage["mime"],
                     note=note_in.value or "", ms_clauses=ms_clauses,
-                    element_type=element_in.value,
+                    element_type=element_type,
                     call_gemini_json_fn=call_gemini_json)
                 analyze_btn.props(remove="loading")
                 analyze_btn.set_text(_t("analyze"))
@@ -1946,14 +2253,16 @@ def _render_body_contents(state, stage, refresh_fn):
                 stage["manual"] = []
                 stage["note"] = note_in.value or ""
                 stage["zone"] = zone_in.value
-                stage["element"] = element_in.value
+                stage["place"] = place_in.value or ""
+                stage["element"] = element_type
                 for c in stage["candidates"]:
                     c["_sel"] = True
                     c["_manual"] = False
                 ui.timer(0.15, refresh_fn, once=True)
 
             analyze_btn.on("click", do_analyze)
-            analyze_btn.classes(BTN_PRIMARY).style("width:100%;margin-top:12px;")
+            analyze_btn.classes(BTN_PRIMARY).style(
+                "width:100%;margin-top:12px;")
         return
     if has_text and not has_candidates:
         return
@@ -1988,13 +2297,15 @@ def _render_candidates(state, stage, refresh_fn):
             BTN_SOFT).style("width:100%;margin-top:4px;")
 
     with ui.element('div').classes("card"):
-        ui.label(_t("notice_details")).classes("h1").style("margin-bottom:12px;")
+        ui.label(_t("notice_details")).classes("h1").style(
+            "margin-bottom:12px;")
         sub_in = ui.input(
             _t("send_to"),
             value=(state["project"] or {}).get("subcontractor", "") or "",
             placeholder=_t("send_to_placeholder")).style("width:100%;")
         with ui.element('div').style(
-            "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"
+            "display:grid;grid-template-columns:1fr 1fr;gap:8px;"
+            "margin-top:8px;"
         ):
             deadline_in = ui.select(
                 {"1": "1 " + _t("days"), "2": "2 " + _t("days"),
@@ -2011,9 +2322,21 @@ def _render_candidates(state, stage, refresh_fn):
         engineer_in = ui.input(_t("engineer_field"),
                                 value=default_eng).style(
             "width:100%;margin-top:8px;")
-        place_in = ui.input(_t("place_field"),
-                             placeholder=_t("place_placeholder")).style(
+        # Place is captured earlier (photo/text stage); show it read-only
+        ui.input(_t("place_of_defect"),
+                  value=stage.get("place", "")).props("readonly").style(
             "width:100%;margin-top:8px;")
+        # Defect type selector
+        dtype_in = ui.select(
+            _defect_type_options(),
+            value=stage.get("defect_type", "General"),
+            label=_t("defect_type_label")).style("width:100%;margin-top:8px;")
+        stage["defect_type"] = dtype_in.value
+
+        def _on_dtype(e):
+            stage["defect_type"] = e.value or "General"
+
+        dtype_in.on("update:model-value", _on_dtype)
 
         gen_btn = ui.button(_t("generate_pdf"), icon="picture_as_pdf")
 
@@ -2041,7 +2364,8 @@ def _render_candidates(state, stage, refresh_fn):
             try:
                 pdf_bytes = svc.build_notice_pdf(
                     project=state["project"], defects=clean_selected,
-                    notice_uid=notice_uid, subcontractor=sub_in.value.strip(),
+                    notice_uid=notice_uid,
+                    subcontractor=sub_in.value.strip(),
                     deadline_days=int(deadline_in.value),
                     raise_type=raise_in.value,
                     logo_bytes=state["project"].get("logo_bytes"),
@@ -2062,14 +2386,17 @@ def _render_candidates(state, stage, refresh_fn):
                 notice_pdf=pdf_bytes,
                 extra_photos=photos_list[1:] if len(photos_list) > 1 else [],
                 engineer_name=engineer_in.value or "",
-                place=place_in.value or "")
-            ui.notify(_t("notice_saved") + " " + notice_uid, type="positive")
+                place=stage.get("place", "") or "",
+                defect_type=stage.get("defect_type", "General"))
+            ui.notify(_t("notice_saved") + " " + notice_uid,
+                       type="positive")
             ui.download(pdf_bytes, filename=notice_uid + ".pdf")
             stage["photos"] = []
             stage["candidates"] = None
             stage["manual"] = []
             stage["text_only"] = False
             stage["text_desc"] = ""
+            stage["place"] = ""
             ui.timer(0.15, refresh_fn, once=True)
 
         gen_btn.on("click", do_generate)
@@ -2142,7 +2469,8 @@ def _open_add_dialog(stage, refresh_fn):
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:440px;"
     ):
-        ui.label(_t("add_defect_title")).classes("h1").style("margin-bottom:12px;")
+        ui.label(_t("add_defect_title")).classes("h1").style(
+            "margin-bottom:12px;")
         name_in = ui.input(_t("name")).style("width:100%;")
         loc_in = ui.input(_t("location_hint")).style("width:100%;")
         sev_in = ui.select(_severity_options(), value="Medium",
@@ -2176,7 +2504,7 @@ def _open_add_dialog(stage, refresh_fn):
 
 
 # =====================================================================
-# LOGS — search fixed (uses on_change=)
+# LOGS — engineer+place under title, defect-type filter
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
@@ -2208,7 +2536,7 @@ def _build_logs(state):
                 "color:#5eead4;font-weight:600;font-size:10px;"
                 "min-height:26px;")
 
-    fstate = {"filter": "all", "query": ""}
+    fstate = {"filter": "all", "query": "", "defect_type": "all"}
 
     @ui.refreshable
     def log_list():
@@ -2219,17 +2547,22 @@ def _build_logs(state):
         if state.get("sub_filter"):
             rows = [r for r in rows
                     if (r.get("subcontractor") or "") == state["sub_filter"]]
+        if fstate["defect_type"] != "all":
+            rows = [r for r in rows
+                    if (r.get("defect_type") or "General")
+                    == fstate["defect_type"]]
         if fstate["query"]:
             q = fstate["query"]
+
             def _match(r):
                 hay = " ".join([
-                    str(r.get("uid", "")),
-                    str(r.get("zone", "")),
+                    str(r.get("uid", "")), str(r.get("zone", "")),
                     str(r.get("subcontractor", "")),
                     str(r.get("first_defect", "")),
                     str(r.get("status", "")),
                     str(r.get("engineer_name", "")),
                     str(r.get("place", "")),
+                    str(r.get("defect_type", "")),
                 ]).lower()
                 return q in hay
             rows = [r for r in rows if _match(r)]
@@ -2300,6 +2633,10 @@ def _build_logs(state):
         fstate["query"] = (e.value or "").strip().lower()
         log_list.refresh()
 
+    def _on_dtype(e):
+        fstate["defect_type"] = (e.value if e and e.value else "all")
+        log_list.refresh()
+
     ui.select(
         {"all": _t("filter_all"),
          "qc_internal": _t("filter_qc"),
@@ -2309,8 +2646,21 @@ def _build_logs(state):
         on_change=_on_filter,
     ).style("width:100%;margin-bottom:8px;").props("dense")
 
+    # ---- NEW: defect type filter ----
+    ui.select(
+        {"all": _t("defect_type_all"),
+         "Structural": _t("defect_type_structural"),
+         "Architectural": _t("defect_type_arch"),
+         "MEP": _t("defect_type_mep"),
+         "Earthwork": _t("defect_type_earthwork"),
+         "General": _t("defect_type_general")},
+        value=fstate["defect_type"],
+        label=_t("filter_type"),
+        on_change=_on_dtype,
+    ).style("width:100%;margin-bottom:8px;").props("dense")
+
     ui.input(placeholder=_t("search_placeholder"),
-              on_change=_on_search).style(
+             on_change=_on_search).style(
         "width:100%;margin-bottom:12px;").props("dense clearable")
 
     log_list()
@@ -2334,21 +2684,29 @@ def _render_log_card(row, refresh_fn):
             with ui.element('div').style("flex:1;min-width:0;"):
                 ui.label(str(title) + extra).classes("mono-lg").style(
                     "margin-bottom:4px;")
+
+                # ---- Engineer name + place under the title ----
+                meta_bits = []
+                if row.get("engineer_name"):
+                    meta_bits.append(str(row["engineer_name"]))
+                if row.get("place"):
+                    meta_bits.append(str(row["place"]))
+                if meta_bits:
+                    ui.label(" · ".join(meta_bits)).classes("mono-sm").style(
+                        "margin-bottom:4px;color:#c8c8c8;")
+
                 ui.label(
                     row.get("uid", "") + "  " +
                     str(row.get("zone", "")) + "  " +
                     str(row.get("subcontractor", ""))
                 ).classes("mono-sm")
-                bits = []
-                if row.get("engineer_name"):
-                    bits.append(_t("raised_by") + ": " +
-                                str(row["engineer_name"]))
-                if row.get("place"):
-                    bits.append(_t("at_place") + ": " +
-                                str(row["place"]))
-                if bits:
-                    ui.label("  ·  ".join(bits)).classes("mono-sm").style(
-                        "margin-top:2px;")
+
+                dt = row.get("defect_type") or ""
+                if dt:
+                    ui.html('<span class="badge-seen" style="margin-top:4px;'
+                            'display:inline-block;">' +
+                            _html_mod.escape(str(dt)) + '</span>')
+
             ui.html('<span class="' + badge + '">' + badge_txt + '</span>')
 
         def _click():
@@ -2384,6 +2742,9 @@ def _show_defect_dialog(defect_id, on_close_cb):
             if bits:
                 ui.label("  ·  ".join(bits)).classes("mono-sm").style(
                     "margin-top:2px;")
+            if d.get("defect_type"):
+                ui.label(str(d["defect_type"])).classes("mono-sm").style(
+                    "margin-top:2px;color:#5eead4;font-weight:600;")
             if d.get("consultant_ncr"):
                 ui.label(_t("ncr_input") + ": " +
                           str(d["consultant_ncr"])).style(
@@ -2413,7 +2774,8 @@ def _show_defect_dialog(defect_id, on_close_cb):
                     ui.html('<div class="photo-tag closure">' +
                             _t("closure_photo_short") + '</div>')
                     try:
-                        b64 = base64.b64encode(d["closure_photo"]).decode("ascii")
+                        b64 = base64.b64encode(d["closure_photo"]).decode(
+                            "ascii")
                         ui.image("data:image/jpeg;base64," + b64).style(
                             "width:100%;max-height:200px;object-fit:cover;"
                             "border-radius:3px;border:1px solid #1e1e1e;")
@@ -2509,7 +2871,8 @@ def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
             closure_holder["bytes"] = data
             closure_status.set_text(_t("closure_attached") + " (" +
                                      str(len(data) // 1024) + " KB)")
-            closure_status.style("color:#4ade80;font-size:10px;margin-top:6px;")
+            closure_status.style("color:#4ade80;font-size:10px;"
+                                  "margin-top:6px;")
 
         ui.upload(on_upload=handle_closure, auto_upload=True).style(
             "width:100%;").props(
@@ -2560,6 +2923,7 @@ def _open_edit_defect_dialog(d, on_close_cb):
         "note": d.get("note") or "",
         "engineer_name": d.get("engineer_name") or "",
         "place": d.get("place") or "",
+        "defect_type": d.get("defect_type") or "General",
     }
     items = []
     for s in (d.get("selected") or []):
@@ -2607,9 +2971,15 @@ def _open_edit_defect_dialog(d, on_close_cb):
                 label=_t("raised_as")).style("width:100%;margin-top:8px;"
                 ).bind_value(meta, "raise_type")
             ui.input(_t("engineer_field")).style(
-                "width:100%;margin-top:8px;").bind_value(meta, "engineer_name")
-            ui.input(_t("place_field")).style(
+                "width:100%;margin-top:8px;").bind_value(meta,
+                                                          "engineer_name")
+            ui.input(_t("place_of_defect")).style(
                 "width:100%;margin-top:8px;").bind_value(meta, "place")
+            ui.select(
+                _defect_type_options(),
+                label=_t("defect_type_label")
+            ).style("width:100%;margin-top:8px;").bind_value(meta,
+                                                              "defect_type")
 
             ncr_in = None
             if is_consultant or d.get("consultant_ncr"):
@@ -2646,7 +3016,8 @@ def _open_edit_defect_dialog(d, on_close_cb):
                             ui.input(_t("name")).style(
                                 "width:100%;").bind_value(it, "name")
                             ui.input(_t("location_hint")).style(
-                                "width:100%;").bind_value(it, "location_hint")
+                                "width:100%;").bind_value(it,
+                                                           "location_hint")
                             with ui.element('div').style(
                                 "display:grid;grid-template-columns:1fr 1fr;"
                                 "gap:8px;"
@@ -2697,13 +3068,16 @@ def _open_edit_defect_dialog(d, on_close_cb):
                                 if v.strip()]
                     selected.append({
                         "name": nm,
-                        "location_hint": (it.get("location_hint") or "").strip(),
+                        "location_hint":
+                            (it.get("location_hint") or "").strip(),
                         "severity": it.get("severity") or "Medium",
                         "ms_violations": ms_list,
                         "code_violations": ecp_list,
-                        "repair_action": (it.get("repair_action") or "").strip(),
+                        "repair_action":
+                            (it.get("repair_action") or "").strip(),
                         "zone": meta["zone"],
-                        "context_mismatch": it.get("context_mismatch", False),
+                        "context_mismatch":
+                            it.get("context_mismatch", False),
                     })
                 if not selected:
                     ui.notify(_t("name_required"), type="warning")
@@ -2738,7 +3112,8 @@ def _open_edit_defect_dialog(d, on_close_cb):
                         notice_pdf=pdf_bytes,
                         consultant_ncr=ncr_val,
                         engineer_name=meta.get("engineer_name") or None,
-                        place=meta.get("place") or None)
+                        place=meta.get("place") or None,
+                        defect_type=meta.get("defect_type") or None)
                 except Exception as ex:
                     import traceback
                     traceback.print_exc()
@@ -2848,7 +3223,7 @@ def _open_change_password_dialog(state):
 
 
 # =====================================================================
-# CHAT
+# CHAT — real-time, 60s delete, role colors
 # =====================================================================
 def _chat_render_body(body):
     safe = _html_mod.escape(str(body or ""))
@@ -2862,6 +3237,14 @@ def _chat_render_body(body):
     return " ".join(out)
 
 
+def _parse_dt(s):
+    try:
+        return datetime.datetime.strptime(str(s)[:19],
+                                            "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
 def _build_chat(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
@@ -2869,6 +3252,7 @@ def _build_chat(state):
     pid = state["project_id"]
     user = state.get("user") or {}
     my_name = (user.get("name") or user.get("email") or "me")
+    my_uid = state["user_id"]
 
     with ui.element('div').classes("section-head"):
         ui.label(_t("chat_title")).classes("h1")
@@ -2937,12 +3321,26 @@ def _build_chat(state):
 
     render_reply_indicator()
 
+    # --- Profile cache shared across renders ---
+    _prof_cache = {}
+
+    def _get_profile(uid):
+        if not uid:
+            return {}
+        if uid not in _prof_cache:
+            try:
+                _prof_cache[uid] = db.get_user(uid) or {}
+            except Exception:
+                _prof_cache[uid] = {}
+        return _prof_cache[uid]
+
     @ui.refreshable
     def chat_list():
         msgs = db.chat_list(pid, limit=300)
 
         if fstate["query"]:
             q = fstate["query"]
+
             def _m(m):
                 return (q in (m.get("body") or "").lower() or
                         q in (m.get("author") or "").lower())
@@ -2960,23 +3358,19 @@ def _build_chat(state):
             return
 
         by_id = {m["id"]: m for m in msgs}
-        _prof_cache = {}
-
-        def _prof(m):
-            uid = m.get("user_id")
-            if uid and uid not in _prof_cache:
-                _prof_cache[uid] = db.get_user(uid) or {}
-            return _prof_cache.get(uid, {})
 
         for m in msgs:
             mid = m.get("id")
             author = m.get("author") or ""
             body = m.get("body") or ""
-            created = (m.get("created_at") or "")[:16]
+            created_raw = m.get("created_at") or ""
+            created = str(created_raw)[:16]
             reply_to = m.get("reply_to_id")
-            is_mine = (author == my_name)
+            is_mine = (str(author) == str(my_name))
             cls = "chat-msg mine" if is_mine else "chat-msg"
-            prof = _prof(m)
+            prof = _get_profile(m.get("user_id"))
+            title = prof.get("title") or ""
+            a_color = _chat_author_color(title)
 
             with ui.element('div').classes(cls):
                 with ui.element('div').classes("chat-head"):
@@ -2987,9 +3381,10 @@ def _build_chat(state):
                             if uid:
                                 _open_member_profile(uid)
                         name_lbl = ui.label(author).classes("chat-author")
+                        name_lbl.style("color:" + a_color + ";")
                         name_lbl.on("click", _open_prof)
-                        if prof.get("title"):
-                            ui.label("· " + prof["title"]).classes(
+                        if title:
+                            ui.label("· " + title).classes(
                                 "chat-title-tag")
                         if is_mine:
                             ui.html('<span class="badge-you">' +
@@ -3018,13 +3413,48 @@ def _build_chat(state):
                     ui.label(_t("chat_reply")).classes("chat-act").style(
                         "cursor:pointer;"
                     ).on("click", _reply)
+
+                    # ---- 60-second delete window ----
                     if is_mine:
-                        def _del(did=mid):
-                            _confirm_delete_chat(state, did,
-                                                  chat_list.refresh)
-                        ui.label(_t("chat_delete")).classes(
-                            "chat-act danger"
-                        ).style("cursor:pointer;").on("click", _del)
+                        cd = _parse_dt(created_raw)
+                        remaining = 0
+                        if cd:
+                            try:
+                                age = (datetime.datetime.utcnow() - cd
+                                       ).total_seconds()
+                                remaining = max(0, 60 - age)
+                            except Exception:
+                                remaining = 0
+                        if remaining > 0:
+                            del_holder = ui.element('span')
+                            with del_holder:
+                                def _del(did=mid):
+                                    ok, reason = db.chat_delete_secure(
+                                        did, my_uid, within_seconds=60)
+                                    if ok:
+                                        ui.notify(_t("chat_deleted"),
+                                                   type="positive")
+                                        chat_list.refresh()
+                                    elif reason == "too_late":
+                                        ui.notify(_t("delete_too_late"),
+                                                   type="warning")
+                                        chat_list.refresh()
+                                    elif reason == "not_owner":
+                                        ui.notify(_t("delete_not_owner"),
+                                                   type="warning")
+                                    else:
+                                        ui.notify(_t("delete_failed"),
+                                                   type="negative")
+                                ui.label(_t("chat_delete")).classes(
+                                    "chat-act danger"
+                                ).style("cursor:pointer;").on("click", _del)
+
+                            def _hide(h=del_holder):
+                                try:
+                                    h.clear()
+                                except Exception:
+                                    pass
+                            ui.timer(remaining, _hide, once=True)
 
     ui.input(placeholder=_t("chat_search"), on_change=_on_search).style(
         "width:100%;margin-bottom:12px;").props("dense clearable")
@@ -3054,7 +3484,8 @@ def _build_chat(state):
                         with ui.element('div').classes("mention-drop"):
                             if not matches:
                                 ui.label("No matches").classes(
-                                    "mention-item").style("color:#5a5a5a;")
+                                    "mention-item").style(
+                                    "color:#5a5a5a;")
                             for a in matches:
                                 def _pick(nm=a):
                                     parts = (body_in.value or "").split()
@@ -3076,8 +3507,7 @@ def _build_chat(state):
             txt = (body_in.value or "").strip()
             if not txt:
                 return
-            import re as _re
-            mentions = _re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
+            mentions = re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
             mentions = [m for m in mentions if m and m != my_name]
             try:
                 db.chat_add(pid, state["user_id"], my_name, txt,
@@ -3091,9 +3521,47 @@ def _build_chat(state):
             render_reply_indicator()
             mention_holder.style("display:none;")
             chat_list.refresh()
+            # force scroll to bottom on send
+            ui.run_javascript(
+                "window.scrollTo({top: document.body.scrollHeight,"
+                " behavior:'smooth'});")
 
         ui.button(_t("chat_send"), icon="send", on_click=_send).classes(
             BTN_PRIMARY).style("width:100%;margin-top:6px;")
+
+    # -------- Real-time poll: 2 seconds --------
+    state.setdefault("_chat_last_id", db.chat_max_id(pid))
+    # initial scroll to bottom
+    ui.timer(0.4, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+
+    async def _poll():
+        try:
+            cur_max = db.chat_max_id(pid)
+        except Exception:
+            return
+        if cur_max != state.get("_chat_last_id"):
+            state["_chat_last_id"] = cur_max
+            try:
+                near_bottom = await ui.run_javascript(
+                    "(window.innerHeight + window.scrollY) >= "
+                    "(document.body.scrollHeight - 200)")
+            except Exception:
+                near_bottom = True
+            try:
+                chat_list.refresh()
+            except Exception:
+                pass
+            if near_bottom:
+                try:
+                    await ui.run_javascript(
+                        "window.scrollTo({top: document.body.scrollHeight,"
+                        " behavior:'smooth'});")
+                except Exception:
+                    pass
+
+    ui.timer(2.0, _poll)
 
 
 def _open_member_profile(user_id):
@@ -3106,7 +3574,6 @@ def _open_member_profile(user_id):
         with ui.element('div').style(
             "display:flex;flex-direction:column;align-items:center;gap:8px;"
         ):
-            # avatar circle
             av = '<div class="avatar-big">'
             if u.get("photo_bytes"):
                 try:
@@ -3121,8 +3588,9 @@ def _open_member_profile(user_id):
             ui.label(u.get("name") or "—").style(
                 "font-size:15px;font-weight:700;color:#e8e8e8;")
             if u.get("title"):
+                color = _chat_author_color(u["title"])
                 ui.label(u["title"]).style(
-                    "font-size:11px;color:#5eead4;font-weight:600;"
+                    "font-size:11px;color:" + color + ";font-weight:600;"
                     "letter-spacing:0.05em;"
                 )
         ui.element('div').style("height:14px;")
@@ -3133,20 +3601,18 @@ def _open_member_profile(user_id):
 
 
 def _confirm_delete_chat(state, msg_id, refresh_fn):
-    with ui.dialog() as dlg, ui.card().style(
-        "padding:20px;min-width:280px;max-width:95vw;width:360px;"
-    ):
-        ui.label(_t("chat_confirm_delete")).classes("h3").style(
-            "margin-bottom:14px;")
-
-        def _yes():
-            db.chat_delete(msg_id)
-            ui.notify(_t("chat_deleted"), type="positive")
-            dlg.close()
-            ui.timer(0.03, refresh_fn, once=True)
-
-        with ui.element('div').style("display:flex;gap:8px;"):
-            ui.button(_t("chat_delete"), on_click=_yes).classes(
-                BTN_DANGER).style("flex:1;")
-            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
-    dlg.open()
+    """Legacy helper — kept for compatibility. Uses secure delete."""
+    ok, reason = db.chat_delete_secure(msg_id, state["user_id"],
+                                        within_seconds=60)
+    if ok:
+        ui.notify(_t("chat_deleted"), type="positive")
+    elif reason == "too_late":
+        ui.notify(_t("delete_too_late"), type="warning")
+    elif reason == "not_owner":
+        ui.notify(_t("delete_not_owner"), type="warning")
+    else:
+        ui.notify(_t("delete_failed"), type="negative")
+    try:
+        refresh_fn()
+    except Exception:
+        pass
