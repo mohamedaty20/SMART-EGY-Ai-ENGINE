@@ -2472,6 +2472,9 @@ def _open_delete_defect_dialog(d, on_close_cb):
     dlg.open()
 
 
+# =====================================================================
+# CHANGE PASSWORD DIALOG
+# =====================================================================
 def _open_change_password_dialog(state):
     from services import auth_service as auth
     from services import defect_db as ddb
@@ -2520,8 +2523,9 @@ def _open_change_password_dialog(state):
             ui.notify("Password updated.", type="positive")
             dlg.close()
 
-        with ui.element('div').style("display:flex;flex-direction:column;"
-                                       "gap:6px;margin-top:14px;"):
+        with ui.element('div').style(
+            "display:flex;flex-direction:column;gap:6px;margin-top:14px;"
+        ):
             ui.button("Save password", on_click=_save).classes(
                 BTN_PRIMARY).style("width:100%;")
             ui.button("Cancel", on_click=dlg.close).classes(BTN_SOFT).style(
