@@ -2,6 +2,7 @@
 ui/defect_page.py — Dark theme, mobile-first.
 """
 import io
+import base64
 from nicegui import ui
 
 from services import defect_db as db
@@ -268,67 +269,37 @@ def _inject_theme():
 
 <style>
   :root {
-    --bg: #0a0a0a;
-    --surface: #141414;
-    --surface-2: #1a1a1a;
-    --border: #262626;
-    --border-soft: #1f1f1f;
-    --text: #fafafa;
-    --text-soft: #d4d4d4;
-    --muted: #a3a3a3;
-    --muted-2: #737373;
-    --violet: #a855f7;
-    --violet-soft: #7c3aed;
+    --bg: #0a0a0a; --surface: #141414; --surface-2: #1a1a1a;
+    --border: #262626; --border-soft: #1f1f1f;
+    --text: #fafafa; --text-soft: #d4d4d4;
+    --muted: #a3a3a3; --muted-2: #737373;
+    --violet: #a855f7; --violet-soft: #7c3aed;
     --green: #10b981;
   }
-
   html, body {
-    background: var(--bg) !important;
-    color: var(--text) !important;
+    background: var(--bg) !important; color: var(--text) !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
                  Roboto, Helvetica, Arial, sans-serif !important;
-    font-size: 15px;
-    line-height: 1.55;
+    font-size: 15px; line-height: 1.55;
     -webkit-font-smoothing: antialiased;
-    overflow-x: hidden !important;
-    direction: __DIR__;
+    overflow-x: hidden !important; direction: __DIR__;
   }
-
-  .nicegui-content {
-    padding: 0 !important;
-    max-width: 100vw !important;
-    overflow-x: hidden !important;
-  }
-
+  .nicegui-content { padding: 0 !important; max-width: 100vw !important;
+                     overflow-x: hidden !important; }
   .q-page, .q-layout, .q-page-container {
-    max-width: 100vw !important;
-    overflow-x: hidden !important;
+    max-width: 100vw !important; overflow-x: hidden !important;
     background: var(--bg) !important;
   }
-
-  .q-btn {
-    border-radius: 10px !important;
-    text-transform: none !important;
-    font-weight: 600 !important;
-    min-height: 42px !important;
-    padding: 0 16px !important;
-    font-size: 14px !important;
-  }
-
-  .btn-primary {
-    background: var(--violet) !important;
-    color: #ffffff !important;
-  }
-  .btn-soft {
-    background: var(--surface-2) !important;
-    color: var(--text) !important;
-    border: 1px solid var(--border) !important;
-  }
-  .btn-success {
-    background: var(--green) !important;
-    color: #ffffff !important;
-  }
-
+  .q-btn { border-radius: 10px !important; text-transform: none !important;
+           font-weight: 600 !important; min-height: 42px !important;
+           padding: 0 16px !important; font-size: 14px !important; }
+  .btn-primary { background: var(--violet) !important;
+                 color: #ffffff !important; }
+  .btn-soft { background: var(--surface-2) !important;
+              color: var(--text) !important;
+              border: 1px solid var(--border) !important; }
+  .btn-success { background: var(--green) !important;
+                 color: #ffffff !important; }
   .q-field--outlined .q-field__control {
     border-radius: 10px !important;
     background: var(--surface-2) !important;
@@ -343,180 +314,101 @@ def _inject_theme():
     color: var(--text) !important;
   }
   .q-field__label { color: var(--muted) !important; }
-
-  .card {
-    background: var(--surface);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    padding: 20px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .item-box {
-    background: var(--surface-2);
-    border-radius: 10px;
-    border: 1px solid var(--border-soft);
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
+  .card { background: var(--surface); border-radius: 12px;
+          border: 1px solid var(--border); padding: 20px;
+          width: 100%; box-sizing: border-box; }
+  .item-box { background: var(--surface-2); border-radius: 10px;
+              border: 1px solid var(--border-soft); padding: 14px 16px;
+              margin-bottom: 10px; width: 100%; box-sizing: border-box; }
   .h1 { font-size: 22px; font-weight: 800; color: var(--text);
         letter-spacing: -0.025em; }
   .h2 { font-size: 17px; font-weight: 700; color: var(--text); }
   .h3 { font-size: 14px; font-weight: 600; color: var(--text); }
   .muted { color: var(--muted); font-size: 13px; }
   .soft { color: var(--text-soft); font-size: 13px; }
-
-  .q-drawer {
-    background: var(--bg) !important;
-    border-right: 1px solid var(--border) !important;
-  }
-
-  .bottom-nav {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    background: rgba(10,10,10,0.95);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border-top: 1px solid var(--border);
-    display: flex;
-    justify-content: space-around;
-    padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px)) 0;
-    z-index: 1000;
-  }
-  .bottom-nav-item {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 8px 4px;
-    color: var(--muted-2);
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    font-size: 11px;
-    font-weight: 600;
-    gap: 3px;
-    font-family: inherit;
-  }
+  .q-drawer { background: var(--bg) !important;
+              border-right: 1px solid var(--border) !important; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0;
+                background: rgba(10,10,10,0.95);
+                backdrop-filter: blur(14px);
+                -webkit-backdrop-filter: blur(14px);
+                border-top: 1px solid var(--border);
+                display: flex; justify-content: space-around;
+                padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px)) 0;
+                z-index: 1000; }
+  .bottom-nav-item { flex: 1; display: flex; flex-direction: column;
+                     align-items: center; padding: 8px 4px;
+                     color: var(--muted-2); cursor: pointer;
+                     border: none; background: transparent;
+                     font-size: 11px; font-weight: 600; gap: 3px;
+                     font-family: inherit; }
   .bottom-nav-item.active { color: var(--text); }
   .bottom-nav-item.active .q-icon { color: var(--violet); }
   .bottom-nav-item .q-icon { font-size: 22px; }
-
-  .main-content {
-    padding: 16px;
-    padding-bottom: 100px;
-    max-width: 720px;
-    margin: 0 auto;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .app-header {
-    position: sticky;
-    top: 0;
-    background: rgba(10,10,10,0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    z-index: 900;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .app-header .brand {
-    font-weight: 700; font-size: 15px; color: var(--text);
-  }
-
-  .q-uploader {
-    background: var(--surface-2) !important;
-    border: 1.5px dashed #333 !important;
-    border-radius: 14px !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    color: var(--text) !important;
-  }
-  .q-uploader__header {
-    background: transparent !important;
-    color: var(--text) !important;
-  }
+  .main-content { padding: 16px; padding-bottom: 100px;
+                  max-width: 720px; margin: 0 auto; width: 100%;
+                  box-sizing: border-box; }
+  .app-header { position: sticky; top: 0;
+                background: rgba(10,10,10,0.85);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                border-bottom: 1px solid var(--border);
+                padding: 12px 16px; display: flex;
+                align-items: center; justify-content: space-between;
+                z-index: 900; width: 100%; box-sizing: border-box; }
+  .app-header .brand { font-weight: 700; font-size: 15px;
+                       color: var(--text); }
+  .q-uploader { background: var(--surface-2) !important;
+                border: 1.5px dashed #333 !important;
+                border-radius: 14px !important; width: 100% !important;
+                max-width: 100% !important; color: var(--text) !important; }
+  .q-uploader__header { background: transparent !important;
+                        color: var(--text) !important; }
   .q-uploader__title { color: var(--text) !important; }
   .q-uploader__subtitle { color: var(--muted) !important; }
   .q-uploader__list { background: transparent !important; }
   .q-uploader .q-btn { color: var(--text) !important; }
-  .q-uploader__list .q-item {
-    background: var(--surface) !important;
-    color: var(--text) !important;
-    border-radius: 8px !important;
-    margin: 4px !important;
-  }
+  .q-uploader__list .q-item { background: var(--surface) !important;
+                              color: var(--text) !important;
+                              border-radius: 8px !important;
+                              margin: 4px !important; }
   .q-uploader__list .q-item__label { color: var(--text) !important; }
-  .q-uploader__list .q-item__label--caption { color: var(--muted) !important; }
-
-  .badge-open {
-    display: inline-block;
-    background: rgba(245,158,11,0.12);
-    color: #fbbf24;
-    border: 1px solid rgba(245,158,11,0.3);
-    font-size: 10px; font-weight: 700;
-    padding: 2px 8px; border-radius: 20px;
-    text-transform: uppercase;
+  .q-uploader__list .q-item__label--caption {
+    color: var(--muted) !important;
   }
-  .badge-closed {
-    display: inline-block;
-    background: rgba(16,185,129,0.12);
-    color: #34d399;
-    border: 1px solid rgba(16,185,129,0.3);
-    font-size: 10px; font-weight: 700;
-    padding: 2px 8px; border-radius: 20px;
-    text-transform: uppercase;
-  }
-  .badge-ai {
-    display: inline-block;
-    background: rgba(168,85,247,0.15);
-    color: #c4b5fd;
-    font-size: 9px; font-weight: 800;
-    padding: 2px 7px; border-radius: 6px;
-  }
-  .badge-manual {
-    display: inline-block;
-    background: rgba(16,185,129,0.15);
-    color: #6ee7b7;
-    font-size: 9px; font-weight: 800;
-    padding: 2px 7px; border-radius: 6px;
-  }
-
-  .q-notification {
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    background: var(--surface-2) !important;
-    color: var(--text) !important;
-    border: 1px solid var(--border) !important;
-  }
-
-  .section-label {
-    font-size: 11px; font-weight: 700; color: var(--muted-2);
-    text-transform: uppercase; letter-spacing: 0.08em;
-    margin-bottom: 6px;
-  }
-
+  .badge-open { display: inline-block;
+                background: rgba(245,158,11,0.12); color: #fbbf24;
+                border: 1px solid rgba(245,158,11,0.3);
+                font-size: 10px; font-weight: 700;
+                padding: 2px 8px; border-radius: 20px;
+                text-transform: uppercase; }
+  .badge-closed { display: inline-block;
+                  background: rgba(16,185,129,0.12); color: #34d399;
+                  border: 1px solid rgba(16,185,129,0.3);
+                  font-size: 10px; font-weight: 700;
+                  padding: 2px 8px; border-radius: 20px;
+                  text-transform: uppercase; }
+  .badge-ai { display: inline-block;
+              background: rgba(168,85,247,0.15); color: #c4b5fd;
+              font-size: 9px; font-weight: 800;
+              padding: 2px 7px; border-radius: 6px; }
+  .badge-manual { display: inline-block;
+                  background: rgba(16,185,129,0.15); color: #6ee7b7;
+                  font-size: 9px; font-weight: 800;
+                  padding: 2px 7px; border-radius: 6px; }
+  .q-notification { border-radius: 10px !important;
+                    font-weight: 600 !important;
+                    background: var(--surface-2) !important;
+                    color: var(--text) !important;
+                    border: 1px solid var(--border) !important; }
+  .section-label { font-size: 11px; font-weight: 700;
+                   color: var(--muted-2); text-transform: uppercase;
+                   letter-spacing: 0.08em; margin-bottom: 6px; }
   .q-separator { background: var(--border) !important; }
-
-  .scroll-box {
-    max-height: 280px;
-    overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px;
-    margin-top: 8px;
-    background: var(--surface-2);
-  }
+  .scroll-box { max-height: 280px; overflow-y: auto;
+                border: 1px solid var(--border); border-radius: 10px;
+                padding: 8px; margin-top: 8px;
+                background: var(--surface-2); }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -922,7 +814,7 @@ def _build_new_defect(state):
     stage = {"photo": None, "mime": None,
              "candidates": None, "manual": []}
 
-    # Fixed uploader card — never destroyed
+    # ---- Uploader card (fixed — never rebuilt) ----
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:4px;")
         ui.label(_t("photo_sub")).classes("muted").style(
@@ -930,11 +822,15 @@ def _build_new_defect(state):
         )
 
         async def handle_photo(e):
+            print("[ui] handle_photo fired, file=" +
+                  getattr(e.file, "name", "?"))
             try:
                 data = await e.file.read()
             except Exception as ex:
+                print("[ui] read error: " + repr(ex))
                 ui.notify(_t("upload_failed") + str(ex), type="negative")
                 return
+            print("[ui] read bytes: " + str(len(data) if data else 0))
             if not data:
                 ui.notify(_t("empty_file"), type="warning")
                 return
@@ -945,24 +841,29 @@ def _build_new_defect(state):
             stage["candidates"] = None
             stage["manual"] = []
             ui.notify(_t("photo_received") + " (" +
-                       str(len(data) // 1024) + " KB)",
-                       type="positive")
-            body.refresh()
+                       str(len(data) // 1024) + " KB)", type="positive")
+            print("[ui] scheduling body rebuild")
+            ui.timer(0.4, rebuild_body, once=True)
 
         ui.upload(on_upload=handle_photo, auto_upload=True).style(
             "width:100%;"
         ).props("flat bordered accept=image/* label='" +
                 _t("choose_photo") + "'")
 
-    # Body — rebuilt on every state change
-    @ui.refreshable
-    def body():
-        _render_body(state, stage, body.refresh)
+    # ---- Body (rebuilt by handle_photo) ----
+    body = ui.element('div').style("width:100%;")
 
-    body()
+    def rebuild_body():
+        print("[ui] rebuild_body called, photo present=" +
+              str(stage["photo"] is not None))
+        body.clear()
+        with body:
+            _render_body_contents(state, stage, rebuild_body)
+
+    rebuild_body()
 
 
-def _render_body(state, stage, refresh_fn):
+def _render_body_contents(state, stage, refresh_fn):
     if not state.get("project"):
         with ui.element('div').classes("card").style("text-align:center;"):
             ui.icon("info").style("font-size:36px;color:#737373;")
@@ -971,18 +872,27 @@ def _render_body(state, stage, refresh_fn):
             )
         return
 
-    if not stage["photo"]:
+    if not stage.get("photo"):
         return
 
-    # Preview
+    # Photo preview — use base64 data URL (bypasses file-serving issues)
     with ui.element('div').classes("card").style("margin-bottom:14px;"):
-        ui.image(io.BytesIO(stage["photo"])).style(
-            "width:100%;max-height:340px;object-fit:cover;"
-            "border-radius:12px;border:1px solid #262626;"
-        )
+        try:
+            b64 = base64.b64encode(stage["photo"]).decode("ascii")
+            mime = stage.get("mime") or "image/jpeg"
+            data_url = "data:" + mime + ";base64," + b64
+            ui.image(data_url).style(
+                "width:100%;max-height:340px;object-fit:cover;"
+                "border-radius:12px;border:1px solid #262626;"
+            )
+        except Exception as ex:
+            print("[ui] image render failed: " + repr(ex))
+            ui.label("Image render failed: " + str(ex)).style(
+                "color:#ef4444;font-size:12px;"
+            )
 
     # Stage 2 — note + analyze
-    if stage["candidates"] is None:
+    if stage.get("candidates") is None:
         with ui.element('div').classes("card"):
             note_in = ui.textarea(
                 label=_t("note_label"),
@@ -1027,7 +937,7 @@ def _render_body(state, stage, refresh_fn):
                 for c in stage["candidates"]:
                     c["_sel"] = True
                     c["_manual"] = False
-                refresh_fn()
+                ui.timer(0.3, refresh_fn, once=True)
 
             analyze_btn.on("click", do_analyze)
             analyze_btn.classes(BTN_PRIMARY).style(
@@ -1146,7 +1056,7 @@ def _render_candidates(state, stage, refresh_fn):
             stage["mime"] = None
             stage["candidates"] = None
             stage["manual"] = []
-            refresh_fn()
+            ui.timer(0.3, refresh_fn, once=True)
 
         gen_btn.on("click", do_generate)
         gen_btn.classes(BTN_PRIMARY).style(
@@ -1200,7 +1110,7 @@ def _render_defect_card(item, stage, refresh_fn):
                     stage["candidates"].remove(item)
                 if item in stage["manual"]:
                     stage["manual"].remove(item)
-                refresh_fn()
+                ui.timer(0.05, refresh_fn, once=True)
 
             ui.button(icon="close", on_click=_remove).props(
                 "flat round dense"
@@ -1241,7 +1151,7 @@ def _open_add_dialog(stage, refresh_fn):
                 "_manual": True,
             })
             dlg.close()
-            refresh_fn()
+            ui.timer(0.05, refresh_fn, once=True)
 
         with ui.element('div').style(
             "display:flex;gap:8px;margin-top:16px;"
@@ -1407,11 +1317,15 @@ def _show_defect_dialog(defect_id, on_close_cb):
             "padding:20px;max-height:60vh;overflow-y:auto;"
         ):
             if d.get("photo_bytes"):
-                ui.image(io.BytesIO(d["photo_bytes"])).style(
-                    "width:100%;max-height:260px;object-fit:cover;"
-                    "border-radius:10px;margin-bottom:14px;"
-                    "border:1px solid #262626;"
-                )
+                try:
+                    b64 = base64.b64encode(d["photo_bytes"]).decode("ascii")
+                    ui.image("data:image/jpeg;base64," + b64).style(
+                        "width:100%;max-height:260px;object-fit:cover;"
+                        "border-radius:10px;margin-bottom:14px;"
+                        "border:1px solid #262626;"
+                    )
+                except Exception:
+                    pass
             if d.get("note"):
                 ui.label("📝 " + str(d["note"])).classes("soft").style(
                     "margin-bottom:14px;font-style:italic;"
