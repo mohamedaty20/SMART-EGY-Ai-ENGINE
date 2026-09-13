@@ -1194,6 +1194,14 @@ def _build_drawer(state, drawer):
                 ui.label(user.get("name") or user.get("email") or "").style(
                     "font-size:11px;color:#e8e8e8;font-weight:500;"
                     "margin-bottom:10px;")
+            def _change_pw():
+                _open_change_password_dialog(state)
+
+            ui.button("Change password", icon="password",
+                      on_click=_change_pw).classes(BTN_SOFT).style(
+                "width:100%;font-size:10px;min-height:30px;"
+                "margin-bottom:6px;")
+
             ui.button(_t("logout"), icon="logout",
                       on_click=lambda: ui.navigate.to("/logout")).classes(
                 BTN_SOFT).style("width:100%;font-size:10px;min-height:30px;")
@@ -2460,4 +2468,65 @@ def _open_delete_defect_dialog(d, on_close_cb):
             ui.button(_t("delete_defect"), on_click=_yes).classes(
                 BTN_DANGER).style("flex:1;")
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+
+    dlg.open()
+
+
+def _open_change_password_dialog(state):
+    from services import auth_service as auth
+    from services import defect_db as ddb
+
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:320px;max-width:95vw;width:420px;"
+    ):
+        ui.label("Change password").classes("h1").style("margin-bottom:4px;")
+        ui.label("At least 6 characters.").classes("muted").style(
+            "margin-bottom:14px;")
+
+        cur_in = ui.input("Current password", password=True).style(
+            "width:100%;")
+        new_in = ui.input("New password", password=True,
+                            password_toggle_button=True).style("width:100%;")
+        conf_in = ui.input("Confirm new password", password=True).style(
+            "width:100%;")
+
+        err_holder = ui.element('div').style("width:100%;")
+
+        def _save():
+            err_holder.clear()
+            uid = state.get("user_id")
+            u = ddb.get_user(uid)
+            if not u:
+                return
+            salt, h = (u.get("password_hash") or ":").split(":", 1)
+            if not auth.verify_password(cur_in.value or "", salt, h):
+                with err_holder:
+                    ui.label("Current password is wrong.").style(
+                        "color:#f87171;font-size:11px;margin-top:8px;")
+                return
+            ok, msg = auth.password_strength_ok(new_in.value or "")
+            if not ok:
+                with err_holder:
+                    ui.label(msg).style(
+                        "color:#f87171;font-size:11px;margin-top:8px;")
+                return
+            if (new_in.value or "") != (conf_in.value or ""):
+                with err_holder:
+                    ui.label("Passwords do not match.").style(
+                        "color:#f87171;font-size:11px;margin-top:8px;")
+                return
+            ns, nh = auth.hash_password(new_in.value or "")
+            ddb.update_user_password(uid, ns + ":" + nh)
+            ui.notify("Password updated.", type="positive")
+            dlg.close()
+
+        with ui.element('div').style("display:flex;flex-direction:column;"
+                                       "gap:6px;margin-top:14px;"):
+            ui.button("Save password", on_click=_save).classes(
+                BTN_PRIMARY).style("width:100%;")
+            ui.button("Cancel", on_click=dlg.close).classes(BTN_SOFT).style(
+                "width:100%;")
+
+        err_holder
+
     dlg.open()
