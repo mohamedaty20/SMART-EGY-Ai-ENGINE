@@ -1,4 +1,4 @@
-nicegui==3.16.0
+nicegui
 fastapi
 uvicorn
 python-dotenv
@@ -7,3 +7,4 @@ pypdf
 reportlab
 qrcode[pil]
 pillow
+python-docx
