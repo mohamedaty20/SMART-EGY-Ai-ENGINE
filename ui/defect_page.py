@@ -388,11 +388,10 @@ def build_defect_ui(user_id):
     state["render_main"] = render_main
     render_main()
 
-    # Bottom nav (only when project exists)
-    if state.get("project_id"):
-        with ui.element('div').classes("bottom-nav"):
-            _nav_item("new", "add_a_photo", _t("new_defect"), state, render_main)
-            _nav_item("logs", "list_alt", _t("logs"), state, render_main)
+    # Bottom nav — always shown so New Defect / Logs tabs remain accessible
+    with ui.element('div').classes("bottom-nav"):
+        _nav_item("new", "add_a_photo", _t("new_defect"), state, render_main)
+        _nav_item("logs", "list_alt", _t("logs"), state, render_main)
 
 
 def _render_no_project(state, refresh_fn):
@@ -404,7 +403,8 @@ def _render_no_project(state, refresh_fn):
         ui.element('div').style("height:14px;")
 
         def _open():
-            _open_setup_dialog(state, refresh_fn, is_new=True)
+            _open_setup_dialog(state, None, is_new=True,
+                                on_created=refresh_fn)
 
         ui.button(_t("new_project"), icon="add", on_click=_open).classes(
             BTN_PRIMARY).style("width:100%;")
@@ -443,7 +443,6 @@ def _build_drawer(state, drawer):
             proj = state.get("project") or {}
             user = state.get("user") or {}
 
-            # Current project card
             with ui.element('div').style(
                 "display:flex;align-items:center;gap:12px;margin-bottom:8px;"):
                 if proj.get("logo_bytes"):
@@ -470,7 +469,6 @@ def _build_drawer(state, drawer):
                         ui.label(_t("no_project")).style(
                             "font-size:14px;font-weight:600;color:#a3a3a3;")
 
-            # Switch project button
             def _open_chooser():
                 _open_project_chooser(state, refresh, state["render_main"])
 
@@ -521,7 +519,6 @@ def _build_drawer(state, drawer):
                                 _t("clauses_count")
                             ).classes("muted").style("font-size:11px;")
 
-            # Footer — user + logout
             ui.separator().style("margin:18px 0;")
             if user:
                 ui.label(_t("signed_in_as")).classes("muted").style(
@@ -534,6 +531,7 @@ def _build_drawer(state, drawer):
                       on_click=lambda: ui.navigate.to("/logout")).classes(
                 BTN_SOFT).style("width:100%;")
 
+    state["refresh_drawer"] = refresh
     refresh()
 
 
@@ -700,7 +698,18 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
                     state["project"] = db.get_project(state["project_id"])
                 ui.notify(_t("save") + " ✓", type="positive")
                 dlg.close()
-                refresh_drawer()
+                # Refresh drawer (state-hook first, fallback arg)
+                try:
+                    hook = state.get("refresh_drawer")
+                    if hook:
+                        hook()
+                except Exception:
+                    pass
+                if refresh_drawer:
+                    try:
+                        refresh_drawer()
+                    except Exception:
+                        pass
                 if on_created:
                     on_created()
                 else:
@@ -794,7 +803,17 @@ def _open_ms_dialog(state, refresh_drawer):
                         pdf_bytes=holder["bytes"], clauses=clauses)
                     ui.notify(_t("ms_saved") + " ✓", type="positive")
                     dlg.close()
-                    refresh_drawer()
+                    if refresh_drawer:
+                        try:
+                            refresh_drawer()
+                        except Exception:
+                            pass
+                    hook = state.get("refresh_drawer")
+                    if hook:
+                        try:
+                            hook()
+                        except Exception:
+                            pass
 
                 ui.button(_t("confirm_save"), on_click=confirm).classes(
                     BTN_SUCCESS).style("width:100%;margin-top:10px;")
@@ -813,6 +832,10 @@ def _open_ms_dialog(state, refresh_drawer):
 # NEW DEFECT WIZARD
 # =====================================================================
 def _build_new_defect(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+
     stage = {"photo": None, "mime": None,
              "candidates": None, "manual": []}
 
@@ -1088,6 +1111,7 @@ def _open_add_dialog(stage, refresh_fn):
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
         return
 
     ui.label(_t("logs_title")).classes("h1").style("margin-bottom:4px;")
