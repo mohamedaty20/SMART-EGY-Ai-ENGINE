@@ -1400,3 +1400,32 @@ def get_ms_full_text(project_id, max_chars=150000):
         if total >= max_chars:
             break
     return "\n\n".join(parts)
+def is_admin(user_id):
+    """Return True if the user has the is_admin flag set."""
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("SELECT is_admin FROM users WHERE id=?", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return False
+        if isinstance(row, dict):
+            v = row.get("is_admin") or 0
+        else:
+            v = row[0]
+        return bool(int(v))
+    except Exception:
+        return False
+
+
+def ms_chat_delete(msg_id, user_id):
+    """Delete an MS chat message — owner only, no time limit."""
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute(
+            "DELETE FROM ms_chat_messages WHERE id=? AND user_id=?",
+            (msg_id, int(user_id)))
+        c.commit()
+        _sync(c)
+    return True
