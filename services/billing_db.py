@@ -301,6 +301,8 @@ def list_payments(user_id):
 
 
 def count_projects(user_id):
+    """Count projects the user OWNS (invited projects don't count against
+    their plan)."""
     c = _conn()
     cur = c.cursor()
     cur.execute("SELECT COUNT(*) FROM projects WHERE user_id=?", (user_id,))
