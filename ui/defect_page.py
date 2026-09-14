@@ -16,6 +16,7 @@ import base64
 import datetime
 import html as _html_mod
 from nicegui import ui, app
+from ui.pwa import inject_pwa
 
 from services import defect_db as db
 from services import defect_service as svc
@@ -920,6 +921,7 @@ def _initial(name):
 # =====================================================================
 def build_defect_ui(user_id):
     _inject_theme()
+    inject_pwa()
     user = db.get_user(user_id)
 
     state = {
