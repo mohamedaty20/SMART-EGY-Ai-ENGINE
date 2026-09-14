@@ -149,3 +149,15 @@ def send_overdue_email(to_email, project_name, overdue_items):
     except Exception as e:
         print("[alert] email failed: " + repr(e))
     return False
+def send_email(to_email, subject, html):
+    """Generic email send. Returns True if delivered. Silent on failure."""
+    if not email_available():
+        return False
+    try:
+        if RESEND_API_KEY:
+            return _send_resend(to_email, subject, html)
+        if SENDGRID_API_KEY:
+            return _send_sendgrid(to_email, subject, html)
+    except Exception as e:
+        print("[alert] email failed: " + repr(e))
+    return False
