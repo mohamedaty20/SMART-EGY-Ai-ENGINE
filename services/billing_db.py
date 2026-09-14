@@ -18,16 +18,17 @@ _LOCK = threading.Lock()
 PLANS = {
     "free": {"id": "free", "name": "Starter", "price_egp": 0,
              "price_usd": 0, "max_projects": 1, "max_ms": 3,
-             "monthly_ai_calls": 30},
+             "monthly_ai_calls": 30, "max_seats": 3},
     "pro": {"id": "pro", "name": "Pro", "price_egp": 500,
             "price_usd": 15, "max_projects": 3, "max_ms": 10,
-            "monthly_ai_calls": 500},
+            "monthly_ai_calls": 500, "max_seats": 15},
     "business": {"id": "business", "name": "Business",
                  "price_egp": 2000, "price_usd": 60, "max_projects": 999,
-                 "max_ms": 999, "monthly_ai_calls": 5000},
+                 "max_ms": 999, "monthly_ai_calls": 5000,
+                 "max_seats": None},
     "trial": {"id": "trial", "name": "Trial", "price_egp": 0,
               "price_usd": 0, "max_projects": 2, "max_ms": 5,
-              "monthly_ai_calls": 100},
+              "monthly_ai_calls": 100, "max_seats": 3},
 }
 
 TRIAL_DAYS = 14
@@ -454,7 +455,6 @@ def admin_stats():
     except Exception:
         stats["revenue_total"] = 0.0
 
-    # Revenue last 30 days
     cutoff = (datetime.datetime.utcnow() -
               datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute("SELECT COALESCE(SUM(amount),0) FROM payments "
@@ -479,7 +479,6 @@ def admin_user_list(limit=200):
     rows = _to_dicts(cur.fetchall(), USER_BILL_COLS)
     c.close()
 
-    # Add project + defect counts per user
     for u in rows:
         c = _conn()
         cur = c.cursor()
@@ -510,3 +509,189 @@ def admin_recent_payments(limit=50):
                      PAYMENT_COLS + ["email"])
     c.close()
     return rows
+
+
+# =====================================================================
+# SEATS — per-owner seat counting & enforcement
+# =====================================================================
+def billing_owner_id_for_project(project_id):
+    """The user_id that owns this project (the payer)."""
+    if not project_id:
+        return None
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("SELECT user_id FROM projects WHERE id=?",
+                    (project_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        v = row[0] if not isinstance(row, dict) else list(row.values())[0]
+        return int(v) if v else None
+    except Exception as e:
+        print("[billing] owner lookup failed: " + repr(e))
+        return None
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
+def billing_count_seats(owner_user_id):
+    """Distinct users (incl. owner) across all projects owned by this user."""
+    if not owner_user_id:
+        return 0
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM projects WHERE user_id=?",
+                    (owner_user_id,))
+        row = cur.fetchone()
+        np = 0
+        if row:
+            v = row[0] if not isinstance(row, dict) else list(row.values())[0]
+            np = int(v or 0)
+        if np == 0:
+            return 0
+        cur.execute("""
+            SELECT COUNT(DISTINCT pm.user_id)
+            FROM project_members pm
+            JOIN projects p ON p.id = pm.project_id
+            WHERE p.user_id = ?
+        """, (owner_user_id,))
+        row = cur.fetchone()
+        n = 0
+        if row:
+            v = row[0] if not isinstance(row, dict) else list(row.values())[0]
+            n = int(v or 0)
+        return max(n, 1)
+    except Exception as e:
+        print("[billing] count_seats failed: " + repr(e))
+        return 0
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
+def billing_get_plan(owner_user_id):
+    """{'plan','label','max_seats'} — reads users.plan."""
+    if not owner_user_id:
+        spec = PLANS["free"]
+        return {"plan": "free", "label": spec["name"],
+                "max_seats": spec.get("max_seats")}
+    b = get_user_billing(owner_user_id)
+    plan_id = (b or {}).get("plan") or "free"
+    spec = PLANS.get(plan_id, PLANS["free"])
+    return {"plan": plan_id,
+            "label": spec.get("name") or plan_id,
+            "max_seats": spec.get("max_seats")}
+
+
+def billing_set_plan(owner_user_id, plan_id):
+    """Set plan by writing users.plan. Returns (ok, message)."""
+    if plan_id not in PLANS:
+        return False, "Unknown plan"
+    try:
+        with _LOCK:
+            c = _conn()
+            cur = c.cursor()
+            cur.execute("UPDATE users SET plan=? WHERE id=?",
+                        (plan_id, owner_user_id))
+            c.commit()
+            _sync(c)
+            c.close()
+        return True, "ok"
+    except Exception as e:
+        return False, str(e)
+
+
+def billing_seats_summary(owner_user_id):
+    """{'plan','label','limit','used','remaining','over'}"""
+    plan = billing_get_plan(owner_user_id)
+    used = billing_count_seats(owner_user_id)
+    limit = plan.get("max_seats")
+    remaining = None if limit is None else max(0, int(limit) - used)
+    over = bool(limit is not None and used > int(limit))
+    return {"plan": plan["plan"], "label": plan["label"],
+            "limit": limit, "used": used,
+            "remaining": remaining, "over": over}
+
+
+def billing_is_user_under_owner(user_id, owner_id):
+    """True if this user already belongs to any of the owner's projects."""
+    if not user_id or not owner_id:
+        return False
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("""
+            SELECT 1 FROM project_members pm
+            JOIN projects p ON p.id = pm.project_id
+            WHERE p.user_id = ? AND pm.user_id = ?
+            LIMIT 1
+        """, (owner_id, user_id))
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
+def billing_can_add_member(owner_user_id, new_user_id=None):
+    """(ok, message) — enforce seat limit before adding a member."""
+    if not owner_user_id:
+        return True, ""
+    if new_user_id and billing_is_user_under_owner(new_user_id,
+                                                    owner_user_id):
+        return True, ""
+    s = billing_seats_summary(owner_user_id)
+    limit = s.get("limit")
+    if limit is None:
+        return True, ""
+    if s.get("used", 0) >= int(limit):
+        return False, ("Plan limit reached (" + str(s["used"]) + "/" +
+                       str(limit) + " on " + str(s.get("label") or "") +
+                       "). Upgrade the plan to add more members.")
+    return True, ""
+
+
+def billing_list_owners():
+    """Every project owner with plan + usage. For the admin Billing tab."""
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("""
+            SELECT DISTINCT user_id FROM projects WHERE user_id IS NOT NULL
+        """)
+        rows = cur.fetchall()
+    except Exception:
+        return []
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+    out = []
+    for r in rows:
+        try:
+            oid = r[0] if not isinstance(r, dict) else list(r.values())[0]
+        except Exception:
+            continue
+        u = get_user_billing(oid) or {}
+        s = billing_seats_summary(oid)
+        out.append({
+            "owner_id": oid,
+            "name": u.get("name") or u.get("email") or "—",
+            "email": u.get("email") or "",
+            "plan": s["plan"], "plan_label": s["label"],
+            "limit": s["limit"], "used": s["used"],
+            "remaining": s["remaining"], "over": s["over"],
+        })
+    out.sort(key=lambda x: (x.get("name") or "").lower())
+    return out
