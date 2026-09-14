@@ -13,6 +13,7 @@ ui/defect_page.py — Full file.
 """
 import io
 import re
+import json
 import base64
 import datetime
 import html as _html_mod
@@ -560,7 +561,48 @@ def _guess_element(place_text):
                 return key
     return "column"
 
-
+async def _get_browser_location():
+    """Ask the browser for the current GPS. Returns dict or None."""
+    try:
+        raw = await ui.run_javascript("""
+            (async () => {
+              try {
+                const p = await new Promise((resolve, reject) => {
+                  if (!navigator.geolocation) {
+                    reject(new Error('Geolocation unsupported'));
+                    return;
+                  }
+                  navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                  });
+                });
+                return JSON.stringify({
+                  lat: p.coords.latitude,
+                  lng: p.coords.longitude,
+                  acc: p.coords.accuracy
+                });
+              } catch (e) {
+                return 'ERR:' + (e && e.message ? e.message : 'unknown');
+              }
+            })()
+        """, timeout=15)
+    except Exception as e:
+        print("[geo] js failed: " + repr(e))
+        return None
+    if not raw or str(raw).startswith("ERR:"):
+        print("[geo] denied/failed: " + str(raw))
+        return None
+    try:
+        d = json.loads(str(raw))
+        if "lat" in d and "lng" in d:
+            return {"lat": float(d["lat"]),
+                    "lng": float(d["lng"]),
+                    "acc": float(d.get("acc") or 0)}
+    except Exception as e:
+        print("[geo] parse failed: " + repr(e))
+    return None
 def _chat_author_color(title):
     t = (title or "").lower()
     if "consultant" in t or "استشاري" in t:
@@ -2680,15 +2722,58 @@ def _build_new_defect(state):
             ui.label("Your role: " + _role_label(state)).classes(
                 "mono-sm").style("margin-top:6px;")
         return
+
     stage = {"photos": [], "mime": "image/jpeg",
              "candidates": None, "manual": [],
              "text_only": False, "text_desc": "",
              "zone": "A", "place": "", "element": "column",
-             "note": "", "defect_type": "General"}
+             "note": "", "defect_type": "General",
+             "lat": None, "lng": None}
+    loc_state = {"ready": False, "acc": 0}
 
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:3px;")
-        ui.label(_t("photo_sub")).classes("muted").style("margin-bottom:12px;")
+        ui.label(_t("photo_sub")).classes("muted").style("margin-bottom:10px;")
+
+        # -------- SECURITY MESSAGE --------
+        ui.html(
+            '<div style="background:#101010;border:1px solid #1e1e1e;'
+            'border-left:3px solid #fbbf24;border-radius:3px;'
+            'padding:10px 12px;margin-bottom:12px;'
+            'font-size:11px;color:#c8c8c8;line-height:1.6;">'
+            '🔒 <b style="color:#e8e8e8;">Security</b> — To ensure every '
+            'defect is verified at its exact site, photos must be taken '
+            '<b>live from your camera</b> and your <b>location must be '
+            'enabled</b>. Photos from your gallery cannot be uploaded.'
+            '</div>'
+        )
+
+        # -------- LOCATION STATUS --------
+        loc_bar = ui.element('div').style(
+            "background:#101010;border:1px solid #1e1e1e;border-radius:3px;"
+            "padding:8px 10px;margin-bottom:12px;font-size:11px;"
+            "color:#808080;"
+        )
+
+        def render_loc():
+            loc_bar.clear()
+            with loc_bar:
+                if loc_state["ready"]:
+                    ui.html(
+                        '<span style="color:#4ade80;font-weight:700;">'
+                        '📍 Location enabled</span>'
+                        '<span style="color:#5a5a5a;"> · accuracy ± '
+                        + str(int(loc_state["acc"])) + 'm</span>'
+                    )
+                else:
+                    ui.html(
+                        '<span style="color:#fbbf24;font-weight:700;">'
+                        '📍 Location not enabled</span>'
+                        '<span style="color:#5a5a5a;"> · required before '
+                        'taking a photo</span>'
+                    )
+
+        render_loc()
 
         photos_holder = ui.element('div').style("width:100%;")
 
@@ -2713,6 +2798,9 @@ def _build_new_defect(state):
                                 pass
 
         async def handle_photo(e):
+            if not loc_state["ready"]:
+                ui.notify("Enable location first.", type="warning")
+                return
             try:
                 data = await e.file.read()
             except Exception as ex:
@@ -2721,6 +2809,19 @@ def _build_new_defect(state):
             if not data:
                 ui.notify(_t("empty_file"), type="warning")
                 return
+
+            # Refresh GPS at the moment of upload
+            pos = await _get_browser_location()
+            if not pos:
+                ui.notify(
+                    "Location could not be read. Enable GPS and try again.",
+                    type="negative", timeout=6000)
+                return
+            stage["lat"] = pos["lat"]
+            stage["lng"] = pos["lng"]
+            loc_state["acc"] = pos["acc"]
+            render_loc()
+
             stage["photos"].append(data)
             if e.file.name.lower().endswith((".jpg", ".jpeg")):
                 stage["mime"] = "image/jpeg"
@@ -2737,11 +2838,44 @@ def _build_new_defect(state):
 
         render_photos()
 
-        ui.upload(on_upload=handle_photo, auto_upload=True).style(
-            "width:100%;").props("flat bordered accept=image/* multiple "
-                                  "label='" +
-                                  (_t("add_photos") if stage["photos"]
-                                   else _t("choose_photo")) + "'")
+        upload_holder = ui.element('div').style("width:100%;")
+
+        async def enable_location():
+            ui.notify("Requesting location permission...", type="info",
+                       timeout=3000)
+            pos = await _get_browser_location()
+            if not pos:
+                ui.notify(
+                    "Location was denied or unavailable. Open your browser "
+                    "settings and allow location for this site, then try "
+                    "again.", type="negative", timeout=8000)
+                return
+            loc_state["ready"] = True
+            loc_state["acc"] = pos["acc"]
+            stage["lat"] = pos["lat"]
+            stage["lng"] = pos["lng"]
+            render_loc()
+            render_upload()
+            ui.notify("Location enabled — camera unlocked.",
+                       type="positive")
+
+        def render_upload():
+            upload_holder.clear()
+            with upload_holder:
+                if not loc_state["ready"]:
+                    ui.button("📍 Enable location to unlock camera",
+                              icon="my_location",
+                              on_click=enable_location).classes(
+                        BTN_PRIMARY).style("width:100%;")
+                    return
+                ui.upload(on_upload=handle_photo, auto_upload=True).style(
+                    "width:100%;").props(
+                    "flat bordered accept=image/* capture=environment "
+                    "multiple label='" +
+                    (_t("add_photos") if stage["photos"]
+                     else _t("choose_photo")) + "'")
+
+        render_upload()
 
         with ui.element('div').classes("or-divider"):
             ui.label(_t("or_divider"))
@@ -2760,6 +2894,7 @@ def _build_new_defect(state):
             _render_body_contents(state, stage, rebuild_body)
 
     rebuild_body()
+
 
 
 def _open_no_photo_dialog(state, stage, refresh_fn):
@@ -3104,7 +3239,10 @@ def _render_candidates(state, stage, refresh_fn):
                 extra_photos=photos_list[1:] if len(photos_list) > 1 else [],
                 engineer_name=engineer_in.value or "",
                 place=stage.get("place", "") or "",
-                defect_type=stage.get("defect_type", "General"))
+                defect_type=stage.get("defect_type", "General"),
+                lat=stage.get("lat"),
+                lng=stage.get("lng"))
+
             try:
                 db.activity_add(
                     state["project_id"], state["user_id"], "raised_defect",
