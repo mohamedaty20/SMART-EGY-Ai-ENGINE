@@ -2,6 +2,7 @@
 ui/auth_page.py — Login / Signup.
 """
 from nicegui import ui, app
+from ui.pwa import inject_pwa
 
 from services import defect_db as db
 from services import billing_db as bdb
