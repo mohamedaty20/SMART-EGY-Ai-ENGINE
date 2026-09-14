@@ -1,14 +1,15 @@
 """
 ui/defect_page.py — Full file.
+- Team multi-user: invite by email, all see same project.
+- MS Chat: Q&A over uploaded Method Statements + document compliance check.
 - OCR for handwritten notes in the "no photo" dialog.
-- Free-text zone input (no dropdown lock).
+- Free-text zone input.
 - Real-time chat (2s poll, smart scroll).
 - 60-second delete window on chat messages.
-- Role-colored chat authors (consultant=red, QC mgr=blue, PM=green).
-- Defect type saved on every notice + filter in logs.
-- Engineer name + place shown under every log title.
-- Place-of-defect (free text) replaces element dropdown on raise.
-- Interactive ECharts dashboard (line + scatter + bar + pie).
+- Role-colored chat authors.
+- Defect-type filter in logs.
+- Engineer name + place under every log title.
+- Interactive ECharts dashboard.
 """
 import io
 import re
@@ -16,11 +17,12 @@ import base64
 import datetime
 import html as _html_mod
 from nicegui import ui, app
-from ui.pwa import inject_pwa
 
 from services import defect_db as db
 from services import defect_service as svc
+from services import ms_chat_service as msc
 from services.ai_service import call_gemini_json
+from ui.pwa import inject_pwa
 
 
 LANG = {"code": "en"}
@@ -31,11 +33,24 @@ TITLES = [
     "Mechanical Engineer", "Architect", "Consultant", "Foreman", "Other",
 ]
 
+ROLE_OPTIONS = {
+    "engineer": "Engineer",
+    "consultant": "Consultant",
+    "viewer": "Viewer",
+}
+ROLE_COLORS = {
+    "owner": "#5eead4",
+    "engineer": "#60a5fa",
+    "consultant": "#f87171",
+    "viewer": "#808080",
+}
+
 T = {
     "en": {
         "app_title": "DEFECT NOTICES",
         "new_defect": "NEW DEFECT", "logs": "DEFECT LOGS",
         "subs": "SUBS", "dashboard": "DASHBOARD", "chat": "TEAM CHAT",
+        "ms_chat": "MS CHAT",
         "project": "PROJECT", "no_project": "NO PROJECT",
         "setup_project": "Set up project", "edit": "Edit",
         "contractor": "Contractor", "subcontractor": "Subcontractor",
@@ -50,8 +65,7 @@ T = {
         "photos_count": "photo(s)",
         "no_photo_btn": "Raise defect without photo",
         "no_photo_title": "Defect without photo",
-        "no_photo_sub": "Describe the defect, or scan a handwritten note. "
-                         "AI will match it to the MS.",
+        "no_photo_sub": "Describe the defect, or scan a handwritten note.",
         "defect_desc": "Defect description",
         "defect_desc_placeholder": "e.g. exposed rebar at column C3 base",
         "extra_note": "Extra note (optional)",
@@ -59,11 +73,9 @@ T = {
         "analyze": "Analyze with AI", "analyzing": "Analyzing...",
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
-        "zone": "Zone",
-        "zone_placeholder": "A / B / Block 2 / Roof...",
+        "zone": "Zone", "zone_placeholder": "A / B / Block 2 / Roof...",
         "place_of_defect": "PLACE OF THE DEFECT",
-        "place_of_defect_placeholder":
-            "e.g. Block B, Column C3 base, Grid 4-5",
+        "place_of_defect_placeholder": "e.g. Block B, Column C3 base, Grid 4-5",
         "engineer_field": "Engineer name",
         "place_field": "Exact place",
         "place_placeholder": "e.g. Block B, Column C3 base, Grid 4-5",
@@ -103,8 +115,7 @@ T = {
         "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
         "no_match": "No matches.",
-        "search_placeholder":
-            "Search UID, defect, sub, engineer, place...",
+        "search_placeholder": "Search UID, defect, sub, engineer, place...",
         "filter_all": "All", "filter_qc": "QC Internal",
         "filter_consultant": "Consultant / NCR",
         "defect_type_label": "Defect type",
@@ -146,8 +157,7 @@ T = {
         "photo_received": "Photo received", "file_loaded": "Loaded: ",
         "photos_received": "photos",
         "projects_title": "Your Projects", "switch_project": "Switch project",
-        "new_project": "New project",
-        "create_first": "Create your first project",
+        "new_project": "New project", "create_first": "Create your first project",
         "no_projects_hint": "No projects yet.",
         "delete_project": "Delete project",
         "delete_confirm": "Delete this project and all its data?",
@@ -159,33 +169,26 @@ T = {
         "kpi_avg_days": "AVG-CLOSE",
         "dash_zones": "OPEN BY ZONE", "dash_weeks": "RAISED / WEEK",
         "dash_subs": "BY SUBCONTRACTOR",
-        "dash_summary": "SUMMARY",
-        "dash_print": "PRINT DASHBOARD PDF",
+        "dash_summary": "SUMMARY", "dash_print": "PRINT DASHBOARD PDF",
         "dash_empty": "No defects yet.",
         "dash_scatter": "DEFECT LIFECYCLE (SCATTER)",
-        "dash_scatter_x": "Days open",
-        "dash_scatter_y": "Days to close",
+        "dash_scatter_x": "Days open", "dash_scatter_y": "Days to close",
         "dash_line": "RAISED VS CLOSED / WEEK",
-        "dash_line_raised": "Raised",
-        "dash_line_closed": "Closed",
+        "dash_line_raised": "Raised", "dash_line_closed": "Closed",
         "no_data": "No data.",
         "col_name": "NAME", "col_open": "OPEN", "col_overdue": "OVERDUE",
         "col_closed": "CLOSED", "col_total": "TOTAL",
         "unassigned": "(unassigned)",
-        "subs_title": "SUBCONTRACTORS",
-        "subs_sub": "Master list and live performance.",
-        "add_sub": "Add subcontractor",
-        "add_sub_title": "Add subcontractor",
+        "subs_title": "SUBCONTRACTORS", "subs_sub": "Master list and live performance.",
+        "add_sub": "Add subcontractor", "add_sub_title": "Add subcontractor",
         "sub_name": "Subcontractor name",
         "sub_trade": "Trade (e.g. steel fixing, masonry)",
-        "sub_phone": "Phone (optional)",
-        "sub_notes": "Notes (optional)",
+        "sub_phone": "Phone (optional)", "sub_notes": "Notes (optional)",
         "sub_saved": "Saved.", "sub_deleted": "Deleted.",
         "delete_sub_confirm": "Remove this subcontractor?",
         "no_subs": "No subcontractors yet.",
         "no_subs_hint": "Add one to track performance.",
-        "view_defects": "View defects",
-        "download_sub_pdf": "Performance PDF",
+        "view_defects": "View defects", "download_sub_pdf": "Performance PDF",
         "filtered_by": "FILTER", "clear_filter": "Clear",
         "from_defects": "from notices",
         "sub_open": "OPEN", "sub_overdue": "OVERDUE",
@@ -203,33 +206,24 @@ T = {
         "closure_photo_short": "CLOSURE",
         "refresh": "REFRESH", "week": "wk",
         "no_ms_uploaded": "no MS",
-        "edit_defect": "Edit",
-        "delete_defect": "Delete",
+        "edit_defect": "Edit", "delete_defect": "Delete",
         "edit_defect_title": "Edit notice",
-        "edit_defect_sub":
-            "Change details. Notice PDF will be regenerated.",
-        "defect_items": "Defect items",
-        "add_item": "+ Add item",
-        "remove_item": "Remove",
-        "save_changes": "Save changes",
+        "edit_defect_sub": "Change details. Notice PDF will be regenerated.",
+        "defect_items": "Defect items", "add_item": "+ Add item",
+        "remove_item": "Remove", "save_changes": "Save changes",
         "saved_changes": "Notice updated.",
         "confirm_delete_defect": "Delete this notice permanently?",
         "delete_warning": "This cannot be undone.",
         "deleted_defect": "Notice deleted.",
         "no_items": "No defects in this notice.",
-        "raised_by": "By",
-        "at_place": "At",
+        "raised_by": "By", "at_place": "At",
         "chat_title": "TEAM CHAT",
         "chat_sub": "Project-wide discussion for the QC team.",
         "chat_placeholder": "Type a message...  use @ to mention someone",
-        "chat_send": "Send",
-        "chat_empty": "No messages yet. Start the conversation.",
-        "chat_reply": "Reply",
-        "chat_replying_to": "Replying to",
-        "chat_cancel": "Cancel",
-        "chat_delete": "Delete",
-        "chat_filter_from": "From",
-        "chat_filter_to": "To",
+        "chat_send": "Send", "chat_empty": "No messages yet. Start the conversation.",
+        "chat_reply": "Reply", "chat_replying_to": "Replying to",
+        "chat_cancel": "Cancel", "chat_delete": "Delete",
+        "chat_filter_from": "From", "chat_filter_to": "To",
         "chat_search": "Search by name or message...",
         "chat_confirm_delete": "Delete this message?",
         "chat_deleted": "Message deleted.",
@@ -237,19 +231,71 @@ T = {
         "delete_too_late": "Can only delete within 60 seconds of posting.",
         "delete_not_owner": "Only the author can delete this message.",
         "delete_failed": "Delete failed.",
-        "my_profile": "My profile",
-        "profile_name": "Name",
+        "my_profile": "My profile", "profile_name": "Name",
         "profile_title": "Job title",
         "profile_photo": "Profile photo (optional)",
         "profile_saved": "Profile saved.",
-        "profile_email": "Email",
-        "profile_open": "Profile",
+        "profile_email": "Email", "profile_open": "Profile",
         "new_messages": "NEW MESSAGES",
+        # Team
+        "team_section": "TEAM",
+        "team_members": "Members",
+        "team_owner": "Owner",
+        "team_invite": "Invite member",
+        "team_invite_title": "Invite a team member",
+        "team_invite_hint": "They must already have an account. Ask them "
+                            "to sign up first if they don't.",
+        "team_email": "Email address",
+        "team_role": "Role",
+        "team_role_engineer": "Engineer",
+        "team_role_consultant": "Consultant",
+        "team_role_viewer": "Viewer",
+        "team_add": "Add to project",
+        "team_added": "Member added.",
+        "team_failed": "Add failed: ",
+        "team_removed": "Member removed.",
+        "team_remove": "Remove",
+        "team_remove_confirm": "Remove this member from the project?",
+        "team_you": "(you)",
+        "team_no_members": "No members yet.",
+        # MS Chat
+        "ms_chat_title": "MS CHAT",
+        "ms_chat_sub": "Your private chat with the MS. Ask questions or "
+               "scan documents. No one else on the team sees this.",
+        "ms_chat_empty": "No messages yet. Ask your first question below.",
+        "ms_chat_ask": "Ask a question",
+        "ms_chat_ask_placeholder": "e.g. What is the minimum cover for "
+                                    "columns exposed to weather?",
+        "ms_chat_send": "ASK",
+        "ms_chat_check_btn": "Scan document",
+        "ms_chat_check_hint": "Upload a batch ticket, delivery note, or "
+                              "test result (JPG / PNG / PDF).",
+        "ms_chat_reading": "Reading document...",
+        "ms_chat_analysing": "Checking against MS...",
+        "ms_chat_answer_from": "Answer",
+        "ms_chat_not_found": "Not found in the uploaded MS.",
+        "ms_chat_doc_type": "Document type",
+        "ms_chat_extracted": "Extracted",
+        "ms_chat_checks": "Checks against MS",
+        "ms_chat_overall": "OVERALL",
+        "ms_chat_compliant": "COMPLIANT",
+        "ms_chat_conditional": "CONDITIONAL",
+        "ms_chat_non_compliant": "NON-COMPLIANT",
+        "ms_chat_clear": "Clear history",
+        "ms_chat_clear_confirm": "Delete all MS chat history for this project?",
+        "ms_chat_cleared": "History cleared.",
+        "ms_chat_need_ms": "Upload a Method Statement first (drawer → "
+                            "Method Statements → +).",
+        "ms_chat_failed": "Failed: ",
+        "ms_chat_kind_question": "QUESTION",
+        "ms_chat_kind_check": "DOCUMENT CHECK",
+        "ms_chat_source": "Source",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
         "new_defect": "عيب جديد", "logs": "السجل",
         "dashboard": "الرئيسية", "subs": "المقاولون", "chat": "الدردشة",
+        "ms_chat": "دردشة MS",
         "project": "المشروع", "no_project": "لا مشروع",
         "setup_project": "إعداد المشروع", "edit": "تعديل",
         "contractor": "المقاول", "subcontractor": "المقاول الفرعي",
@@ -260,12 +306,9 @@ T = {
         "photo_title": "التقط صورة للعيب",
         "photo_sub": "اضغط لاختيار صورة الموقع.",
         "choose_photo": "اختر صورة",
-        "add_photos": "إضافة صور أخرى",
-        "photos_count": "صورة",
-        "no_photo_btn": "عيب بدون صورة",
-        "no_photo_title": "عيب بدون صورة",
-        "no_photo_sub": "صف العيب، أو امسح ملاحظة مكتوبة بخط اليد. "
-                         "سيطابقها الذكاء الاصطناعي.",
+        "add_photos": "إضافة صور أخرى", "photos_count": "صورة",
+        "no_photo_btn": "عيب بدون صورة", "no_photo_title": "عيب بدون صورة",
+        "no_photo_sub": "صف العيب، أو امسح ملاحظة مكتوبة بخط اليد.",
         "defect_desc": "وصف العيب",
         "defect_desc_placeholder": "مثال: حديد مكشوف عند قاعدة C3",
         "extra_note": "ملاحظة إضافية (اختياري)",
@@ -273,11 +316,9 @@ T = {
         "analyze": "تحليل بالذكاء الاصطناعي", "analyzing": "جاري التحليل...",
         "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة C3",
-        "zone": "المنطقة",
-        "zone_placeholder": "A / B / بلوك 2 / السطح...",
+        "zone": "المنطقة", "zone_placeholder": "A / B / بلوك 2 / السطح...",
         "place_of_defect": "مكان العيب",
-        "place_of_defect_placeholder":
-            "مثال: بلوك B، قاعدة عمود C3، محور 4-5",
+        "place_of_defect_placeholder": "مثال: بلوك B، قاعدة عمود C3، محور 4-5",
         "engineer_field": "اسم المهندس",
         "place_field": "المكان بالتفصيل",
         "place_placeholder": "مثال: بلوك B، قاعدة عمود C3",
@@ -292,53 +333,39 @@ T = {
         "generate_pdf": "إنشاء إشعار PDF",
         "tick_one": "اختر عيباً واحداً على الأقل.",
         "enter_sub": "أدخل اسم المقاول الفرعي.",
-        "notice_saved": "تم الحفظ",
-        "setup_first": "أعدّ المشروع أولاً.",
+        "notice_saved": "تم الحفظ", "setup_first": "أعدّ المشروع أولاً.",
         "add_defect_title": "إضافة عيب يدوياً", "name": "اسم العيب",
         "location_hint": "الموقع", "severity": "الخطورة",
         "ms_clause": "بند MS", "ecp_code": "كود ECP",
         "repair": "الإصلاح", "add": "إضافة", "cancel": "إلغاء",
-        "name_required": "اسم العيب مطلوب.",
-        "desc_required": "الوصف مطلوب.",
+        "name_required": "اسم العيب مطلوب.", "desc_required": "الوصف مطلوب.",
         "tag_ai": "AI", "tag_manual": "يدوي",
         "tag_nophoto": "بدون صورة", "mismatch_warn": "لا بند مطابق",
         "tag_dup": "سُبق {n}x",
         "ocr_label": "امسح ملاحظة مكتوبة بخط اليد (اختياري)",
-        "ocr_hint": "ارفع أو صوّر الصفحة المكتوبة (JPG / PNG) أو PDF. "
-                     "سيقرأها الذكاء الاصطناعي ويملأ الوصف — يمكنك تعديله.",
+        "ocr_hint": "ارفع أو صوّر الصفحة المكتوبة (JPG / PNG) أو PDF.",
         "ocr_upload": "التقط أو ارفع صورة / PDF",
         "ocr_reading": "جاري قراءة الخط...",
         "ocr_done": "تم استخراج النص. عدّل بالأسفل إن لزم.",
-        "ocr_failed": "فشل القراءة:",
-        "ocr_empty": "لا يوجد نص مقروء.",
-        "logs_title": "سجل العيوب",
-        "logs_sub": "كل إشعار صدر.",
-        "no_logs": "لا توجد إشعارات.",
-        "no_match": "لا نتائج.",
+        "ocr_failed": "فشل القراءة:", "ocr_empty": "لا يوجد نص مقروء.",
+        "logs_title": "سجل العيوب", "logs_sub": "كل إشعار صدر.",
+        "no_logs": "لا توجد إشعارات.", "no_match": "لا نتائج.",
         "search_placeholder": "ابحث بالرقم أو العيب أو المهندس أو المكان...",
         "filter_all": "الكل", "filter_qc": "داخلي QC",
         "filter_consultant": "استشاري / NCR",
-        "defect_type_label": "نوع العيب",
-        "defect_type_all": "كل الأنواع",
-        "defect_type_structural": "إنشائي",
-        "defect_type_arch": "معماري",
-        "defect_type_mep": "كهروميكانيكي",
-        "defect_type_earthwork": "أعمال ترابية",
-        "defect_type_general": "عام",
-        "filter_type": "النوع",
+        "defect_type_label": "نوع العيب", "defect_type_all": "كل الأنواع",
+        "defect_type_structural": "إنشائي", "defect_type_arch": "معماري",
+        "defect_type_mep": "كهروميكانيكي", "defect_type_earthwork": "أعمال ترابية",
+        "defect_type_general": "عام", "filter_type": "النوع",
         "export_register": "السجل PDF", "closure_report": "الإغلاق PDF",
-        "export_excel": "Excel",
-        "open": "مفتوح", "closed": "مغلق", "no_rows": "لا صفوف.",
-        "notice": "إشعار", "download_pdf": "تحميل PDF",
+        "export_excel": "Excel", "open": "مفتوح", "closed": "مغلق",
+        "no_rows": "لا صفوف.", "notice": "إشعار", "download_pdf": "تحميل PDF",
         "mark_closed": "إغلاق", "close": "إغلاق",
-        "ncr_input": "رقم NCR الاستشاري",
-        "ncr_required": "أدخل رقم NCR أولاً.",
+        "ncr_input": "رقم NCR الاستشاري", "ncr_required": "أدخل رقم NCR أولاً.",
         "marked_closed": "تم الإغلاق.", "not_found": "غير موجود.",
-        "repair_label": "الإصلاح",
-        "save": "حفظ", "cancel_btn": "إلغاء",
+        "repair_label": "الإصلاح", "save": "حفظ", "cancel_btn": "إلغاء",
         "setup_title": "إعداد المشروع", "project_name": "اسم المشروع",
-        "save_project": "حفظ",
-        "ms_dialog_title": "تحميل بند طريقة عمل",
+        "save_project": "حفظ", "ms_dialog_title": "تحميل بند طريقة عمل",
         "ms_number": "رقم MS", "ms_title": "العنوان",
         "element_type": "العنصر", "discipline": "التخصص",
         "extract": "استخراج البنود", "extracting": "جاري الاستخراج...",
@@ -352,109 +379,114 @@ T = {
         "element_foundation": "أساس", "element_finishing": "تشطيبات",
         "discipline_structural": "إنشائي", "discipline_arch": "معماري",
         "discipline_mep": "كهروميكانيكي", "zone_general": "عام",
-        "lang_button": "EN",
-        "upload_failed": "فشل: ", "empty_file": "ملف فارغ.",
-        "photo_received": "تم استلام الصورة", "file_loaded": "تم التحميل: ",
-        "photos_received": "صور",
+        "lang_button": "EN", "upload_failed": "فشل: ",
+        "empty_file": "ملف فارغ.", "photo_received": "تم استلام الصورة",
+        "file_loaded": "تم التحميل: ", "photos_received": "صور",
         "projects_title": "مشاريعك", "switch_project": "تبديل المشروع",
-        "new_project": "مشروع جديد",
-        "create_first": "أنشئ مشروعك الأول",
-        "no_projects_hint": "لا مشاريع بعد.",
-        "delete_project": "حذف المشروع",
+        "new_project": "مشروع جديد", "create_first": "أنشئ مشروعك الأول",
+        "no_projects_hint": "لا مشاريع بعد.", "delete_project": "حذف المشروع",
         "delete_confirm": "حذف هذا المشروع وكل بياناته؟",
-        "logout": "خروج", "signed_in_as": "مسجل",
-        "or_divider": "أو",
+        "logout": "خروج", "signed_in_as": "مسجل", "or_divider": "أو",
         "dash_title": "الرئيسية", "dash_sub": "مؤشرات حية.",
         "kpi_total": "الإجمالي", "kpi_open": "مفتوح", "kpi_closed": "مغلق",
         "kpi_overdue": "متأخر", "kpi_closed_7d": "أُغلق-٧",
         "kpi_avg_days": "متوسط الإغلاق",
         "dash_zones": "المفتوح حسب المنطقة", "dash_weeks": "المُصدر أسبوعياً",
-        "dash_subs": "حسب المقاول الفرعي",
-        "dash_summary": "ملخص",
-        "dash_print": "طباعة تقرير الرئيسية",
-        "dash_empty": "لا عيوب بعد.",
-        "dash_scatter": "دورة حياة العيب",
-        "dash_scatter_x": "أيام مفتوح",
+        "dash_subs": "حسب المقاول الفرعي", "dash_summary": "ملخص",
+        "dash_print": "طباعة تقرير الرئيسية", "dash_empty": "لا عيوب بعد.",
+        "dash_scatter": "دورة حياة العيب", "dash_scatter_x": "أيام مفتوح",
         "dash_scatter_y": "أيام حتى الإغلاق",
         "dash_line": "مُصدر مقابل مُغلق أسبوعياً",
-        "dash_line_raised": "مُصدر",
-        "dash_line_closed": "مُغلق",
+        "dash_line_raised": "مُصدر", "dash_line_closed": "مُغلق",
         "no_data": "لا بيانات.",
         "col_name": "الاسم", "col_open": "مفتوح", "col_overdue": "متأخر",
         "col_closed": "مغلق", "col_total": "الإجمالي",
-        "unassigned": "(غير معين)",
-        "subs_title": "المقاولون الفرعيون",
-        "subs_sub": "القائمة والأداء.",
-        "add_sub": "إضافة مقاول فرعي",
+        "unassigned": "(غير معين)", "subs_title": "المقاولون الفرعيون",
+        "subs_sub": "القائمة والأداء.", "add_sub": "إضافة مقاول فرعي",
         "add_sub_title": "إضافة مقاول فرعي",
-        "sub_name": "اسم المقاول الفرعي",
-        "sub_trade": "التخصص",
-        "sub_phone": "هاتف (اختياري)",
-        "sub_notes": "ملاحظات (اختياري)",
+        "sub_name": "اسم المقاول الفرعي", "sub_trade": "التخصص",
+        "sub_phone": "هاتف (اختياري)", "sub_notes": "ملاحظات (اختياري)",
         "sub_saved": "تم الحفظ.", "sub_deleted": "تم الحذف.",
         "delete_sub_confirm": "حذف هذا المقاول؟",
-        "no_subs": "لا مقاولون بعد.",
-        "no_subs_hint": "أضف واحداً لتتبع أدائه.",
-        "view_defects": "عرض العيوب",
-        "download_sub_pdf": "تقرير الأداء PDF",
+        "no_subs": "لا مقاولون بعد.", "no_subs_hint": "أضف واحداً لتتبع أدائه.",
+        "view_defects": "عرض العيوب", "download_sub_pdf": "تقرير الأداء PDF",
         "filtered_by": "فلتر", "clear_filter": "مسح",
-        "from_defects": "من الإشعارات",
-        "sub_open": "مفتوح", "sub_overdue": "متأخر",
-        "sub_closed": "مغلق", "sub_total": "الإجمالي",
-        "delete_sub": "حذف",
-        "close_defect_title": "إغلاق العيب",
+        "from_defects": "من الإشعارات", "sub_open": "مفتوح",
+        "sub_overdue": "متأخر", "sub_closed": "مغلق", "sub_total": "الإجمالي",
+        "delete_sub": "حذف", "close_defect_title": "إغلاق العيب",
         "close_defect_sub": "أرفق صورة كإثبات.",
         "closure_photo_label": "صورة الإغلاق",
         "closure_photo_optional": "صورة الإغلاق (اختياري)",
         "closure_photo_hint": "مُفضل — صورة بعد الإصلاح.",
-        "closure_attached": "تم الإرفاق",
-        "closure_skipped": "بدون صورة",
-        "confirm_close": "تأكيد الإغلاق",
-        "close_without_photo": "إغلاق بدون صورة",
-        "closure_photo_short": "إغلاق",
-        "refresh": "تحديث", "week": "أسبوع",
-        "no_ms_uploaded": "لا MS",
-        "edit_defect": "تعديل",
-        "delete_defect": "حذف",
-        "edit_defect_title": "تعديل الإشعار",
+        "closure_attached": "تم الإرفاق", "closure_skipped": "بدون صورة",
+        "confirm_close": "تأكيد الإغلاق", "close_without_photo": "إغلاق بدون صورة",
+        "closure_photo_short": "إغلاق", "refresh": "تحديث", "week": "أسبوع",
+        "no_ms_uploaded": "لا MS", "edit_defect": "تعديل",
+        "delete_defect": "حذف", "edit_defect_title": "تعديل الإشعار",
         "edit_defect_sub": "عدّل التفاصيل. سيُعاد إنشاء PDF.",
-        "defect_items": "بنود العيوب",
-        "add_item": "+ إضافة بند",
-        "remove_item": "حذف",
-        "save_changes": "حفظ التعديلات",
+        "defect_items": "بنود العيوب", "add_item": "+ إضافة بند",
+        "remove_item": "حذف", "save_changes": "حفظ التعديلات",
         "saved_changes": "تم تحديث الإشعار.",
         "confirm_delete_defect": "حذف هذا الإشعار نهائياً؟",
         "delete_warning": "لا يمكن التراجع.",
         "deleted_defect": "تم حذف الإشعار.",
         "no_items": "لا بنود في هذا الإشعار.",
-        "raised_by": "بواسطة",
-        "at_place": "في",
-        "chat_title": "دردشة الفريق",
-        "chat_sub": "نقاش المشروع لفريق الجودة.",
+        "raised_by": "بواسطة", "at_place": "في",
+        "chat_title": "دردشة الفريق", "chat_sub": "نقاش المشروع لفريق الجودة.",
         "chat_placeholder": "اكتب رسالة...  استخدم @ للإشارة",
-        "chat_send": "إرسال",
-        "chat_empty": "لا رسائل بعد. ابدأ النقاش.",
-        "chat_reply": "رد",
-        "chat_replying_to": "رداً على",
-        "chat_cancel": "إلغاء",
-        "chat_delete": "حذف",
-        "chat_filter_from": "من",
-        "chat_filter_to": "إلى",
+        "chat_send": "إرسال", "chat_empty": "لا رسائل بعد. ابدأ النقاش.",
+        "chat_reply": "رد", "chat_replying_to": "رداً على",
+        "chat_cancel": "إلغاء", "chat_delete": "حذف",
+        "chat_filter_from": "من", "chat_filter_to": "إلى",
         "chat_search": "ابحث بالاسم أو الرسالة...",
         "chat_confirm_delete": "حذف هذه الرسالة؟",
-        "chat_deleted": "تم الحذف.",
-        "chat_you": "أنت",
+        "chat_deleted": "تم الحذف.", "chat_you": "أنت",
         "delete_too_late": "يمكن الحذف خلال 60 ثانية فقط بعد الإرسال.",
         "delete_not_owner": "فقط كاتب الرسالة يمكنه الحذف.",
         "delete_failed": "فشل الحذف.",
-        "my_profile": "ملفي الشخصي",
-        "profile_name": "الاسم",
+        "my_profile": "ملفي الشخصي", "profile_name": "الاسم",
         "profile_title": "المسمى الوظيفي",
         "profile_photo": "صورة شخصية (اختياري)",
-        "profile_saved": "تم الحفظ.",
-        "profile_email": "البريد",
-        "profile_open": "الملف",
-        "new_messages": "رسائل جديدة",
+        "profile_saved": "تم الحفظ.", "profile_email": "البريد",
+        "profile_open": "الملف", "new_messages": "رسائل جديدة",
+        "team_section": "الفريق", "team_members": "الأعضاء",
+        "team_owner": "المالك", "team_invite": "دعوة عضو",
+        "team_invite_title": "دعوة عضو للفريق",
+        "team_invite_hint": "يجب أن يكون لديه حساب بالفعل.",
+        "team_email": "البريد الإلكتروني", "team_role": "الدور",
+        "team_role_engineer": "مهندس", "team_role_consultant": "استشاري",
+        "team_role_viewer": "مشاهد", "team_add": "إضافة للمشروع",
+        "team_added": "تمت الإضافة.", "team_failed": "فشل: ",
+        "team_removed": "تم الحذف.", "team_remove": "حذف",
+        "team_remove_confirm": "حذف هذا العضو من المشروع؟",
+        "team_you": "(أنت)", "team_no_members": "لا أعضاء بعد.",
+        "ms_chat_title": "دردشة MS",
+        "ms_chat_sub": "دردشتك الخاصة مع MS. اسأل أو امسح مستندات. "
+               "لا أحد في الفريق يرى هذا.",
+        "ms_chat_empty": "لا رسائل بعد. اطرح سؤالك بالأسفل.",
+        "ms_chat_ask": "اطرح سؤالاً",
+        "ms_chat_ask_placeholder": "مثال: ما هو الحد الأدنى للغطاء للأعمدة المعرضة للجو؟",
+        "ms_chat_send": "اسأل", "ms_chat_check_btn": "مسح مستند",
+        "ms_chat_check_hint": "ارفع تذكرة خرسانة أو إذن تسليم أو نتيجة اختبار (JPG / PNG / PDF).",
+        "ms_chat_reading": "جاري قراءة المستند...",
+        "ms_chat_analysing": "جاري المقارنة بـ MS...",
+        "ms_chat_answer_from": "الإجابة",
+        "ms_chat_not_found": "غير موجود في MS المحمل.",
+        "ms_chat_doc_type": "نوع المستند",
+        "ms_chat_extracted": "البيانات المستخرجة",
+        "ms_chat_checks": "الفحوصات مقابل MS",
+        "ms_chat_overall": "النتيجة",
+        "ms_chat_compliant": "مطابق",
+        "ms_chat_conditional": "مشروط",
+        "ms_chat_non_compliant": "غير مطابق",
+        "ms_chat_clear": "مسح السجل",
+        "ms_chat_clear_confirm": "حذف كل سجل دردشة MS لهذا المشروع؟",
+        "ms_chat_cleared": "تم المسح.",
+        "ms_chat_need_ms": "ارفع بيانات طريقة عمل أولاً.",
+        "ms_chat_failed": "فشل: ",
+        "ms_chat_kind_question": "سؤال",
+        "ms_chat_kind_check": "فحص مستند",
+        "ms_chat_source": "المصدر",
     },
 }
 
@@ -502,9 +534,14 @@ def _defect_type_options():
     }
 
 
-# ---------------------------------------------------------------------
-# PLACE → ELEMENT GUESS
-# ---------------------------------------------------------------------
+def _role_options():
+    return {
+        "engineer": _t("team_role_engineer"),
+        "consultant": _t("team_role_consultant"),
+        "viewer": _t("team_role_viewer"),
+    }
+
+
 _ELEMENT_KEYWORDS = {
     "column": ["column", "col ", "عمود", "أعمدة", "أعمده"],
     "beam":   ["beam", "كمرة", "كمره", "كمر", "جسر"],
@@ -516,7 +553,6 @@ _ELEMENT_KEYWORDS = {
 
 
 def _guess_element(place_text):
-    """Guess ECP element bucket from free-text 'place of defect'."""
     p = (place_text or "").lower()
     for key, words in _ELEMENT_KEYWORDS.items():
         for w in words:
@@ -525,12 +561,7 @@ def _guess_element(place_text):
     return "column"
 
 
-# ---------------------------------------------------------------------
-# CHAT ROLE COLOR
-# ---------------------------------------------------------------------
 def _chat_author_color(title):
-    """Consultant=red, QC Manager=blue, Project Manager=green,
-    QC Engineer=teal, else muted."""
     t = (title or "").lower()
     if "consultant" in t or "استشاري" in t:
         return "#f87171"
@@ -544,7 +575,7 @@ def _chat_author_color(title):
 
 
 # =====================================================================
-# OCR — read handwriting (image or PDF) via Gemini
+# OCR — handwriting / document text extraction
 # =====================================================================
 _OCR_PROMPT = (
     "You are an OCR engine. Read every word in this document (handwritten "
@@ -557,15 +588,12 @@ _OCR_PROMPT = (
 
 
 async def _ocr_handwriting(file_bytes, mime_type):
-    """Return (text, error). On success, error is None."""
     if not file_bytes:
         return None, "Empty file."
     try:
         from google.genai import types
     except Exception as e:
         return None, "google-genai not available: " + repr(e)
-
-    # Downscale images before upload — saves bandwidth & latency.
     payload = file_bytes
     mime = (mime_type or "image/jpeg").lower()
     if mime.startswith("image/"):
@@ -574,18 +602,15 @@ async def _ocr_handwriting(file_bytes, mime_type):
             mime = "image/jpeg"
         except Exception:
             payload = file_bytes
-
     try:
         part = types.Part.from_bytes(data=payload, mime_type=mime)
     except Exception as e:
         return None, "Could not prepare file: " + repr(e)
-
     try:
         raw = await call_gemini_json([_OCR_PROMPT, part],
                                        temperature=0.0, timeout=45)
     except Exception as e:
         return None, "AI call failed: " + str(e)
-
     text = (raw or "").strip()
     if not text:
         return "", _t("ocr_empty")
@@ -738,7 +763,7 @@ def _inject_theme():
                               margin: 3px !important; }
   .badge-open, .badge-closed, .badge-overdue, .badge-ai, .badge-manual,
   .badge-nophoto, .badge-mismatch, .badge-seen, .badge-closure, .badge-dup,
-  .badge-you {
+  .badge-you, .badge-ok, .badge-warn, .badge-fail, .badge-role {
     display: inline-block; font-size: 9px; font-weight: 700;
     letter-spacing: 0.08em; padding: 2px 6px; border-radius: 2px;
     text-transform: uppercase; line-height: 1.3;
@@ -754,6 +779,9 @@ def _inject_theme():
   .badge-closure { color: var(--success); border: 1px solid rgba(74,222,128,0.3); }
   .badge-dup { color: #c4b5fd; border: 1px solid rgba(196,181,253,0.4); }
   .badge-you { color: var(--accent); border: 1px solid rgba(94,234,212,0.3); }
+  .badge-ok { color: var(--success); border: 1px solid rgba(74,222,128,0.35); }
+  .badge-warn { color: var(--warn); border: 1px solid rgba(251,191,36,0.35); }
+  .badge-fail { color: var(--danger); border: 1px solid rgba(248,113,113,0.35); }
   .q-notification { border-radius: 3px !important; font-weight: 500 !important;
                     font-family: 'JetBrains Mono', monospace !important;
                     font-size: 11px !important;
@@ -896,9 +924,46 @@ def _inject_theme():
   .avatar-big img { width: 100%; height: 100%; object-fit: cover; }
   .chart-card { background: var(--surface); border: 1px solid var(--border);
                 border-radius: 4px; padding: 12px; margin-bottom: 12px; }
-  /* OCR drop-zone */
   .ocr-box { background: var(--surface-2); border: 1px dashed var(--border-2);
              border-radius: 4px; padding: 10px; margin-top: 6px; }
+  /* MS chat */
+  .ms-msg { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 4px; padding: 12px 14px; margin-bottom: 10px; }
+  .ms-msg.kind-question { border-left: 3px solid #60a5fa; }
+  .ms-msg.kind-check { border-left: 3px solid #fbbf24; }
+  .ms-q { font-size: 12px; color: #b8b8b8; margin-bottom: 8px;
+          white-space: pre-wrap; word-break: break-word; }
+  .ms-a { font-size: 13px; color: #e8e8e8; line-height: 1.6;
+          white-space: pre-wrap; word-break: break-word; }
+  .ms-kv { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px;
+           font-size: 11px; color: #b8b8b8; margin-top: 6px; }
+  .ms-kv b { color: #e8e8e8; }
+  .ms-check { display: grid;
+              grid-template-columns: 1fr 90px 60px;
+              gap: 6px; padding: 6px 0;
+              border-bottom: 1px solid var(--border);
+              font-size: 11px; align-items: center; }
+  .ms-check:last-child { border-bottom: none; }
+  .ms-check .field { color: #b8b8b8; }
+  .ms-check .val { color: #e8e8e8; font-weight: 600; }
+  .ms-check .note { grid-column: 1 / -1; font-size: 10px;
+                    color: #808080; margin-top: 2px; }
+  .verdict-ok { color: #4ade80; font-weight: 700; }
+  .verdict-warn { color: #fbbf24; font-weight: 700; }
+  .verdict-fail { color: #f87171; font-weight: 700; }
+  .overall-ok { color: #4ade80; font-weight: 700; letter-spacing: 0.14em; }
+  .overall-warn { color: #fbbf24; font-weight: 700; letter-spacing: 0.14em; }
+  .overall-fail { color: #f87171; font-weight: 700; letter-spacing: 0.14em; }
+  .team-row { display: grid; grid-template-columns: 30px 1fr auto;
+              gap: 8px; align-items: center; padding: 6px 0;
+              border-bottom: 1px solid var(--border); }
+  .team-row:last-child { border-bottom: none; }
+  .team-avatar { width: 26px; height: 26px; border-radius: 50%;
+                 background: var(--surface-3); display: flex;
+                 align-items: center; justify-content: center;
+                 color: var(--accent); font-weight: 700; font-size: 11px;
+                 border: 1px solid var(--border-2); overflow: hidden; }
+  .team-avatar img { width: 100%; height: 100%; object-fit: cover; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -928,23 +993,27 @@ def build_defect_ui(user_id):
         "user_id": user_id, "user": user,
         "project_id": app.storage.user.get("project_id"),
         "project": None, "tab": {"value": "new"},
-        "sub_filter": None,
+        "sub_filter": None, "role": None,
     }
 
     if state["project_id"]:
         p = db.get_project(state["project_id"])
-        if not p or p.get("user_id") != user_id:
+        if not p or not db.is_project_member(user_id, state["project_id"]):
             state["project_id"] = None
             state["project"] = None
             app.storage.user.pop("project_id", None)
         else:
             state["project"] = p
+            state["role"] = db.get_user_role_in_project(
+                user_id, state["project_id"])
 
     if not state["project_id"]:
         projects = db.list_projects(user_id)
         if projects:
             state["project_id"] = projects[0]["id"]
             state["project"] = projects[0]
+            state["role"] = db.get_user_role_in_project(
+                user_id, projects[0]["id"])
             app.storage.user["project_id"] = projects[0]["id"]
 
     with ui.left_drawer(value=False, bordered=False).style(
@@ -992,6 +1061,8 @@ def build_defect_ui(user_id):
                 _build_subs(state)
             elif tab == "chat":
                 _build_chat(state)
+            elif tab == "mschat":
+                _build_ms_chat(state)
             else:
                 _build_dashboard(state)
 
@@ -1001,6 +1072,7 @@ def build_defect_ui(user_id):
             for key, label in [
                 ("new", _t("new_defect")), ("logs", _t("logs")),
                 ("subs", _t("subs")), ("chat", _t("chat")),
+                ("mschat", _t("ms_chat")),
                 ("dashboard", _t("dashboard")),
             ]:
                 active = state["tab"]["value"] == key
@@ -1113,7 +1185,6 @@ def _build_dashboard(state):
         _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
         _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
 
-    # Line chart
     if weeks:
         labels = [w["label"] for w in weeks]
         raised = [w["count"] for w in weeks]
@@ -1187,7 +1258,6 @@ def _build_dashboard(state):
                 ],
             }).style("height:230px;width:100%;")
 
-    # Scatter
     try:
         scatter = db.defect_scatter_data(pid) or []
     except Exception:
@@ -1242,7 +1312,6 @@ def _build_dashboard(state):
                 ],
             }).style("height:230px;width:100%;")
 
-    # Zone bar
     if zones:
         with ui.element('div').classes("chart-card"):
             ui.label(_t("dash_zones")).classes("label").style(
@@ -1274,7 +1343,6 @@ def _build_dashboard(state):
                 }],
             }).style("height:200px;width:100%;")
 
-    # Type pie
     if types:
         with ui.element('div').classes("chart-card"):
             ui.label(_t("defect_type_label")).classes("label").style(
@@ -1301,7 +1369,6 @@ def _build_dashboard(state):
                 }],
             }).style("height:240px;width:100%;")
 
-    # Sub scorecard table
     if scores:
         with ui.element('div').classes("chart-card"):
             ui.label(_t("dash_subs")).classes("label").style(
@@ -1725,6 +1792,73 @@ def _open_my_profile(state, on_saved=None):
 
 
 # =====================================================================
+# TEAM / INVITE
+# =====================================================================
+def _open_invite_member_dialog(state, refresh_fn):
+    if not state.get("project_id"):
+        ui.notify(_t("setup_first"), type="warning")
+        return
+    if state.get("role") != "owner":
+        ui.notify("Only the project owner can invite members.",
+                   type="warning")
+        return
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:320px;max-width:95vw;width:440px;"
+    ):
+        ui.label(_t("team_invite_title")).classes("h1").style(
+            "margin-bottom:4px;")
+        ui.label(_t("team_invite_hint")).classes("mono-sm").style(
+            "margin-bottom:14px;display:block;line-height:1.5;")
+        email_in = ui.input(_t("team_email")).style("width:100%;")
+        role_in = ui.select(_role_options(), value="engineer",
+                             label=_t("team_role")).style("width:100%;")
+
+        def _save():
+            em = (email_in.value or "").strip().lower()
+            if not em or "@" not in em:
+                ui.notify(_t("team_email"), type="warning")
+                return
+            ok, msg = db.add_project_member(
+                project_id=state["project_id"], email=em,
+                role=role_in.value or "engineer")
+            if not ok:
+                ui.notify(_t("team_failed") + str(msg), type="negative")
+                return
+            ui.notify(_t("team_added"), type="positive")
+            dlg.close()
+            ui.timer(0.03, refresh_fn, once=True)
+
+        with ui.element('div').style("display:flex;gap:8px;margin-top:16px;"):
+            ui.button(_t("team_add"), on_click=_save).classes(
+                BTN_PRIMARY).style("flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+    dlg.open()
+
+
+def _confirm_remove_member(state, member, refresh_fn):
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:280px;max-width:95vw;width:380px;"
+    ):
+        ui.label(_t("team_remove_confirm")).classes("h3").style(
+            "margin-bottom:10px;")
+        ui.label(str(member.get("name") or "")).classes("mono-sm").style(
+            "margin-bottom:14px;")
+
+        def _yes():
+            db.remove_project_member(state["project_id"],
+                                       member.get("user_id"))
+            ui.notify(_t("team_removed"), type="positive")
+            dlg.close()
+            ui.timer(0.03, refresh_fn, once=True)
+
+        with ui.element('div').style("display:flex;gap:8px;"):
+            ui.button(_t("team_remove"), on_click=_yes).classes(
+                BTN_DANGER).style("flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+    dlg.open()
+
+
+# =====================================================================
 # DRAWER
 # =====================================================================
 def _build_drawer(state, drawer):
@@ -1791,6 +1925,67 @@ def _build_drawer(state, drawer):
                 ui.element('div').style(
                     "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
 
+                # ---------- TEAM ----------
+                with ui.element('div').style(
+                    "display:flex;justify-content:space-between;"
+                    "align-items:center;margin-bottom:8px;"
+                ):
+                    ui.label(_t("team_members")).classes("label")
+                    if state.get("role") == "owner" and state.get("project_id"):
+                        def _open_invite():
+                            _open_invite_member_dialog(state, refresh)
+                        ui.button(icon="person_add", on_click=_open_invite).props(
+                            "flat round dense size=sm").style(
+                            "color:#5eead4;")
+
+                members = db.list_project_members(state["project_id"])
+                if not members:
+                    ui.label(_t("team_no_members")).classes("mono-sm")
+                else:
+                    for m in members:
+                        role = (m.get("role") or "engineer").lower()
+                        is_me = (m.get("user_id") == state["user_id"])
+                        with ui.element('div').classes("team-row"):
+                            av = '<div class="team-avatar">'
+                            if m.get("name"):
+                                av += _html_mod.escape(
+                                    (m["name"] or "?")[:1].upper())
+                            else:
+                                av += "?"
+                            av += '</div>'
+                            ui.html(av)
+                            with ui.element('div').style("min-width:0;"):
+                                nm = str(m.get("name") or "—")
+                                if is_me:
+                                    nm += " " + _t("team_you")
+                                ui.label(nm).style(
+                                    "font-size:11px;color:#e8e8e8;"
+                                    "font-weight:600;overflow:hidden;"
+                                    "text-overflow:ellipsis;"
+                                    "white-space:nowrap;")
+                                sub = m.get("title") or m.get("email") or ""
+                                if sub:
+                                    ui.label(str(sub)).classes("mono-sm").style(
+                                        "font-size:9px;overflow:hidden;"
+                                        "text-overflow:ellipsis;"
+                                        "white-space:nowrap;")
+                            rc = ROLE_COLORS.get(role, "#808080")
+                            ui.html('<span class="badge-role" style="color:' +
+                                    rc + ';border:1px solid ' + rc +
+                                    '55;">' + role + '</span>')
+                            if (state.get("role") == "owner"
+                                    and role != "owner"):
+                                def _rm(mem=m):
+                                    _confirm_remove_member(state, mem,
+                                                            refresh)
+                                ui.button(icon="close", on_click=_rm).props(
+                                    "flat round dense size=xs").style(
+                                    "color:#5a5a5a;")
+
+                ui.element('div').style(
+                    "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
+
+                # ---------- MS ----------
                 with ui.element('div').style(
                     "display:flex;justify-content:space-between;"
                     "align-items:center;margin-bottom:8px;"
@@ -1880,11 +2075,19 @@ def _open_project_chooser(state, refresh_drawer, refresh_main):
                     loc = p.get("location") or ""
                     if loc:
                         ui.label(loc).classes("mono-sm")
+                    role = db.get_user_role_in_project(state["user_id"], p["id"])
+                    if role:
+                        rc = ROLE_COLORS.get(role, "#808080")
+                        ui.html('<span class="badge-role" style="color:' + rc +
+                                ';border:1px solid ' + rc + '55;margin-top:4px;'
+                                'display:inline-block;">' + role + '</span>')
 
                     def _pick(pid=p["id"]):
                         state["project_id"] = pid
                         app.storage.user["project_id"] = pid
                         state["project"] = db.get_project(pid)
+                        state["role"] = db.get_user_role_in_project(
+                            state["user_id"], pid)
                         state["sub_filter"] = None
                         dlg.close()
                         refresh_drawer()
@@ -1901,6 +2104,9 @@ def _open_project_chooser(state, refresh_drawer, refresh_main):
 
         def _delete():
             if not state.get("project_id"):
+                return
+            if state.get("role") != "owner":
+                ui.notify("Only the owner can delete.", type="warning")
                 return
             _confirm_delete(state, dlg, refresh_drawer, refresh_main)
         ui.button(_t("delete_project"), icon="close", on_click=_delete).props(
@@ -1989,6 +2195,7 @@ def _open_setup_dialog(state, refresh_drawer, is_new=False, on_created=None):
                     state["project_id"] = pid
                     app.storage.user["project_id"] = pid
                     state["project"] = db.get_project(pid)
+                    state["role"] = "owner"
                 else:
                     db.update_project(
                         state["project_id"], name_in.value.strip(),
@@ -2210,21 +2417,16 @@ def _build_new_defect(state):
 
 
 def _open_no_photo_dialog(state, stage, refresh_fn):
-    """No-photo flow: type or SCAN handwriting → edit → analyze."""
     if not state.get("project_id"):
         ui.notify(_t("setup_first"), type="warning")
         return
-
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:340px;max-width:96vw;width:560px;"
         "max-height:92vh;overflow-y:auto;"
     ):
-        ui.label(_t("no_photo_title")).classes("h1").style(
-            "margin-bottom:3px;")
-        ui.label(_t("no_photo_sub")).classes("muted").style(
-            "margin-bottom:14px;")
+        ui.label(_t("no_photo_title")).classes("h1").style("margin-bottom:3px;")
+        ui.label(_t("no_photo_sub")).classes("muted").style("margin-bottom:14px;")
 
-        # -------- OCR block (replaces the "extra note" field) --------
         ui.label(_t("ocr_label")).classes("label").style(
             "margin-bottom:2px;display:block;")
         ui.label(_t("ocr_hint")).classes("mono-sm").style(
@@ -2259,16 +2461,13 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
             ocr_status.set_text(_t("ocr_reading"))
             ocr_status.style("color:#fbbf24;font-size:10px;margin-top:6px;"
                               "display:block;min-height:14px;")
-
             text, err = await _ocr_handwriting(data, mime)
-
             if err:
                 ocr_status.set_text(_t("ocr_failed") + " " + str(err))
                 ocr_status.style("color:#f87171;font-size:10px;"
                                   "margin-top:6px;display:block;"
                                   "min-height:14px;")
                 return
-
             existing = (desc_in.value or "").strip()
             merged = (existing + "\n" + text).strip() if existing else text
             desc_in.value = merged
@@ -2283,11 +2482,9 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
                 "label='" + _t("ocr_upload") + "'")
             ocr_status
 
-        # Editable description appears BELOW the OCR block
         ui.element('div').style("height:6px;")
         desc_in
 
-        # -------- Zone as free-text input + place --------
         with ui.element('div').style(
             "display:grid;grid-template-columns:1fr 2fr;gap:8px;"
             "margin-top:10px;"
@@ -2473,7 +2670,6 @@ def _render_candidates(state, stage, refresh_fn):
 
         def _on_dtype(e):
             stage["defect_type"] = e.value or "General"
-
         dtype_in.on("update:model-value", _on_dtype)
 
         gen_btn = ui.button(_t("generate_pdf"), icon="picture_as_pdf")
@@ -3354,7 +3550,7 @@ def _open_change_password_dialog(state):
 
 
 # =====================================================================
-# CHAT — real-time, 60s delete, role colors
+# TEAM CHAT — real-time, 60s delete, role colors
 # =====================================================================
 def _chat_render_body(body):
     safe = _html_mod.escape(str(body or ""))
@@ -3467,7 +3663,6 @@ def _build_chat(state):
     @ui.refreshable
     def chat_list():
         msgs = db.chat_list(pid, limit=300)
-
         if fstate["query"]:
             q = fstate["query"]
 
@@ -3514,8 +3709,7 @@ def _build_chat(state):
                         name_lbl.style("color:" + a_color + ";")
                         name_lbl.on("click", _open_prof)
                         if title:
-                            ui.label("· " + title).classes(
-                                "chat-title-tag")
+                            ui.label("· " + title).classes("chat-title-tag")
                         if is_mine:
                             ui.html('<span class="badge-you">' +
                                     _t("chat_you") + '</span>')
@@ -3613,8 +3807,7 @@ def _build_chat(state):
                         with ui.element('div').classes("mention-drop"):
                             if not matches:
                                 ui.label("No matches").classes(
-                                    "mention-item").style(
-                                    "color:#5a5a5a;")
+                                    "mention-item").style("color:#5a5a5a;")
                             for a in matches:
                                 def _pick(nm=a):
                                     parts = (body_in.value or "").split()
@@ -3657,7 +3850,6 @@ def _build_chat(state):
         ui.button(_t("chat_send"), icon="send", on_click=_send).classes(
             BTN_PRIMARY).style("width:100%;margin-top:6px;")
 
-    # Real-time poll
     state.setdefault("_chat_last_id", db.chat_max_id(pid))
     ui.timer(0.4, lambda: ui.run_javascript(
         "window.scrollTo({top: document.body.scrollHeight,"
@@ -3688,7 +3880,288 @@ def _build_chat(state):
                 except Exception:
                     pass
 
-    ui.timer(2.0, _poll)
+    ui.timer(5.0, _poll)
+
+
+# =====================================================================
+# MS CHAT — Q&A + document check
+# =====================================================================
+def _build_ms_chat(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    pid = state["project_id"]
+    user = state.get("user") or {}
+    my_name = (user.get("name") or user.get("email") or "me")
+
+    with ui.element('div').classes("section-head"):
+        ui.label(_t("ms_chat_title")).classes("h1")
+
+        with ui.element('div').style("display:flex;gap:6px;"):
+            def _clear_hist():
+                ui.notify(_t("ms_chat_cleared"), type="positive")
+                ms_list.refresh()
+
+            ui.button(_t("ms_chat_clear"), icon="delete_sweep",
+                      on_click=_clear_hist).classes(BTN_SOFT).style(
+                "font-size:10px;min-height:28px;")
+
+            def _refresh():
+                state["render_main"]()
+            ui.button(icon="refresh", on_click=_refresh).props(
+                "flat round dense size=sm").style("color:#808080;")
+
+    ui.label(_t("ms_chat_sub")).classes("muted").style("margin-bottom:12px;")
+
+    clauses_count = len(db.get_clauses_for_element(pid))
+    if clauses_count == 0:
+        with ui.element('div').classes("card").style(
+            "text-align:center;padding:26px 20px;margin-bottom:12px;"
+        ):
+            ui.icon("description").style("font-size:26px;color:#5a5a5a;")
+            ui.label(_t("ms_chat_need_ms")).classes("muted").style(
+                "margin-top:10px;line-height:1.6;")
+        return
+
+    ui.label(str(clauses_count) + " " + _t("clauses_count")).classes(
+        "mono-sm").style("margin-bottom:10px;")
+
+    @ui.refreshable
+    def ms_list():
+        msgs = db.ms_chat_list(pid, state["user_id"], limit=200)
+        if not msgs:
+            ui.label(_t("ms_chat_empty")).classes("mono-sm").style(
+                "text-align:center;padding:32px 0;color:#5a5a5a;")
+            return
+        for m in msgs:
+            _render_ms_message(m)
+
+    ms_list()
+
+    # --- Composer ---
+    with ui.element('div').classes("chat-composer"):
+        ui.label(_t("ms_chat_ask")).classes("label").style(
+            "display:block;margin-bottom:4px;")
+        q_in = ui.textarea(
+            placeholder=_t("ms_chat_ask_placeholder")).style("width:100%;"
+        ).props("dense autogrow")
+
+        async def _ask():
+            q = (q_in.value or "").strip()
+            if not q:
+                return
+            btn_ask.props("loading")
+            btn_ask.set_text(_t("analyzing"))
+            result = await msc.ask_ms_question(pid, q, call_gemini_json)
+            btn_ask.props(remove="loading")
+            btn_ask.set_text(_t("ms_chat_send"))
+            if result.get("error"):
+                ui.notify(_t("ms_chat_failed") + str(result["error"]),
+                           type="negative")
+                return
+            db.ms_chat_add(pid, state["user_id"], my_name,
+                            "question", q, {"answer": result["answer"]})
+            q_in.value = ""
+            ms_list.refresh()
+            ui.run_javascript(
+                "window.scrollTo({top: document.body.scrollHeight,"
+                " behavior:'smooth'});")
+
+        btn_ask = ui.button(_t("ms_chat_send"), icon="send", on_click=_ask)
+        btn_ask.classes(BTN_PRIMARY).style("width:100%;margin-top:6px;")
+
+        with ui.element('div').classes("or-divider"):
+            ui.label(_t("or_divider"))
+
+        ui.label(_t("ms_chat_check_hint")).classes("mono-sm").style(
+            "display:block;margin-bottom:6px;line-height:1.5;")
+
+        doc_status = ui.label("").classes("mono-sm").style(
+            "margin-top:6px;display:block;min-height:14px;")
+
+        async def _handle_doc(e):
+            try:
+                data = await e.file.read()
+            except Exception as ex:
+                ui.notify(_t("upload_failed") + str(ex), type="negative")
+                return
+            if not data:
+                ui.notify(_t("empty_file"), type="warning")
+                return
+            name = (e.file.name or "").lower()
+            if name.endswith(".pdf"):
+                mime = "application/pdf"
+            elif name.endswith(".png"):
+                mime = "image/png"
+            else:
+                mime = "image/jpeg"
+
+            doc_status.set_text(_t("ms_chat_reading"))
+            doc_status.style("color:#fbbf24;font-size:10px;margin-top:6px;"
+                              "display:block;min-height:14px;")
+            try:
+                result = await msc.check_document_against_ms(
+                    file_bytes=data, mime_type=mime, project_id=pid,
+                    ocr_fn=_ocr_handwriting,
+                    call_gemini_json_fn=call_gemini_json)
+            except Exception as ex:
+                doc_status.set_text(_t("ms_chat_failed") + str(ex))
+                doc_status.style("color:#f87171;font-size:10px;"
+                                  "margin-top:6px;display:block;"
+                                  "min-height:14px;")
+                return
+            if result.get("error"):
+                doc_status.set_text(_t("ms_chat_failed") +
+                                     str(result["error"]))
+                doc_status.style("color:#f87171;font-size:10px;"
+                                  "margin-top:6px;display:block;"
+                                  "min-height:14px;")
+                return
+            doc_status.set_text("")
+            resp = {k: result.get(k) for k in
+                    ("doc_type", "extracted", "checks", "overall",
+                     "summary", "ocr_text")}
+            db.ms_chat_add(pid, state["user_id"], my_name,
+                            "check", _t("ms_chat_check_btn"), resp)
+            ms_list.refresh()
+            ui.run_javascript(
+                "window.scrollTo({top: document.body.scrollHeight,"
+                " behavior:'smooth'});")
+
+        ui.upload(on_upload=_handle_doc, auto_upload=True).style(
+            "width:100%;").props(
+            "flat bordered accept=image/*,.pdf label='" +
+            _t("ms_chat_check_btn") + "'")
+        doc_status
+
+    state.setdefault("_ms_chat_last_id",
+                     db.ms_chat_max_id(pid, state["user_id"]))
+    async def _ms_poll():
+        try:
+            cur_max = db.ms_chat_max_id(pid, state["user_id"])
+
+    async def _ms_poll():
+        try:
+            cur_max = db.ms_chat_max_id(pid)
+        except Exception:
+            return
+        if cur_max != state.get("_ms_chat_last_id"):
+            state["_ms_chat_last_id"] = cur_max
+            try:
+                ms_list.refresh()
+            except Exception:
+                pass
+
+    ui.timer(5.0, _ms_poll)
+
+
+def _render_ms_message(m):
+    kind = (m.get("kind") or "question").lower()
+    cls = "ms-msg kind-question" if kind == "question" else "ms-msg kind-check"
+    author = m.get("author") or "?"
+    created = str(m.get("created_at") or "")[:16]
+    body = m.get("body") or ""
+    resp = m.get("response") or {}
+
+    with ui.element('div').classes(cls):
+        with ui.element('div').style(
+            "display:flex;justify-content:space-between;"
+            "align-items:center;gap:8px;margin-bottom:6px;"
+        ):
+            with ui.element('div').style(
+                "display:flex;align-items:center;gap:6px;"
+            ):
+                ui.html('<span class="badge-seen" style="color:#b8b8b8;">' +
+                        _html_mod.escape(
+                            _t("ms_chat_kind_question") if kind == "question"
+                            else _t("ms_chat_kind_check")) + '</span>')
+                ui.label(author).style(
+                    "font-size:11px;color:#b8b8b8;font-weight:600;")
+            ui.label(created).classes("chat-time")
+
+        if kind == "question":
+            with ui.element('div').style(
+                "background:#161616;border:1px solid #1e1e1e;"
+                "border-radius:3px;padding:8px 10px;margin-bottom:8px;"
+            ):
+                ui.label("Q: " + str(body)).classes("ms-q").style(
+                    "margin-bottom:0;")
+            answer = str(resp.get("answer") or "")
+            ui.label(_t("ms_chat_answer_from")).classes("label").style(
+                "display:block;margin-bottom:4px;")
+            ui.label(answer).classes("ms-a")
+        else:
+            ui.label(_t("ms_chat_check_btn")).classes("label").style(
+                "display:block;margin-bottom:6px;")
+            doc_type = resp.get("doc_type") or ""
+            if doc_type:
+                ui.label(_t("ms_chat_doc_type") + ": " + str(doc_type)).style(
+                    "font-size:12px;color:#e8e8e8;font-weight:600;"
+                    "margin-bottom:8px;")
+            extracted = resp.get("extracted") or {}
+            if extracted:
+                ui.label(_t("ms_chat_extracted")).classes("label").style(
+                    "display:block;margin-bottom:4px;")
+                with ui.element('div').classes("ms-kv"):
+                    for k, v in extracted.items():
+                        ui.html("<div><b>" + _html_mod.escape(str(k)) +
+                                ":</b> " + _html_mod.escape(str(v)) +
+                                "</div>")
+            checks = resp.get("checks") or []
+            if checks:
+                ui.label(_t("ms_chat_checks")).classes("label").style(
+                    "display:block;margin-top:10px;margin-bottom:4px;")
+                for c in checks:
+                    v = (c.get("verdict") or "").lower()
+                    vcls = ("verdict-ok" if v == "ok" else
+                            "verdict-warn" if v == "warn" else
+                            "verdict-fail")
+                    field = str(c.get("field") or "")
+                    val = str(c.get("value") or "")
+                    req = str(c.get("ms_requirement") or "")
+                    cid = str(c.get("clause_id") or "")
+                    note = str(c.get("note") or "")
+                    with ui.element('div').classes("ms-check"):
+                        ui.html("<div class='field'>" +
+                                _html_mod.escape(field) + "</div>")
+                        ui.html("<div class='val'>" +
+                                _html_mod.escape(val) + "</div>")
+                        extra = (v or "").upper()
+                        ui.html("<div class='" + vcls + "'>" + extra +
+                                "</div>")
+                        line2 = []
+                        if req:
+                            line2.append("MS: " + req)
+                        if cid:
+                            line2.append("[" + _html_mod.escape("S" + cid) +
+                                          "]")
+                        if note:
+                            line2.append(note)
+                        if line2:
+                            ui.html("<div class='note'>" +
+                                    _html_mod.escape(" · ".join(line2)) +
+                                    "</div>")
+            overall = (resp.get("overall") or "").lower()
+            if overall:
+                ocls = ("overall-ok" if overall == "compliant" else
+                        "overall-warn" if overall == "conditional" else
+                        "overall-fail")
+                olabel = ("ms_chat_compliant" if overall == "compliant" else
+                          "ms_chat_conditional" if overall == "conditional"
+                          else "ms_chat_non_compliant")
+                ui.element('div').style("height:10px;")
+                with ui.element('div').style(
+                    "display:flex;justify-content:space-between;"
+                    "align-items:center;padding-top:6px;"
+                    "border-top:1px solid #1e1e1e;margin-top:6px;"
+                ):
+                    ui.label(_t("ms_chat_overall")).classes("label")
+                    ui.html("<div class='" + ocls + "'>" +
+                            _html_mod.escape(_t(olabel)) + "</div>")
+            summary = resp.get("summary") or ""
+            if summary:
+                ui.label(str(summary)).classes("mono-sm").style(
+                    "margin-top:8px;line-height:1.5;")
 
 
 def _open_member_profile(user_id):
@@ -3720,26 +4193,11 @@ def _open_member_profile(user_id):
                     "font-size:11px;color:" + color + ";font-weight:600;"
                     "letter-spacing:0.05em;"
                 )
+            if u.get("email"):
+                ui.label(u["email"]).classes("mono-sm").style(
+                    "margin-top:2px;")
         ui.element('div').style("height:14px;")
         ui.button(_t("close"), on_click=dlg.close).classes(BTN_SOFT).style(
             "width:100%;"
         )
     dlg.open()
-
-
-def _confirm_delete_chat(state, msg_id, refresh_fn):
-    """Legacy helper — kept for compatibility. Uses secure delete."""
-    ok, reason = db.chat_delete_secure(msg_id, state["user_id"],
-                                        within_seconds=60)
-    if ok:
-        ui.notify(_t("chat_deleted"), type="positive")
-    elif reason == "too_late":
-        ui.notify(_t("delete_too_late"), type="warning")
-    elif reason == "not_owner":
-        ui.notify(_t("delete_not_owner"), type="warning")
-    else:
-        ui.notify(_t("delete_failed"), type="negative")
-    try:
-        refresh_fn()
-    except Exception:
-        pass
