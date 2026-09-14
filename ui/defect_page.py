@@ -1,12 +1,14 @@
 """
 ui/defect_page.py — Full file.
+- OCR for handwritten notes in the "no photo" dialog.
+- Free-text zone input (no dropdown lock).
 - Real-time chat (2s poll, smart scroll).
 - 60-second delete window on chat messages.
 - Role-colored chat authors (consultant=red, QC mgr=blue, PM=green).
 - Defect type saved on every notice + filter in logs.
 - Engineer name + place shown under every log title.
 - Place-of-defect (free text) replaces element dropdown on raise.
-- Interactive ECharts dashboard (line + scatter + bar).
+- Interactive ECharts dashboard (line + scatter + bar + pie).
 """
 import io
 import re
@@ -47,7 +49,8 @@ T = {
         "photos_count": "photo(s)",
         "no_photo_btn": "Raise defect without photo",
         "no_photo_title": "Defect without photo",
-        "no_photo_sub": "Describe the defect. AI will match it to the MS.",
+        "no_photo_sub": "Describe the defect, or scan a handwritten note. "
+                         "AI will match it to the MS.",
         "defect_desc": "Defect description",
         "defect_desc_placeholder": "e.g. exposed rebar at column C3 base",
         "extra_note": "Extra note (optional)",
@@ -56,6 +59,7 @@ T = {
         "note_label": "Note (optional)",
         "note_placeholder": "e.g. crack at column C3 base",
         "zone": "Zone",
+        "zone_placeholder": "A / B / Block 2 / Roof...",
         "place_of_defect": "PLACE OF THE DEFECT",
         "place_of_defect_placeholder":
             "e.g. Block B, Column C3 base, Grid 4-5",
@@ -85,6 +89,15 @@ T = {
         "tag_ai": "AI", "tag_manual": "MANUAL",
         "tag_nophoto": "NO PHOTO", "mismatch_warn": "NO MS MATCH",
         "tag_dup": "SEEN {n}x",
+        "ocr_label": "SCAN HANDWRITTEN NOTE (optional)",
+        "ocr_hint": "Upload or take a photo of the handwritten page "
+                     "(JPG / PNG) or a PDF. AI reads it and fills the "
+                     "description below — you can edit it.",
+        "ocr_upload": "Take or upload a photo / PDF",
+        "ocr_reading": "Reading handwriting...",
+        "ocr_done": "Text extracted. Edit below if needed.",
+        "ocr_failed": "OCR failed:",
+        "ocr_empty": "No readable text found.",
         "logs_title": "DEFECT LOGS",
         "logs_sub": "Every notice issued. Tap to view.",
         "no_logs": "No notices yet.",
@@ -250,7 +263,8 @@ T = {
         "photos_count": "صورة",
         "no_photo_btn": "عيب بدون صورة",
         "no_photo_title": "عيب بدون صورة",
-        "no_photo_sub": "صف العيب. سيطابقه الذكاء الاصطناعي.",
+        "no_photo_sub": "صف العيب، أو امسح ملاحظة مكتوبة بخط اليد. "
+                         "سيطابقها الذكاء الاصطناعي.",
         "defect_desc": "وصف العيب",
         "defect_desc_placeholder": "مثال: حديد مكشوف عند قاعدة C3",
         "extra_note": "ملاحظة إضافية (اختياري)",
@@ -259,6 +273,7 @@ T = {
         "note_label": "ملاحظة (اختياري)",
         "note_placeholder": "مثال: شرخ عند قاعدة C3",
         "zone": "المنطقة",
+        "zone_placeholder": "A / B / بلوك 2 / السطح...",
         "place_of_defect": "مكان العيب",
         "place_of_defect_placeholder":
             "مثال: بلوك B، قاعدة عمود C3، محور 4-5",
@@ -287,6 +302,14 @@ T = {
         "tag_ai": "AI", "tag_manual": "يدوي",
         "tag_nophoto": "بدون صورة", "mismatch_warn": "لا بند مطابق",
         "tag_dup": "سُبق {n}x",
+        "ocr_label": "امسح ملاحظة مكتوبة بخط اليد (اختياري)",
+        "ocr_hint": "ارفع أو صوّر الصفحة المكتوبة (JPG / PNG) أو PDF. "
+                     "سيقرأها الذكاء الاصطناعي ويملأ الوصف — يمكنك تعديله.",
+        "ocr_upload": "التقط أو ارفع صورة / PDF",
+        "ocr_reading": "جاري قراءة الخط...",
+        "ocr_done": "تم استخراج النص. عدّل بالأسفل إن لزم.",
+        "ocr_failed": "فشل القراءة:",
+        "ocr_empty": "لا يوجد نص مقروء.",
         "logs_title": "سجل العيوب",
         "logs_sub": "كل إشعار صدر.",
         "no_logs": "لا توجد إشعارات.",
@@ -517,6 +540,55 @@ def _chat_author_color(title):
     if "qc engineer" in t or "مهندس الجودة" in t:
         return "#5eead4"
     return "#b8b8b8"
+
+
+# =====================================================================
+# OCR — read handwriting (image or PDF) via Gemini
+# =====================================================================
+_OCR_PROMPT = (
+    "You are an OCR engine. Read every word in this document (handwritten "
+    "or printed). Return ONLY the raw extracted text, in the same language "
+    "as the source. Do NOT translate. Do NOT summarize. Do NOT add "
+    "commentary, headings, markdown, bullets, or quotation marks. Preserve "
+    "line breaks. If a word is unclear, transcribe your best guess. If the "
+    "image contains no readable text, return an empty string."
+)
+
+
+async def _ocr_handwriting(file_bytes, mime_type):
+    """Return (text, error). On success, error is None."""
+    if not file_bytes:
+        return None, "Empty file."
+    try:
+        from google.genai import types
+    except Exception as e:
+        return None, "google-genai not available: " + repr(e)
+
+    # Downscale images before upload — saves bandwidth & latency.
+    payload = file_bytes
+    mime = (mime_type or "image/jpeg").lower()
+    if mime.startswith("image/"):
+        try:
+            payload = svc._shrink_image(file_bytes, max_side=1600)
+            mime = "image/jpeg"
+        except Exception:
+            payload = file_bytes
+
+    try:
+        part = types.Part.from_bytes(data=payload, mime_type=mime)
+    except Exception as e:
+        return None, "Could not prepare file: " + repr(e)
+
+    try:
+        raw = await call_gemini_json([_OCR_PROMPT, part],
+                                       temperature=0.0, timeout=45)
+    except Exception as e:
+        return None, "AI call failed: " + str(e)
+
+    text = (raw or "").strip()
+    if not text:
+        return "", _t("ocr_empty")
+    return text, None
 
 
 # =====================================================================
@@ -823,6 +895,9 @@ def _inject_theme():
   .avatar-big img { width: 100%; height: 100%; object-fit: cover; }
   .chart-card { background: var(--surface); border: 1px solid var(--border);
                 border-radius: 4px; padding: 12px; margin-bottom: 12px; }
+  /* OCR drop-zone */
+  .ocr-box { background: var(--surface-2); border: 1px dashed var(--border-2);
+             border-radius: 4px; padding: 10px; margin-top: 6px; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -969,7 +1044,7 @@ def _render_no_project(state, refresh_fn):
 
 
 # =====================================================================
-# DASHBOARD — ECharts (line + scatter + bar)
+# DASHBOARD
 # =====================================================================
 def _build_dashboard(state):
     if not state.get("project_id"):
@@ -1036,11 +1111,10 @@ def _build_dashboard(state):
         _metric_cell(_t("kpi_closed_7d"), kpis["closed_7d"], "closed")
         _metric_cell(_t("kpi_avg_days"), str(kpis["avg_days"]) + "d", "accent")
 
-    # -------- Line chart: raised vs closed per week --------
+    # Line chart
     if weeks:
         labels = [w["label"] for w in weeks]
         raised = [w["count"] for w in weeks]
-        # Estimate "closed per week" from raw defects
         try:
             rows = db.list_defects(pid) or []
             now = datetime.datetime.utcnow()
@@ -1111,7 +1185,7 @@ def _build_dashboard(state):
                 ],
             }).style("height:230px;width:100%;")
 
-    # -------- Scatter: days open vs days to close --------
+    # Scatter
     try:
         scatter = db.defect_scatter_data(pid) or []
     except Exception:
@@ -1126,10 +1200,8 @@ def _build_dashboard(state):
                 "margin-bottom:6px;display:block;")
             ui.echart({
                 'backgroundColor': 'transparent',
-                'tooltip': {
-                    'trigger': 'item',
-                    'formatter': 'UID: {c}',
-                },
+                'tooltip': {'trigger': 'item',
+                             'formatter': 'UID: {c}'},
                 'legend': {
                     'data': [_t("kpi_open"), _t("kpi_closed")],
                     'textStyle': {'color': '#808080', 'fontSize': 10},
@@ -1168,7 +1240,7 @@ def _build_dashboard(state):
                 ],
             }).style("height:230px;width:100%;")
 
-    # -------- Zone bar chart --------
+    # Zone bar
     if zones:
         with ui.element('div').classes("chart-card"):
             ui.label(_t("dash_zones")).classes("label").style(
@@ -1200,7 +1272,7 @@ def _build_dashboard(state):
                 }],
             }).style("height:200px;width:100%;")
 
-    # -------- Type distribution (if available) --------
+    # Type pie
     if types:
         with ui.element('div').classes("chart-card"):
             ui.label(_t("defect_type_label")).classes("label").style(
@@ -1227,7 +1299,7 @@ def _build_dashboard(state):
                 }],
             }).style("height:240px;width:100%;")
 
-    # -------- Sub scorecard table --------
+    # Sub scorecard table
     if scores:
         with ui.element('div').classes("chart-card"):
             ui.label(_t("dash_subs")).classes("label").style(
@@ -2136,31 +2208,96 @@ def _build_new_defect(state):
 
 
 def _open_no_photo_dialog(state, stage, refresh_fn):
+    """No-photo flow: type or SCAN handwriting → edit → analyze."""
     if not state.get("project_id"):
         ui.notify(_t("setup_first"), type="warning")
         return
+
     with ui.dialog() as dlg, ui.card().style(
-        "padding:20px;min-width:320px;max-width:95vw;width:500px;"
+        "padding:20px;min-width:340px;max-width:96vw;width:560px;"
+        "max-height:92vh;overflow-y:auto;"
     ):
         ui.label(_t("no_photo_title")).classes("h1").style(
             "margin-bottom:3px;")
         ui.label(_t("no_photo_sub")).classes("muted").style(
             "margin-bottom:14px;")
-        desc_in = ui.textarea(label=_t("defect_desc"),
-                                placeholder=_t("defect_desc_placeholder")).style(
-            "width:100%;")
-        note_in = ui.textarea(label=_t("extra_note"),
-                                placeholder=_t("extra_note_placeholder")).style(
-            "width:100%;")
+
+        # -------- OCR block (replaces the "extra note" field) --------
+        ui.label(_t("ocr_label")).classes("label").style(
+            "margin-bottom:2px;display:block;")
+        ui.label(_t("ocr_hint")).classes("mono-sm").style(
+            "margin-bottom:8px;display:block;line-height:1.5;")
+
+        ocr_status = ui.label("").classes("mono-sm").style(
+            "margin-top:6px;display:block;min-height:14px;")
+
+        desc_in = ui.textarea(
+            label=_t("defect_desc"),
+            placeholder=_t("defect_desc_placeholder")).style("width:100%;")
+
+        async def handle_ocr(e):
+            try:
+                data = await e.file.read()
+            except Exception as ex:
+                ui.notify(_t("upload_failed") + str(ex), type="negative")
+                return
+            if not data:
+                ui.notify(_t("empty_file"), type="warning")
+                return
+            name = (e.file.name or "").lower()
+            if name.endswith(".pdf"):
+                mime = "application/pdf"
+            elif name.endswith(".png"):
+                mime = "image/png"
+            elif name.endswith((".jpg", ".jpeg")):
+                mime = "image/jpeg"
+            else:
+                mime = "image/jpeg"
+
+            ocr_status.set_text(_t("ocr_reading"))
+            ocr_status.style("color:#fbbf24;font-size:10px;margin-top:6px;"
+                              "display:block;min-height:14px;")
+
+            text, err = await _ocr_handwriting(data, mime)
+
+            if err:
+                ocr_status.set_text(_t("ocr_failed") + " " + str(err))
+                ocr_status.style("color:#f87171;font-size:10px;"
+                                  "margin-top:6px;display:block;"
+                                  "min-height:14px;")
+                return
+
+            existing = (desc_in.value or "").strip()
+            merged = (existing + "\n" + text).strip() if existing else text
+            desc_in.value = merged
+            ocr_status.set_text(_t("ocr_done"))
+            ocr_status.style("color:#4ade80;font-size:10px;margin-top:6px;"
+                              "display:block;min-height:14px;")
+
+        with ui.element('div').classes("ocr-box"):
+            ui.upload(on_upload=handle_ocr, auto_upload=True).style(
+                "width:100%;").props(
+                "flat bordered accept=image/*,.pdf "
+                "label='" + _t("ocr_upload") + "'")
+            ocr_status
+
+        # Editable description appears BELOW the OCR block
+        ui.element('div').style("height:6px;")
+        desc_in
+
+        # -------- Zone as free-text input + place --------
         with ui.element('div').style(
             "display:grid;grid-template-columns:1fr 2fr;gap:8px;"
-            "margin-top:8px;"
+            "margin-top:10px;"
         ):
-            zone_in = ui.select(_zone_options(), value="A", label=_t("zone"))
+            zone_in = ui.input(_t("zone"), value="A",
+                                placeholder=_t("zone_placeholder")).style(
+                "width:100%;")
             place_in = ui.input(
                 _t("place_of_defect"),
                 placeholder=_t("place_of_defect_placeholder")).style(
                 "width:100%;")
+
         btn = ui.button(_t("analyze"), icon="auto_awesome")
 
         async def do_analyze():
@@ -2174,7 +2311,7 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
                 state["project_id"], element_type)
             result = await svc.analyze_defect_text(
                 description=desc_in.value.strip(),
-                note=note_in.value or "",
+                note="",
                 ms_clauses=ms_clauses,
                 element_type=element_type,
                 call_gemini_json_fn=call_gemini_json)
@@ -2188,9 +2325,9 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
             stage["photos"] = []
             stage["text_only"] = True
             stage["text_desc"] = desc_in.value.strip()
-            stage["note"] = note_in.value or ""
-            stage["zone"] = zone_in.value
-            stage["place"] = place_in.value or ""
+            stage["note"] = ""
+            stage["zone"] = (zone_in.value or "A").strip() or "A"
+            stage["place"] = (place_in.value or "").strip()
             stage["element"] = element_type
             for c in stage["candidates"]:
                 c["_sel"] = True
@@ -2200,7 +2337,7 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
             ui.timer(0.15, refresh_fn, once=True)
 
         btn.on("click", do_analyze)
-        btn.classes(BTN_PRIMARY).style("width:100%;margin-top:12px;")
+        btn.classes(BTN_PRIMARY).style("width:100%;margin-top:14px;")
         with ui.element('div').style("margin-top:6px;"):
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
                 BTN_SOFT).style("width:100%;")
@@ -2225,8 +2362,9 @@ def _render_body_contents(state, stage, refresh_fn):
                 "display:grid;grid-template-columns:1fr 2fr;gap:8px;"
                 "margin-top:8px;"
             ):
-                zone_in = ui.select(_zone_options(), value="A",
-                                     label=_t("zone"))
+                zone_in = ui.input(_t("zone"), value="A",
+                                    placeholder=_t("zone_placeholder")).style(
+                    "width:100%;")
                 place_in = ui.input(
                     _t("place_of_defect"),
                     placeholder=_t("place_of_defect_placeholder")).style(
@@ -2252,8 +2390,8 @@ def _render_body_contents(state, stage, refresh_fn):
                 stage["candidates"] = list(result["defects"])
                 stage["manual"] = []
                 stage["note"] = note_in.value or ""
-                stage["zone"] = zone_in.value
-                stage["place"] = place_in.value or ""
+                stage["zone"] = (zone_in.value or "A").strip() or "A"
+                stage["place"] = (place_in.value or "").strip()
                 stage["element"] = element_type
                 for c in stage["candidates"]:
                     c["_sel"] = True
@@ -2322,11 +2460,9 @@ def _render_candidates(state, stage, refresh_fn):
         engineer_in = ui.input(_t("engineer_field"),
                                 value=default_eng).style(
             "width:100%;margin-top:8px;")
-        # Place is captured earlier (photo/text stage); show it read-only
         ui.input(_t("place_of_defect"),
                   value=stage.get("place", "")).props("readonly").style(
             "width:100%;margin-top:8px;")
-        # Defect type selector
         dtype_in = ui.select(
             _defect_type_options(),
             value=stage.get("defect_type", "General"),
@@ -2504,7 +2640,7 @@ def _open_add_dialog(stage, refresh_fn):
 
 
 # =====================================================================
-# LOGS — engineer+place under title, defect-type filter
+# LOGS
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
@@ -2646,7 +2782,6 @@ def _build_logs(state):
         on_change=_on_filter,
     ).style("width:100%;margin-bottom:8px;").props("dense")
 
-    # ---- NEW: defect type filter ----
     ui.select(
         {"all": _t("defect_type_all"),
          "Structural": _t("defect_type_structural"),
@@ -2684,8 +2819,6 @@ def _render_log_card(row, refresh_fn):
             with ui.element('div').style("flex:1;min-width:0;"):
                 ui.label(str(title) + extra).classes("mono-lg").style(
                     "margin-bottom:4px;")
-
-                # ---- Engineer name + place under the title ----
                 meta_bits = []
                 if row.get("engineer_name"):
                     meta_bits.append(str(row["engineer_name"]))
@@ -2694,19 +2827,16 @@ def _render_log_card(row, refresh_fn):
                 if meta_bits:
                     ui.label(" · ".join(meta_bits)).classes("mono-sm").style(
                         "margin-bottom:4px;color:#c8c8c8;")
-
                 ui.label(
                     row.get("uid", "") + "  " +
                     str(row.get("zone", "")) + "  " +
                     str(row.get("subcontractor", ""))
                 ).classes("mono-sm")
-
                 dt = row.get("defect_type") or ""
                 if dt:
                     ui.html('<span class="badge-seen" style="margin-top:4px;'
                             'display:inline-block;">' +
                             _html_mod.escape(str(dt)) + '</span>')
-
             ui.html('<span class="' + badge + '">' + badge_txt + '</span>')
 
         def _click():
@@ -2963,8 +3093,7 @@ def _open_edit_defect_dialog(d, on_close_cb):
                      "3": "3 " + _t("days"), "5": "5 " + _t("days"),
                      "7": "7 " + _t("days"), "14": "14 " + _t("days")},
                     label=_t("deadline")).bind_value(meta, "deadline_days")
-                ui.select(_zone_options(),
-                           label=_t("zone")).bind_value(meta, "zone")
+                ui.input(_t("zone")).bind_value(meta, "zone")
             ui.select(
                 {"qc_internal": _t("qc_internal"),
                  "consultant": _t("consultant_ncr")},
@@ -3321,7 +3450,6 @@ def _build_chat(state):
 
     render_reply_indicator()
 
-    # --- Profile cache shared across renders ---
     _prof_cache = {}
 
     def _get_profile(uid):
@@ -3414,7 +3542,6 @@ def _build_chat(state):
                         "cursor:pointer;"
                     ).on("click", _reply)
 
-                    # ---- 60-second delete window ----
                     if is_mine:
                         cd = _parse_dt(created_raw)
                         remaining = 0
@@ -3521,7 +3648,6 @@ def _build_chat(state):
             render_reply_indicator()
             mention_holder.style("display:none;")
             chat_list.refresh()
-            # force scroll to bottom on send
             ui.run_javascript(
                 "window.scrollTo({top: document.body.scrollHeight,"
                 " behavior:'smooth'});")
@@ -3529,9 +3655,8 @@ def _build_chat(state):
         ui.button(_t("chat_send"), icon="send", on_click=_send).classes(
             BTN_PRIMARY).style("width:100%;margin-top:6px;")
 
-    # -------- Real-time poll: 2 seconds --------
+    # Real-time poll
     state.setdefault("_chat_last_id", db.chat_max_id(pid))
-    # initial scroll to bottom
     ui.timer(0.4, lambda: ui.run_javascript(
         "window.scrollTo({top: document.body.scrollHeight,"
         " behavior:'auto'});"), once=True)
