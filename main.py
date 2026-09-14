@@ -11,6 +11,7 @@ from fastapi.responses import Response, RedirectResponse
 from services import auth_service as auth
 from services import billing_db as bdb
 from services import payment_service as pay
+from services import defect_db as db
 from ui.auth_page import login_page, signup_page
 from ui.landing_page import landing_page
 from ui.pricing_page import pricing_page
@@ -186,6 +187,72 @@ def signup_route():
         ui.navigate.to('/app')
         return
     signup_page()
+@ui.page('/join')
+def join_route(token: str = ""):
+    uid = _current_user_id()
+    if not uid:
+        app.storage.user["pending_invite"] = token
+        ui.navigate.to('/signup')
+        return
+    ok, reason, project_id, role = db.invite_consume(token, uid)
+    if not ok:
+        _render_join_error(reason)
+        return
+    proj = db.get_project(project_id) or {}
+    app.storage.user["project_id"] = project_id
+    _render_join_success(proj, role, already=(reason == "already_member"))
+
+
+def _render_join_error(reason):
+    reasons = {
+        "no_token": "No invite token.",
+        "not_found": "This invite link is not valid.",
+        "revoked": "This invite link was revoked by the owner.",
+        "expired": "This invite link has expired.",
+        "used_up": "This invite link reached its maximum number of uses.",
+        "bad_expiry": "This invite link is broken.",
+    }
+    msg = reasons.get(reason, "Could not process this invite link.")
+    with ui.column().classes(
+        "w-full min-h-screen items-center justify-center").style(
+        "background:#0b0b0b;color:#e8e8e8;"
+        "font-family:'JetBrains Mono',monospace;"
+    ):
+        ui.icon("error_outline").style("font-size:52px;color:#f87171;")
+        ui.label("Invite failed").style(
+            "font-size:22px;font-weight:700;margin-top:16px;")
+        ui.label(msg).style(
+            "color:#b8b8b8;font-size:13px;margin-top:6px;max-width:420px;"
+            "text-align:center;")
+        ui.element('div').style("height:22px;")
+        ui.button("Go home",
+                  on_click=lambda: ui.navigate.to("/")).style(
+            "background:#5eead4;color:#0b0b0b;font-weight:700;"
+            "border-radius:3px;padding:0 24px;min-height:40px;"
+            "font-size:12px;text-transform:none;")
+
+
+def _render_join_success(proj, role, already=False):
+    title = "You're already on this project" if already else \
+            "Welcome to the project"
+    with ui.column().classes(
+        "w-full min-h-screen items-center justify-center").style(
+        "background:#0b0b0b;color:#e8e8e8;"
+        "font-family:'JetBrains Mono',monospace;"
+    ):
+        ui.icon("check_circle").style("font-size:52px;color:#5eead4;")
+        ui.label(title).style(
+            "font-size:22px;font-weight:700;margin-top:16px;")
+        ui.label(str(proj.get("name") or "Project")).style(
+            "color:#5eead4;font-size:14px;margin-top:6px;font-weight:600;")
+        ui.label("Your role: " + str(role or "engineer")).style(
+            "color:#b8b8b8;font-size:11px;margin-top:2px;")
+        ui.element('div').style("height:22px;")
+        ui.button("Open project",
+                  on_click=lambda: ui.navigate.to("/app")).style(
+            "background:#5eead4;color:#0b0b0b;font-weight:700;"
+            "border-radius:3px;padding:0 28px;min-height:44px;"
+            "font-size:13px;text-transform:none;")
 
 
 @ui.page('/logout')
