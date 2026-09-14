@@ -270,6 +270,20 @@ def init_db():
                 created_at TEXT
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS invite_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                token TEXT UNIQUE,
+                role TEXT,
+                created_by INTEGER,
+                created_at TEXT,
+                expires_at TEXT,
+                used_count INTEGER DEFAULT 0,
+                max_uses INTEGER DEFAULT 50,
+                revoked INTEGER DEFAULT 0
+            )
+        """)
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
@@ -1426,6 +1440,117 @@ def ms_chat_delete(msg_id, user_id):
         cur.execute(
             "DELETE FROM ms_chat_messages WHERE id=? AND user_id=?",
             (msg_id, int(user_id)))
+        c.commit()
+        _sync(c)
+    return True
+# =====================================================================
+# INVITE TOKENS (shareable links)
+# =====================================================================
+INVITE_COLS = ["id", "project_id", "token", "role", "created_by",
+               "created_at", "expires_at", "used_count", "max_uses",
+               "revoked"]
+
+
+def invite_create(project_id, role, created_by, days=7, max_uses=50):
+    """Create a new invite token. Returns the token string."""
+    import secrets
+    token = secrets.token_urlsafe(24)
+    now = datetime.datetime.utcnow()
+    expires = now + datetime.timedelta(days=int(days or 7))
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            INSERT INTO invite_tokens
+                (project_id, token, role, created_by, created_at,
+                 expires_at, used_count, max_uses, revoked)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0)
+        """, (project_id, token, role or "engineer", created_by,
+              _now(), expires.strftime("%Y-%m-%d %H:%M:%S"),
+              int(max_uses or 50)))
+        c.commit()
+        _sync(c)
+    return token
+
+
+def invite_lookup(token):
+    if not token:
+        return None
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, token, role, created_by, created_at,
+               expires_at, used_count, max_uses, revoked
+        FROM invite_tokens WHERE token=?
+    """, (token,))
+    return _to_dict(cur.fetchone(), INVITE_COLS)
+
+
+def invite_consume(token, user_id):
+    """Validate + consume. Adds user to project_members.
+    Returns (ok, reason, project_id, role)."""
+    if not token:
+        return False, "no_token", None, None
+    rec = invite_lookup(token)
+    if not rec:
+        return False, "not_found", None, None
+    if int(rec.get("revoked") or 0) == 1:
+        return False, "revoked", None, None
+    try:
+        exp = datetime.datetime.strptime(
+            str(rec.get("expires_at"))[:19], "%Y-%m-%d %H:%M:%S")
+        if datetime.datetime.utcnow() > exp:
+            return False, "expired", None, None
+    except Exception:
+        return False, "bad_expiry", None, None
+    used = int(rec.get("used_count") or 0)
+    mx = int(rec.get("max_uses") or 50)
+    if used >= mx:
+        return False, "used_up", None, None
+    project_id = rec.get("project_id")
+    role = rec.get("role") or "engineer"
+    if is_project_member(user_id, project_id):
+        return True, "already_member", project_id, role
+
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            cur.execute("""
+                INSERT OR IGNORE INTO project_members
+                    (project_id, user_id, role, added_at)
+                VALUES (?, ?, ?, ?)
+            """, (project_id, user_id, role, _now()))
+            cur.execute("""
+                UPDATE invite_tokens SET used_count = used_count + 1
+                WHERE id=?
+            """, (rec.get("id"),))
+            c.commit()
+            _sync(c)
+        except Exception as e:
+            return False, "add_failed: " + str(e), None, None
+    return True, None, project_id, role
+
+
+def invite_list_for_project(project_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, token, role, created_by, created_at,
+               expires_at, used_count, max_uses, revoked
+        FROM invite_tokens
+        WHERE project_id=? AND COALESCE(revoked,0)=0
+        ORDER BY id DESC LIMIT 20
+    """, (project_id,))
+    return _to_dicts(cur.fetchall(), INVITE_COLS)
+
+
+def invite_revoke(token_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("UPDATE invite_tokens SET revoked=1 WHERE id=?",
+                    (token_id,))
         c.commit()
         _sync(c)
     return True
