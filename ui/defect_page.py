@@ -1177,6 +1177,31 @@ def build_defect_ui(user_id):
     inject_pwa()
     user = db.get_user(user_id)
 
+    # Block suspended users before anything else renders
+    if user and db.is_suspended(user_id):
+        with ui.element('div').classes("card").style(
+            "max-width:420px;margin:80px auto;text-align:center;"
+            "padding:36px 24px;"
+        ):
+            ui.icon("block").style("font-size:36px;color:#f87171;")
+            ui.label("Account suspended").classes("h1").style(
+                "margin-top:14px;margin-bottom:8px;")
+            ui.label(
+                "Your account has been suspended by an administrator. "
+                "Contact your administrator to restore access."
+            ).classes("muted").style("line-height:1.6;")
+
+            def _logout():
+                try:
+                    app.storage.user.clear()
+                except Exception:
+                    pass
+                ui.navigate.to("/logout")
+
+            ui.button("Log out", icon="logout", on_click=_logout).classes(
+                BTN_PRIMARY).style("width:100%;margin-top:20px;")
+        return
+
     state = {
         "user_id": user_id, "user": user,
         "project_id": app.storage.user.get("project_id"),
