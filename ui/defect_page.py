@@ -1118,6 +1118,7 @@ def _initial(name):
 
 _DASH_CACHE = {}
 _DASH_TTL = 60  # seconds
+_current_uid_holder = {"uid": None}
 
 
 def _dash_data(project_id):
@@ -2214,11 +2215,6 @@ def _open_invite_member_dialog(state, refresh_fn):
                                     ui.notify("Copy failed: " + str(e),
                                                type="negative")
 
-                            def _email_send():
-                                em = ui.input("Email to send the link to:") \
-                                    .style("width:100%;")
-                                ui.notify("Type email and click Send.",
-                                           type="info")
                             ui.button("Copy link", icon="content_copy",
                                       on_click=_copy).classes(
                                 BTN_SOFT).style("flex:1;")
@@ -4926,7 +4922,7 @@ def _build_ms_chat(state):
 
     ui.timer(5.0, _ms_poll)
 
-_current_uid_holder = {"uid": None}
+
 def _render_ms_message(m, on_delete=None):
     kind = (m.get("kind") or "question").lower()
     cls = "ms-msg kind-question" if kind == "question" else "ms-msg kind-check"
