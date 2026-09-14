@@ -142,14 +142,16 @@ MS_LIST_COLS = ["id", "ms_number", "title", "element_type", "discipline",
 DEFECT_LIST_COLS = ["id", "uid", "zone", "subcontractor", "status",
                     "created_at", "closed_at", "raise_type",
                     "selected_json", "deadline_days",
-                    "engineer_name", "place", "defect_type"]
+                    "engineer_name", "place", "defect_type",
+                    "lat", "lng"]
 
 DEFECT_FULL_COLS = ["id", "project_id", "uid", "zone", "photo_bytes",
                     "note", "ai_candidates_json", "selected_json",
                     "subcontractor", "deadline_days", "raise_type",
                     "status", "created_at", "closed_at", "notice_pdf",
                     "consultant_ncr", "closure_photo", "photos_json",
-                    "engineer_name", "place", "defect_type"]
+                    "engineer_name", "place", "defect_type",
+                    "lat", "lng"]
 
 SUB_COLS = ["id", "name", "trade", "phone", "notes"]
 
@@ -284,6 +286,19 @@ def init_db():
                 revoked INTEGER DEFAULT 0
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                user_id INTEGER,
+                user_name TEXT,
+                action TEXT,
+                target_type TEXT,
+                target_id TEXT,
+                details TEXT,
+                created_at TEXT
+            )
+        """)
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
@@ -300,6 +315,7 @@ def init_db():
             ("closure_photo", "BLOB"), ("photos_json", "TEXT"),
             ("engineer_name", "TEXT"), ("place", "TEXT"),
             ("defect_type", "TEXT"),
+            ("lat", "REAL"), ("lng", "REAL"),
         ])
 
         # Backfill: every existing project owner becomes a member
@@ -332,6 +348,8 @@ def init_db():
             "ON ms_chat_messages(project_id)",
             "CREATE INDEX IF NOT EXISTS idx_mschat_project_user "
             "ON ms_chat_messages(project_id, user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_activity_project "
+            "ON activity_log(project_id)",
         ]:
             try:
                 cur.execute(idx)
@@ -688,7 +706,8 @@ def get_clauses_for_element(project_id, element_type=None):
 def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                 raise_type, photo_bytes, note, selected, notice_pdf,
                 ai_candidates=None, extra_photos=None,
-                engineer_name=None, place=None, defect_type=None):
+                engineer_name=None, place=None, defect_type=None,
+                lat=None, lng=None):
     _bump_list_cache()
     with _LOCK:
         c = _conn()
@@ -698,15 +717,18 @@ def save_defect(project_id, uid, zone, subcontractor, deadline_days,
                 (project_id, uid, zone, photo_bytes, note,
                  ai_candidates_json, selected_json, subcontractor,
                  deadline_days, raise_type, status, created_at,
-                 notice_pdf, photos_json, engineer_name, place, defect_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+                 notice_pdf, photos_json, engineer_name, place,
+                 defect_type, lat, lng)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)
         """, (project_id, uid, zone, photo_bytes, note,
               json.dumps(ai_candidates or []),
               json.dumps(selected or []),
               subcontractor, int(deadline_days or 3),
               raise_type or "qc_internal", _now(), notice_pdf,
               _encode_photos(extra_photos),
-              engineer_name or "", place or "", defect_type or ""))
+              engineer_name or "", place or "", defect_type or "",
+              float(lat) if lat is not None else None,
+              float(lng) if lng is not None else None))
         c.commit()
         _sync(c)
 
@@ -722,7 +744,7 @@ def list_defects(project_id, raise_filter=None):
         cur.execute("""
             SELECT id, uid, zone, subcontractor, status, created_at,
                    closed_at, raise_type, selected_json, deadline_days,
-                   engineer_name, place, defect_type
+                   engineer_name, place, defect_type, lat, lng
             FROM defects
             WHERE project_id=? AND COALESCE(raise_type,'qc_internal')=?
             ORDER BY id DESC
@@ -731,7 +753,7 @@ def list_defects(project_id, raise_filter=None):
         cur.execute("""
             SELECT id, uid, zone, subcontractor, status, created_at,
                    closed_at, raise_type, selected_json, deadline_days,
-                   engineer_name, place, defect_type
+                   engineer_name, place, defect_type, lat, lng
             FROM defects WHERE project_id=? ORDER BY id DESC
         """, (project_id,))
     raw = _to_dicts(cur.fetchall(), DEFECT_LIST_COLS)
@@ -755,6 +777,8 @@ def list_defects(project_id, raise_filter=None):
             "engineer_name": r.get("engineer_name") or "",
             "place": r.get("place") or "",
             "defect_type": r.get("defect_type") or "",
+            "lat": r.get("lat"),
+            "lng": r.get("lng"),
         })
     with _LIST_CACHE_LOCK:
         _LIST_CACHE[_ck] = out
@@ -769,7 +793,7 @@ def get_defect(defect_id):
                ai_candidates_json, selected_json, subcontractor,
                deadline_days, raise_type, status, created_at,
                closed_at, notice_pdf, consultant_ncr, closure_photo,
-               photos_json, engineer_name, place, defect_type
+               photos_json, engineer_name, place, defect_type, lat, lng
         FROM defects WHERE id=?
     """, (defect_id,))
     row = cur.fetchone()
@@ -1554,3 +1578,72 @@ def invite_revoke(token_id):
         c.commit()
         _sync(c)
     return True
+# =====================================================================
+# PERMISSIONS
+# =====================================================================
+ROLE_PERMS = {
+    "owner": {"raise", "edit", "close", "delete_open", "delete_closed",
+              "invite", "remove_member", "edit_project", "delete_project",
+              "chat", "ms_chat"},
+    "engineer": {"raise", "edit", "close", "delete_open",
+                 "chat", "ms_chat"},
+    "consultant": {"raise", "edit", "close", "delete_open",
+                   "chat", "ms_chat"},
+    "viewer": set(),
+}
+
+
+def can_user(user_id, project_id, action):
+    """Return True if this user has this permission on this project."""
+    if not user_id or not project_id:
+        return False
+    role = get_user_role_in_project(user_id, project_id)
+    if not role:
+        p = get_project(project_id)
+        if p and p.get("user_id") == user_id:
+            role = "owner"
+        else:
+            return False
+    perms = ROLE_PERMS.get(role, set())
+    return action in perms
+
+
+# =====================================================================
+# ACTIVITY LOG
+# =====================================================================
+ACTIVITY_COLS = ["id", "project_id", "user_id", "user_name", "action",
+                 "target_type", "target_id", "details", "created_at"]
+
+
+def activity_add(project_id, user_id, action, target_type=None,
+                 target_id=None, details=None, user_name=None):
+    """Record an action. Silent on failure — never breaks the caller."""
+    try:
+        with _LOCK:
+            c = _conn()
+            cur = c.cursor()
+            cur.execute("""
+                INSERT INTO activity_log
+                    (project_id, user_id, user_name, action, target_type,
+                     target_id, details, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (project_id, user_id, user_name or "", action,
+                  target_type or "", str(target_id or ""),
+                  details or "", _now()))
+            c.commit()
+            _sync(c)
+    except Exception as e:
+        print("[activity] add failed: " + repr(e))
+
+
+def activity_list(project_id, limit=200):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, user_id, user_name, action, target_type,
+               target_id, details, created_at
+        FROM activity_log
+        WHERE project_id=?
+        ORDER BY id DESC LIMIT ?
+    """, (project_id, int(limit)))
+    return _to_dicts(cur.fetchall(), ACTIVITY_COLS)
