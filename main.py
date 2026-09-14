@@ -39,9 +39,11 @@ MANIFEST = {
     "start_url": "/app",
     "scope": "/",
     "display": "standalone",
+    "display_override": ["standalone", "minimal-ui"],
     "orientation": "portrait",
     "background_color": "#0b0b0b",
     "theme_color": "#0b0b0b",
+    "categories": ["productivity", "business"],
     "icons": [
         {"src": "/icon-192.png", "sizes": "192x192",
          "type": "image/png", "purpose": "any maskable"},
@@ -93,6 +95,39 @@ def _make_icon(size):
         return b""
 
 
+def _make_splash(w, h):
+    """Dark splash screen with centred DN mark. Auto-sized for any device."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        img = Image.new("RGB", (w, h), "#0b0b0b")
+        d = ImageDraw.Draw(img)
+        side = int(min(w, h) * 0.22)
+        pad_x = (w - side) // 2
+        pad_y = (h - side) // 2
+        d.rounded_rectangle(
+            [pad_x, pad_y, pad_x + side, pad_y + side],
+            radius=int(side * 0.18), fill="#5eead4")
+        try:
+            font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                int(side * 0.44))
+        except Exception:
+            font = ImageFont.load_default()
+        txt = "DN"
+        bbox = d.textbbox((0, 0), txt, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        d.text((pad_x + (side - tw) / 2 - bbox[0],
+                pad_y + (side - th) / 2 - bbox[1]),
+               txt, fill="#0b0b0b", font=font)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf.read()
+    except Exception as e:
+        print("[pwa] splash gen failed: " + repr(e))
+        return b""
+
+
 @app.get('/manifest.json')
 def manifest_route():
     return Response(content=_json.dumps(MANIFEST),
@@ -113,6 +148,12 @@ def icon_192():
 @app.get('/icon-512.png')
 def icon_512():
     return Response(content=_make_icon(512), media_type="image/png")
+
+
+@app.get('/splash-{w}x{h}.png')
+def splash_route(w: int, h: int):
+    """Auto-sized splash screen for iOS 'Add to Home Screen'."""
+    return Response(content=_make_splash(w, h), media_type="image/png")
 
 
 # =====================================================================
@@ -366,4 +407,4 @@ if __name__ in {"__main__", "__mp_main__"}:
         reload=False,
         reconnect_timeout=60.0,
         storage_secret=os.environ.get("SESSION_SECRET", "change-me-now"),
-    )
+                )
