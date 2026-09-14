@@ -370,7 +370,8 @@ RULES:
 - The "title" is a short name (1-5 words).
 - The "text" field is the clause body, trimmed to at most 200 characters.
 - Ignore the MS title page, revision history, and signature blocks.
-- MAX 60 clauses. Prioritize the ones with measurable requirements.
+- MAX 200 clauses. Prioritize the ones with measurable requirements.
+- Each clause "text" can be up to 500 characters..
 - Output ONLY the JSON object. No prose. No markdown fences.
 
 Method Statement text starts below.
@@ -388,30 +389,39 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
             extract_document_text, pdf_bytes, filename)
     except Exception as e:
         return {"clauses": [], "raw_text_length": 0,
-                "error": "Document parse failed: " + repr(e)}
+                "error": "Document parse failed: " + repr(e),
+                "full_text": ""}
     if not text or len(text) < 100:
         return {"clauses": [], "raw_text_length": len(text),
-                "error": "File has no readable text."}
-    text = text[:15000]
-    prompt = _CLAUSE_PROMPT_TEMPLATE.replace("__MS_TEXT__", text)
+                "error": "File has no readable text.",
+                "full_text": ""}
+
+    # Keep the FULL text for MS Chat; only send a slice for clause extraction.
+    full_text = text[:180000]
+    prompt_text = text[:30000]
+
+    prompt = _CLAUSE_PROMPT_TEMPLATE.replace("__MS_TEXT__", prompt_text)
     try:
-        raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=40)
+        raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=50)
     except Exception as e:
         return {"clauses": [], "raw_text_length": len(text),
-                "error": "AI call failed: " + repr(e)}
+                "error": "AI call failed: " + repr(e),
+                "full_text": full_text}
     data = _parse_json_object(raw)
     if not data:
         return {"clauses": [], "raw_text_length": len(text),
-                "error": "AI returned unparseable output."}
+                "error": "AI returned unparseable output.",
+                "full_text": full_text}
     clauses = []
     for c in data.get("clauses", []):
         cid = str(c.get("id", "")).strip()
         title = str(c.get("title", "")).strip()[:80]
-        body = str(c.get("text", "")).strip()[:300]
+        body = str(c.get("text", "")).strip()[:500]
         if not cid or not title:
             continue
         clauses.append({"id": cid, "title": title, "text": body})
-    return {"clauses": clauses, "raw_text_length": len(text), "error": None}
+    return {"clauses": clauses, "raw_text_length": len(text),
+            "error": None, "full_text": full_text}
 
 
 # =====================================================================
