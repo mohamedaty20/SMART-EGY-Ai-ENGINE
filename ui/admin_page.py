@@ -4,6 +4,7 @@ Accessible only to users with is_admin=1 OR matching ADMIN_EMAIL env var.
 """
 import os
 from nicegui import ui, app
+from ui.pwa import inject_pwa
 
 from services import billing_db as bdb
 from services import defect_db as db
