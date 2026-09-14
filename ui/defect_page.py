@@ -1054,6 +1054,21 @@ def _is_admin_ui(user_id):
         return db.is_admin(user_id)
     except Exception:
         return False
+def _can(state, action):
+    """Check permission for the current user on the current project."""
+    try:
+        uid = state.get("user_id")
+        pid = state.get("project_id")
+        if not uid or not pid:
+            return False
+        return db.can_user(uid, pid, action)
+    except Exception:
+        return False
+
+
+def _role_label(state):
+    r = (state.get("role") or "").upper()
+    return r or "MEMBER"
 
 
 # =====================================================================
@@ -1929,6 +1944,9 @@ def _open_invite_member_dialog(state, refresh_fn):
                 email_in = ui.input(_t("team_email")).style("width:100%;")
                 role_in = ui.select(_role_options(), value="engineer",
                                      label=_t("team_role")).style("width:100%;")
+                send_email_too = ui.checkbox(
+                    "Send them an email notification",
+                    value=True).style("margin-top:8px;")
 
                 def _save_email():
                     em = (email_in.value or "").strip().lower()
@@ -1942,13 +1960,49 @@ def _open_invite_member_dialog(state, refresh_fn):
                         ui.notify(_t("team_failed") + str(msg),
                                    type="negative")
                         return
+
+                    try:
+                        db.activity_add(
+                            state["project_id"], state["user_id"],
+                            "invited_member", target_type="user",
+                            target_id=em,
+                            details="role=" + (role_in.value or "engineer"),
+                            user_name=(state.get("user") or {}).get(
+                                "name", ""))
+                    except Exception:
+                        pass
+
+                    if send_email_too.value:
+                        try:
+                            from services import alert_service as alerts
+                            proj_name = (state.get("project") or {}).get(
+                                "name", "Project")
+                            inviter = (state.get("user") or {}).get(
+                                "name", "A teammate")
+                            html = (
+                                "<div style='font-family:monospace;"
+                                "color:#111;'>"
+                                "<h2>" + inviter + " added you to "
+                                + str(proj_name) + "</h2>"
+                                "<p>You now have access to this project "
+                                "on Defect Notices.</p>"
+                                "<p>Sign in with this email address to "
+                                "see the project.</p>"
+                                "</div>"
+                            )
+                            alerts.send_email(
+                                em,
+                                "You were added to " + str(proj_name),
+                                html)
+                        except Exception as e:
+                            print("[invite] email failed: " + repr(e))
+
                     ui.notify(_t("team_added"), type="positive")
                     dlg.close()
                     ui.timer(0.03, refresh_fn, once=True)
 
                 ui.button(_t("team_add"), on_click=_save_email).classes(
                     BTN_PRIMARY).style("width:100%;margin-top:14px;")
-
             # ---------- LINK PANEL ----------
             with ui.tab_panel(tab_link):
                 ui.label("Generate a link. Anyone with this link can "
@@ -2153,12 +2207,13 @@ def _build_drawer(state, drawer):
                 _kv(_t("location"), proj.get("location", ""))
                 _kv(_t("engineer"), proj.get("engineer_name", ""))
 
-                def open_setup():
-                    _open_setup_dialog(state, refresh, is_new=False)
-                ui.button(_t("edit"), icon="settings",
-                          on_click=open_setup).classes(BTN_SOFT).style(
-                    "width:100%;margin-top:10px;font-size:10px;"
-                    "min-height:30px;")
+                if _can(state, "edit_project"):
+                    def open_setup():
+                        _open_setup_dialog(state, refresh, is_new=False)
+                    ui.button(_t("edit"), icon="settings",
+                              on_click=open_setup).classes(BTN_SOFT).style(
+                        "width:100%;margin-top:10px;font-size:10px;"
+                        "min-height:30px;")
 
                 ui.element('div').style(
                     "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
@@ -2250,6 +2305,47 @@ def _build_drawer(state, drawer):
                                 " · " + str(len(m["clauses"])) + " " +
                                 _t("clauses_count")
                             ).classes("mono-sm").style("font-size:9px;")
+
+                # 👇 NEW — ACTIVITY SECTION — paste here 👇
+                ui.element('div').style(
+                    "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
+
+                with ui.element('div').style(
+                    "display:flex;justify-content:space-between;"
+                    "align-items:center;margin-bottom:8px;"
+                ):
+                    ui.label("ACTIVITY").classes("label")
+
+                try:
+                    acts = db.activity_list(state["project_id"], limit=15)
+                except Exception:
+                    acts = []
+
+                if not acts:
+                    ui.label("No activity yet.").classes("mono-sm")
+                else:
+                    for a in acts:
+                        with ui.element('div').style(
+                            "background:#101010;border:1px solid #1e1e1e;"
+                            "border-radius:3px;padding:6px 8px;"
+                            "margin-bottom:4px;"
+                        ):
+                            nm = a.get("user_name") or "user"
+                            act = (a.get("action") or "").replace("_", " ")
+                            tgt = a.get("target_id") or ""
+                            detail = a.get("details") or ""
+                            line = nm + "  " + act
+                            if tgt:
+                                line += "  · " + str(tgt)[:24]
+                            ui.label(line).style(
+                                "font-size:10px;color:#e8e8e8;"
+                                "font-weight:600;")
+                            if detail:
+                                ui.label(str(detail)[:60]).classes(
+                                    "mono-sm").style("font-size:9px;")
+                            ui.label(str(a.get("created_at") or "")[:16]).classes(
+                                "mono-sm").style("font-size:9px;color:#5a5a5a;")
+                # 👆 END of new block 👆
 
             ui.element('div').style(
                 "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
@@ -2572,6 +2668,17 @@ def _open_ms_dialog(state, refresh_drawer):
 def _build_new_defect(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
+        return
+    if not _can(state, "raise"):
+        with ui.element('div').classes("card").style(
+            "text-align:center;padding:32px 20px;"
+        ):
+            ui.icon("lock").style("font-size:28px;color:#fbbf24;")
+            ui.label("You don't have permission to raise defects on this "
+                      "project.").classes("muted").style(
+                "margin-top:10px;line-height:1.6;")
+            ui.label("Your role: " + _role_label(state)).classes(
+                "mono-sm").style("margin-top:6px;")
         return
     stage = {"photos": [], "mime": "image/jpeg",
              "candidates": None, "manual": [],
@@ -2998,6 +3105,15 @@ def _render_candidates(state, stage, refresh_fn):
                 engineer_name=engineer_in.value or "",
                 place=stage.get("place", "") or "",
                 defect_type=stage.get("defect_type", "General"))
+            try:
+                db.activity_add(
+                    state["project_id"], state["user_id"], "raised_defect",
+                    target_type="defect", target_id=notice_uid,
+                    details=(sub_in.value.strip() + " · " + stage.get(
+                        "defect_type", "General")),
+                    user_name=(state.get("user") or {}).get("name", ""))
+            except Exception:
+                pass
             ui.notify(_t("notice_saved") + " " + notice_uid,
                        type="positive")
             ui.download(pdf_bytes, filename=notice_uid + ".pdf")
@@ -3322,6 +3438,9 @@ def _render_log_card(row, refresh_fn, state=None):
     if row.get("count", 0) > 1:
         extra = "  +" + str(row["count"] - 1)
 
+    lat = row.get("lat")
+    lng = row.get("lng")
+
     with ui.element('div').classes("log-row") as card:
         with ui.element('div').style(
             "display:flex;justify-content:space-between;"
@@ -3361,6 +3480,25 @@ def _render_log_card(row, refresh_fn, state=None):
                                 'display:inline-block;">' +
                                 _html_mod.escape(str(dt)) + '</span>')
 
+                    if lat is not None and lng is not None:
+                        gmaps = ("https://www.google.com/maps/search/"
+                                 "?api=1&query=" + str(lat) + "," + str(lng))
+                        with ui.element('div').style(
+                            "margin-top:6px;display:flex;align-items:center;"
+                            "gap:6px;"
+                        ):
+                            ui.html(
+                                '<a href="' + gmaps + '" target="_blank" '
+                                'style="color:#5eead4;text-decoration:none;'
+                                'font-size:11px;font-weight:600;'
+                                'display:inline-flex;align-items:center;'
+                                'gap:4px;">📍 View on Google Maps</a>'
+                            )
+                            ui.label(
+                                "{:.5f}, {:.5f}".format(float(lat), float(lng))
+                            ).classes("mono-sm").style(
+                                "font-size:9px;color:#5a5a5a;")
+
             with ui.element('div').style(
                 "display:flex;flex-direction:column;align-items:flex-end;gap:4px;"
             ):
@@ -3375,14 +3513,15 @@ def _render_log_card(row, refresh_fn, state=None):
 
         def _click():
             uid = state.get("user_id") if state else None
-            _show_defect_dialog(row.get("id"), refresh_fn, user_id=uid)
+            _show_defect_dialog(row.get("id"), refresh_fn, user_id=uid,
+                                  state=state)
         card.on("click", _click)
 
 
 # =====================================================================
 # DEFECT DETAIL / EDIT / DELETE
 # =====================================================================
-def _show_defect_dialog(defect_id, on_close_cb, user_id=None):
+def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
     d = db.get_defect(defect_id)
     if not d:
         ui.notify(_t("not_found"), type="negative")
@@ -3399,6 +3538,21 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None):
             ui.label(
                 "ZONE " + str(d["zone"]) + "  " + str(d["subcontractor"])
             ).classes("mono-sm").style("margin-top:4px;")
+
+            # 👇 NEW — insert this block right here 👇
+            if d.get("lat") is not None and d.get("lng") is not None:
+                gmaps = ("https://www.google.com/maps/search/?api=1&query=" +
+                         str(d["lat"]) + "," + str(d["lng"]))
+                ui.html(
+                    '<a href="' + gmaps + '" target="_blank" '
+                    'style="color:#5eead4;font-size:11px;font-weight:600;'
+                    'text-decoration:none;margin-top:6px;'
+                    'display:inline-block;">📍 ' +
+                    "{:.5f}, {:.5f}".format(float(d["lat"]),
+                                              float(d["lng"])) + '</a>'
+                )
+            # 👆 END of new block 👆
+
             bits = []
             if d.get("engineer_name"):
                 bits.append(_t("raised_by") + ": " + str(d["engineer_name"]))
@@ -3476,29 +3630,52 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None):
                               d["notice_pdf"], filename=d["uid"] + ".pdf")
                           ).classes(BTN_SOFT).style("width:100%;")
 
-            with ui.element('div').style(
-                "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
-            ):
-                def _edit():
-                    dialog.close()
-                    _open_edit_defect_dialog(d, on_close_cb)
+            can_edit = False
+            can_delete = False
+            can_close = False
+            try:
+                if user_id:
+                    can_edit = db.can_user(user_id, d["project_id"], "edit")
+                    can_close = db.can_user(user_id, d["project_id"], "close")
+                    if d["status"] == "open":
+                        can_delete = db.can_user(user_id, d["project_id"],
+                                                  "delete_open")
+                    else:
+                        can_delete = db.can_user(user_id, d["project_id"],
+                                                  "delete_closed")
+            except Exception:
+                pass
 
-                def _delete():
-                    dialog.close()
-                    _open_delete_defect_dialog(d, on_close_cb,
-                                                 user_id=user_id)
+            if can_edit or can_delete:
+                with ui.element('div').style(
+                    "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+                ):
+                    if can_edit:
+                        def _edit():
+                            dialog.close()
+                            _open_edit_defect_dialog(d, on_close_cb)
+                        ui.button(_t("edit_defect"), icon="edit",
+                                  on_click=_edit).classes(BTN_SOFT).style(
+                            "width:100%;")
+                    else:
+                        ui.label("").style("min-height:1px;")
 
-                ui.button(_t("edit_defect"), icon="edit",
-                          on_click=_edit).classes(BTN_SOFT).style(
-                    "width:100%;")
-                ui.button(_t("delete_defect"), icon="delete",
-                          on_click=_delete).classes(BTN_DANGER).style(
-                    "width:100%;")
+                    if can_delete:
+                        def _delete():
+                            dialog.close()
+                            _open_delete_defect_dialog(d, on_close_cb,
+                                                         user_id=user_id)
+                        ui.button(_t("delete_defect"), icon="delete",
+                                  on_click=_delete).classes(BTN_DANGER).style(
+                            "width:100%;")
+                    else:
+                        ui.label("").style("min-height:1px;")
 
-            if d["status"] == "open":
+            if can_close and d["status"] == "open":
                 def _open_close():
                     _open_close_defect_dialog(d, is_consultant,
-                                                dialog, on_close_cb)
+                                                dialog, on_close_cb,
+                                                state=state)
                 ui.button(_t("mark_closed"), icon="check",
                           on_click=_open_close).classes(
                     BTN_PRIMARY).style("width:100%;")
@@ -3509,7 +3686,8 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None):
     dialog.open()
 
 
-def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
+def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb,
+                                state=None):
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:320px;max-width:95vw;width:420px;"
     ):
@@ -3557,6 +3735,17 @@ def _open_close_defect_dialog(d, is_consultant, parent_dlg, on_close_cb):
             else:
                 db.close_defect(d["id"],
                                  closure_photo=closure_holder["bytes"])
+            try:
+                db.activity_add(
+                    d["project_id"],
+                    (state or {}).get("user_id") or 0,
+                    "closed_defect",
+                    target_type="defect", target_id=d["uid"],
+                    details=("NCR " + (ncr_in.value or "").strip()
+                             if (is_consultant and ncr_in) else ""),
+                    user_name=((state or {}).get("user") or {}).get("name", ""))
+            except Exception:
+                pass
             ui.notify(_t("marked_closed"), type="positive")
             dlg.close()
             try:
@@ -3784,6 +3973,13 @@ def _open_edit_defect_dialog(d, on_close_cb):
                     traceback.print_exc()
                     ui.notify("Save failed: " + str(ex), type="negative")
                     return
+                try:
+                    db.activity_add(
+                        d["project_id"], None, "edited_defect",
+                        target_type="defect", target_id=d["uid"],
+                        details="", user_name="")
+                except Exception:
+                    pass
                 ui.notify(_t("saved_changes"), type="positive")
                 dialog.close()
                 on_close_cb()
@@ -3829,6 +4025,13 @@ def _open_delete_defect_dialog(d, on_close_cb, user_id=None):
 
         def _yes():
             db.delete_defect(d["id"])
+            try:
+                db.activity_add(
+                    d["project_id"], user_id, "deleted_defect",
+                    target_type="defect", target_id=d["uid"],
+                    details="", user_name="")
+            except Exception:
+                pass
             ui.notify(_t("deleted_defect"), type="positive")
             dlg.close()
             on_close_cb()
