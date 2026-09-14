@@ -4036,13 +4036,10 @@ def _build_ms_chat(state):
 
     state.setdefault("_ms_chat_last_id",
                      db.ms_chat_max_id(pid, state["user_id"]))
-    async def _ms_poll():
-        try:
-            cur_max = db.ms_chat_max_id(pid, state["user_id"])
 
     async def _ms_poll():
         try:
-            cur_max = db.ms_chat_max_id(pid)
+            cur_max = db.ms_chat_max_id(pid, state["user_id"])
         except Exception:
             return
         if cur_max != state.get("_ms_chat_last_id"):
