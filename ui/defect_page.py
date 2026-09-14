@@ -1909,61 +1909,192 @@ def _open_invite_member_dialog(state, refresh_fn):
         ui.notify("Only the project owner can invite members.",
                    type="warning")
         return
+
     with ui.dialog() as dlg, ui.card().style(
-        "padding:20px;min-width:320px;max-width:95vw;width:440px;"
+        "padding:20px;min-width:340px;max-width:96vw;width:560px;"
+        "max-height:92vh;overflow-y:auto;"
     ):
         ui.label(_t("team_invite_title")).classes("h1").style(
-            "margin-bottom:4px;")
-        ui.label(_t("team_invite_hint")).classes("mono-sm").style(
-            "margin-bottom:14px;display:block;line-height:1.5;")
-        email_in = ui.input(_t("team_email")).style("width:100%;")
-        role_in = ui.select(_role_options(), value="engineer",
-                             label=_t("team_role")).style("width:100%;")
-
-        def _save():
-            em = (email_in.value or "").strip().lower()
-            if not em or "@" not in em:
-                ui.notify(_t("team_email"), type="warning")
-                return
-            ok, msg = db.add_project_member(
-                project_id=state["project_id"], email=em,
-                role=role_in.value or "engineer")
-            if not ok:
-                ui.notify(_t("team_failed") + str(msg), type="negative")
-                return
-            ui.notify(_t("team_added"), type="positive")
-            dlg.close()
-            ui.timer(0.03, refresh_fn, once=True)
-
-        with ui.element('div').style("display:flex;gap:8px;margin-top:16px;"):
-            ui.button(_t("team_add"), on_click=_save).classes(
-                BTN_PRIMARY).style("flex:1;")
-            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
-    dlg.open()
-
-
-def _confirm_remove_member(state, member, refresh_fn):
-    with ui.dialog() as dlg, ui.card().style(
-        "padding:20px;min-width:280px;max-width:95vw;width:380px;"
-    ):
-        ui.label(_t("team_remove_confirm")).classes("h3").style(
-            "margin-bottom:10px;")
-        ui.label(str(member.get("name") or "")).classes("mono-sm").style(
             "margin-bottom:14px;")
 
-        def _yes():
-            db.remove_project_member(state["project_id"],
-                                       member.get("user_id"))
-            ui.notify(_t("team_removed"), type="positive")
-            dlg.close()
-            ui.timer(0.03, refresh_fn, once=True)
+        with ui.tabs().style("width:100%;margin-bottom:14px;") as tabs:
+            tab_email = ui.tab("Add by email")
+            tab_link = ui.tab("Share invite link")
 
-        with ui.element('div').style("display:flex;gap:8px;"):
-            ui.button(_t("team_remove"), on_click=_yes).classes(
-                BTN_DANGER).style("flex:1;")
-            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+        with ui.tab_panels(tabs, value=tab_email).style("width:100%;"):
+            # ---------- EMAIL PANEL ----------
+            with ui.tab_panel(tab_email):
+                ui.label(_t("team_invite_hint")).classes("mono-sm").style(
+                    "margin-bottom:10px;display:block;line-height:1.5;")
+                email_in = ui.input(_t("team_email")).style("width:100%;")
+                role_in = ui.select(_role_options(), value="engineer",
+                                     label=_t("team_role")).style("width:100%;")
+
+                def _save_email():
+                    em = (email_in.value or "").strip().lower()
+                    if not em or "@" not in em:
+                        ui.notify(_t("team_email"), type="warning")
+                        return
+                    ok, msg = db.add_project_member(
+                        project_id=state["project_id"], email=em,
+                        role=role_in.value or "engineer")
+                    if not ok:
+                        ui.notify(_t("team_failed") + str(msg),
+                                   type="negative")
+                        return
+                    ui.notify(_t("team_added"), type="positive")
+                    dlg.close()
+                    ui.timer(0.03, refresh_fn, once=True)
+
+                ui.button(_t("team_add"), on_click=_save_email).classes(
+                    BTN_PRIMARY).style("width:100%;margin-top:14px;")
+
+            # ---------- LINK PANEL ----------
+            with ui.tab_panel(tab_link):
+                ui.label("Generate a link. Anyone with this link can "
+                          "join the project with the role below. "
+                          "The link expires and can be revoked.").classes(
+                    "mono-sm").style(
+                    "margin-bottom:10px;display:block;line-height:1.5;")
+                link_role = ui.select(_role_options(), value="engineer",
+                                       label=_t("team_role")).style(
+                    "width:100%;")
+                days_opts = {"1": "1 day", "3": "3 days",
+                             "7": "7 days", "30": "30 days"}
+                link_days = ui.select(days_opts, value="7",
+                                       label="Expires in").style(
+                    "width:100%;")
+                link_uses = ui.number("Max uses", value=50, min=1,
+                                       max=500).style("width:100%;")
+
+                result_holder = ui.element('div').style("width:100%;")
+
+                def _generate():
+                    result_holder.clear()
+                    tok = db.invite_create(
+                        project_id=state["project_id"],
+                        role=link_role.value or "engineer",
+                        created_by=state["user_id"],
+                        days=int(link_days.value or "7"),
+                        max_uses=int(link_uses.value or 50))
+                    base = ""
+                    try:
+                        base = str(app.storage.browser.get(
+                            "window_location", ""))
+                    except Exception:
+                        base = ""
+                    if not base:
+                        base = "https://smart-egy-ai-engine.onrender.com"
+                    url = base.rstrip("/") + "/join?token=" + tok
+
+                    with result_holder:
+                        ui.label("Invite link (share this):").classes(
+                            "label").style("margin-bottom:6px;display:block;")
+                        link_in = ui.input(value=url).style(
+                            "width:100%;").props("readonly")
+                        try:
+                            link_in.props("dense")
+                        except Exception:
+                            pass
+
+                        # QR code
+                        try:
+                            from services.pdf_service import generate_qr_code
+                            qr_buf = generate_qr_code(url)
+                            b64 = base64.b64encode(qr_buf.read()).decode(
+                                "ascii")
+                            ui.html(
+                                '<div style="text-align:center;'
+                                'margin-top:14px;">'
+                                '<img src="data:image/png;base64,' + b64 +
+                                '" style="width:180px;height:180px;'
+                                'background:#fff;padding:8px;'
+                                'border-radius:6px;"/>'
+                                '<div style="font-size:10px;color:#808080;'
+                                'margin-top:6px;">Scan to join</div>'
+                                '</div>'
+                            )
+                        except Exception as e:
+                            print("[invite] QR failed: " + repr(e))
+
+                        with ui.element('div').style(
+                            "display:flex;gap:6px;margin-top:12px;"
+                        ):
+                            def _copy():
+                                try:
+                                    ui.run_javascript(
+                                        "navigator.clipboard."
+                                        "writeText('" +
+                                        url.replace("'", "\\'") + "');")
+                                    ui.notify("Link copied.",
+                                               type="positive")
+                                except Exception as e:
+                                    ui.notify("Copy failed: " + str(e),
+                                               type="negative")
+
+                            def _email_send():
+                                em = ui.input("Email to send the link to:") \
+                                    .style("width:100%;")
+                                ui.notify("Type email and click Send.",
+                                           type="info")
+                            ui.button("Copy link", icon="content_copy",
+                                      on_click=_copy).classes(
+                                BTN_SOFT).style("flex:1;")
+                            ui.button("Open link", icon="open_in_new",
+                                      on_click=lambda u=url:
+                                      ui.navigate.to(u)).classes(
+                                BTN_SOFT).style("flex:1;")
+
+                ui.button("Generate link", icon="link",
+                          on_click=_generate).classes(
+                    BTN_PRIMARY).style("width:100%;margin-top:14px;")
+
+                result_holder
+
+                # Existing active links
+                existing = db.invite_list_for_project(state["project_id"])
+                if existing:
+                    ui.element('div').style(
+                        "border-top:1px solid #1e1e1e;margin:18px 0 10px;")
+                    ui.label("Active links").classes("label").style(
+                        "display:block;margin-bottom:8px;")
+                    for inv in existing[:5]:
+                        with ui.element('div').classes("item-box"):
+                            with ui.element('div').style(
+                                "display:flex;justify-content:space-between;"
+                                "align-items:center;gap:8px;"
+                            ):
+                                with ui.element('div').style(
+                                    "min-width:0;flex:1;"
+                                ):
+                                    ui.label(
+                                        "role: " + str(inv.get("role") or "") +
+                                        "  ·  uses " +
+                                        str(inv.get("used_count") or 0) +
+                                        "/" + str(inv.get("max_uses") or 50)
+                                    ).classes("mono-sm").style(
+                                        "font-size:10px;display:block;")
+                                    ui.label(
+                                        "expires " +
+                                        str(inv.get("expires_at") or "")[:16]
+                                    ).classes("mono-sm").style(
+                                        "font-size:10px;display:block;")
+                                def _revoke(iid=inv.get("id")):
+                                    db.invite_revoke(iid)
+                                    ui.notify("Link revoked.",
+                                               type="positive")
+                                    dlg.close()
+                                ui.button(icon="close", on_click=_revoke).props(
+                                    "flat round dense size=xs").style(
+                                    "color:#f87171;")
+
+        with ui.element('div').style(
+            "display:flex;gap:8px;margin-top:16px;"
+        ):
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
+                BTN_SOFT).style("flex:1;")
+
     dlg.open()
-
 
 # =====================================================================
 # DRAWER
