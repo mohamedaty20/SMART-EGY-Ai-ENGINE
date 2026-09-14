@@ -15,19 +15,24 @@ import json
 from services import defect_db as db
 
 
-_QA_PROMPT = """You are a QC assistant for a construction site. The user
-will ask a question. Answer ONLY using the Method Statement clauses below.
+_QA_PROMPT = """You are a QC assistant for a construction site. Answer the
+user's question using the FULL Method Statement text below.
 
 RULES:
 - Answer in the same language as the question (Arabic or English).
-- Cite the clause ID(s) you used, in the form [S<id>].
-- If the answer is not in the clauses, reply exactly:
-  "Not found in the uploaded MS."
-  Do NOT invent clause IDs. Do NOT use external construction knowledge.
-- Be concise. Two or three sentences maximum.
+- If the MS contains the answer, give it clearly and cite the clause
+  ID(s) in the form [S<id>] when you can.
+- If you can't find an exact match, give the closest relevant clause(s)
+  from the full text and explain briefly. Do NOT invent clause IDs.
+- Only say "Not found in the uploaded MS." if there is genuinely
+  nothing relevant to the question anywhere in the text.
+- 2 to 4 sentences maximum.
 
-MS CLAUSES:
-__CLAUSES__
+MS CLAUSE INDEX (available IDs — cite only these):
+__CLAUSE_INDEX__
+
+FULL METHOD STATEMENT TEXT:
+__FULL_TEXT__
 
 USER QUESTION:
 __QUESTION__
@@ -41,8 +46,11 @@ ticket, delivery note, test result, or similar) against a Method Statement.
 DOCUMENT TEXT (OCR output, may contain small errors):
 __DOC_TEXT__
 
-MS CLAUSES:
+MS CLAUSE INDEX (use these IDs when citing):
 __CLAUSES__
+
+MS FULL TEXT (source of truth — read this carefully):
+__FULL_TEXT__
 
 Return ONE JSON object with this exact shape:
 {
@@ -67,7 +75,7 @@ Return ONE JSON object with this exact shape:
 }
 
 RULES:
-- Only cite clause IDs that exist in the MS clauses above.
+- Only cite clause IDs that exist in the MS clause index above.
 - If MS doesn't cover a field, use verdict "warn" and clause_id "".
 - Output ONLY the JSON object. No prose."""
 
@@ -107,26 +115,44 @@ def _parse_json_object(raw):
 
 
 async def ask_ms_question(project_id, question, call_gemini_json_fn):
-    """Answer a question from the MS. Returns {answer, error}."""
+    """Answer a question from the full MS text. Returns {answer, error}."""
     q = (question or "").strip()
     if not q:
         return {"answer": "", "error": "Question is empty."}
+
     clauses = db.get_clauses_for_element(project_id)
-    if not clauses:
+    full_text = db.get_ms_full_text(project_id)
+
+    if not full_text and not clauses:
         return {"answer": "", "error":
                 "No MS uploaded for this project. Upload one first."}
+
+    index_lines = []
+    for c in (clauses or [])[:200]:
+        cid = str(c.get("id", "?")).strip()
+        title = str(c.get("title", "")).strip()[:80]
+        index_lines.append("S" + cid + " | " + title)
+    clause_index = "\n".join(index_lines) or "(no clause index available)"
+
+    if full_text:
+        ft = full_text[:120000]
+    else:
+        ft = ("(full text not stored for this upload — "
+              "using clause list only)\n" +
+              _format_clauses_for_prompt(clauses))
+
     prompt = (_QA_PROMPT
-              .replace("__CLAUSES__", _format_clauses_for_prompt(clauses))
+              .replace("__CLAUSE_INDEX__", clause_index)
+              .replace("__FULL_TEXT__", ft)
               .replace("__QUESTION__", q))
     try:
-        raw = await call_gemini_json_fn(prompt, temperature=0.1, timeout=40)
+        raw = await call_gemini_json_fn(prompt, temperature=0.1, timeout=60)
     except Exception as e:
         return {"answer": "", "error": "AI call failed: " + str(e)}
     text = (raw or "").strip()
     if not text:
         return {"answer": "", "error": "Empty response from AI."}
     return {"answer": text, "error": None}
-
 
 async def check_document_against_ms(file_bytes, mime_type, project_id,
                                      ocr_fn, call_gemini_json_fn):
@@ -143,9 +169,13 @@ async def check_document_against_ms(file_bytes, mime_type, project_id,
         return {"error": "OCR failed: " + str(ocr_err)}
     if not ocr_text:
         return {"error": "No readable text in the document."}
+
+    full_text = db.get_ms_full_text(project_id) or ""
+    ft = full_text[:100000] if full_text else "(no full text)"
     prompt = (_DOC_CHECK_PROMPT
               .replace("__DOC_TEXT__", ocr_text[:4000])
-              .replace("__CLAUSES__", _format_clauses_for_prompt(clauses)))
+              .replace("__CLAUSES__", _format_clauses_for_prompt(clauses))
+              .replace("__FULL_TEXT__", ft))
     try:
         raw = await call_gemini_json_fn(prompt, temperature=0.0, timeout=45)
     except Exception as e:
