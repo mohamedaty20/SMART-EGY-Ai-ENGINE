@@ -3,6 +3,7 @@ ui/landing_page.py — Public landing page.
 """
 from nicegui import ui, app
 from services import auth_service as auth
+from ui.pwa import inject_pwa
 
 
 STYLE = """
