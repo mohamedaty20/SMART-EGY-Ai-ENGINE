@@ -4,6 +4,7 @@ ui/onboarding.py — First-login walkthrough.
 from nicegui import ui
 
 from services import billing_db as bdb
+from ui.pwa import inject_pwa
 
 
 STEPS = [
