@@ -1282,58 +1282,6 @@ def chat_delete_secure(msg_id, user_id, within_seconds=60):
 
 
 # =====================================================================
-# MS CHAT (Q&A + document check)
-# =====================================================================
-def ms_chat_list(project_id, user_id, limit=200):
-    """Private per user — only this member's MS chat."""
-    c = _conn()
-    cur = c.cursor()
-    cur.execute("""
-        SELECT id, project_id, user_id, author, kind, body,
-               response_json, created_at
-        FROM ms_chat_messages
-        WHERE project_id=? AND user_id=?
-        ORDER BY id DESC LIMIT ?
-    """, (project_id, int(user_id), int(limit)))
-    rows = _to_dicts(cur.fetchall(), MS_CHAT_COLS)
-    out = []
-    for r in rows:
-        try:
-            r["response"] = json.loads(r.get("response_json") or "{}")
-        except Exception:
-            r["response"] = {}
-        out.append(r)
-    out.reverse()
-    return out
-
-
-def ms_chat_max_id(project_id, user_id):
-    """Highest MS chat id for THIS user only."""
-    c = _conn()
-    cur = c.cursor()
-    try:
-        cur.execute(
-            "SELECT COALESCE(MAX(id),0) FROM ms_chat_messages "
-            "WHERE project_id=? AND user_id=?",
-            (project_id, int(user_id)))
-        row = cur.fetchone()
-        return int(row[0]) if row else 0
-    except Exception:
-        return 0
-
-
-def ms_chat_clear(project_id, user_id):
-    """Clear only THIS user's MS chat history for the project."""
-    with _LOCK:
-        c = _conn()
-        cur = c.cursor()
-        cur.execute(
-            "DELETE FROM ms_chat_messages "
-            "WHERE project_id=? AND user_id=?",
-            (project_id, int(user_id)))
-        c.commit()
-        _sync(c)
-# =====================================================================
 # MS CHAT (Q&A + document check) — private per user
 # =====================================================================
 def ms_chat_add(project_id, user_id, author, kind, body, response_dict):
