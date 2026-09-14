@@ -2,13 +2,12 @@
 ui/auth_page.py — Login / Signup.
 """
 from nicegui import ui, app
-from ui.pwa import inject_pwa
 
 from services import defect_db as db
 from services import billing_db as bdb
 from services import auth_service as auth
-from services import defect_db as db
 from ui.onboarding import show_onboarding
+from ui.pwa import inject_pwa
 
 
 STYLE = """
@@ -65,6 +64,7 @@ STYLE = """
 
 
 def login_page():
+    inject_pwa()
     ui.add_head_html(STYLE)
 
     with ui.column().classes("w-full min-h-screen items-center justify-center"):
@@ -118,8 +118,6 @@ def login_page():
                                      on_done=lambda: ui.navigate.to("/app"))
                 else:
                     ui.navigate.to("/app")
-                else:
-                    ui.navigate.to("/app")
 
             pass_in.on("keydown.enter", lambda _: do_login())
             ui.button("Sign in", on_click=do_login).classes("btn-primary")
@@ -138,6 +136,7 @@ def login_page():
 
 
 def signup_page():
+    inject_pwa()
     ui.add_head_html(STYLE)
 
     with ui.column().classes("w-full min-h-screen items-center justify-center"):
@@ -182,7 +181,7 @@ def signup_page():
                 if err:
                     err_holder.set_text(err)
                     return
-                # Start the trial
+
                 bdb.start_trial(uid)
                 token = auth.make_session(uid)
                 app.storage.user["session"] = token
@@ -204,6 +203,7 @@ def signup_page():
                 show_onboarding(uid,
                                  on_done=lambda: ui.navigate.to("/app"))
 
+            pass2_in.on("keydown.enter", lambda _: do_signup())
             ui.button("Create account", on_click=do_signup).classes(
                 "btn-primary")
             ui.element('div').style("height:10px;")
