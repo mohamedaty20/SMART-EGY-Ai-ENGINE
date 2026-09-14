@@ -2305,7 +2305,8 @@ def _open_ms_dialog(state, refresh_drawer):
                         title=title_in.value.strip(),
                         element_type=element_in.value,
                         discipline=disc_in.value,
-                        pdf_bytes=holder["bytes"], clauses=clauses)
+                        pdf_bytes=holder["bytes"], clauses=clauses,
+                        full_text=(result.get("full_text") or ""))
                     ui.notify(_t("ms_saved") + " OK", type="positive")
                     dlg.close()
                     if refresh_drawer:
