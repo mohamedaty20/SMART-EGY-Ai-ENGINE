@@ -620,13 +620,65 @@ def _chat_author_color(title):
 # OCR — handwriting / document text extraction
 # =====================================================================
 _OCR_PROMPT = (
-    "You are an OCR engine. Read every word in this document (handwritten "
-    "or printed). Return ONLY the raw extracted text, in the same language "
-    "as the source. Do NOT translate. Do NOT summarize. Do NOT add "
-    "commentary, headings, markdown, bullets, or quotation marks. Preserve "
-    "line breaks. If a word is unclear, transcribe your best guess. If the "
-    "image contains no readable text, return an empty string."
+    "You are a precise OCR engine for handwritten and printed documents. "
+    "Read every character in this document exactly as it appears."
+    "\n\nCRITICAL RULES:"
+    "\n1. Detect the language automatically (Arabic, English, or mixed)."
+    "\n2. If the text is Arabic, transcribe it in correct right-to-left "
+    "reading order, word by word, preserving every letter including "
+    "hamza forms (أ إ آ ء ئ ؤ), taa marbuta (ة), taa (ت), and any "
+    "diacritics. Do NOT drop, merge, or reorder Arabic letters."
+    "\n3. Do NOT translate. Do NOT summarize. Do NOT add commentary, "
+    "headings, bullet points, or markdown."
+    "\n4. Preserve line breaks exactly as they appear on the page."
+    "\n5. For mixed Arabic + English lines, keep each word in its "
+    "original language and script."
+    "\n6. If a word is unclear, transcribe your best guess using context."
+    "\n7. Return ONLY the raw extracted text. No quotes, no labels, "
+    "no explanations."
+    "\n8. If the image contains no readable text, return an empty string."
 )
+
+
+def _preprocess_for_ocr(file_bytes, mime_type):
+    """EXIF-rotate, upscale small images, sharpen for OCR.
+    Returns (bytes, mime) — falls back to original on any failure."""
+    mime = (mime_type or "image/jpeg").lower()
+    if mime == "application/pdf" or not mime.startswith("image/"):
+        return file_bytes, mime
+    try:
+        from PIL import Image, ImageOps, ImageFilter
+    except Exception as e:
+        print("[ocr] PIL unavailable: " + repr(e))
+        return file_bytes, mime
+    try:
+        import io as _io
+        img = Image.open(_io.BytesIO(file_bytes))
+        # 1) Fix rotation from EXIF (phone portrait shots come in rotated)
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("L", "RGB"):
+            img = img.convert("RGB")
+        w, h = img.size
+        longest = max(w, h)
+        # 2) Upscale tiny handwriting, cap huge images for the model
+        if longest < 1400:
+            scale = 1400.0 / float(longest)
+            img = img.resize((int(w * scale), int(h * scale)),
+                              Image.LANCZOS)
+        elif longest > 2400:
+            scale = 2400.0 / float(longest)
+            img = img.resize((int(w * scale), int(h * scale)),
+                              Image.LANCZOS)
+        # 3) Sharpen — improves word boundaries, critical for Arabic
+        img = img.filter(ImageFilter.UnsharpMask(radius=1.4,
+                                                  percent=140,
+                                                  threshold=3))
+        buf = _io.BytesIO()
+        img.save(buf, format="JPEG", quality=92, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception as e:
+        print("[ocr] preprocess failed: " + repr(e))
+        return file_bytes, mime
 
 
 async def _ocr_handwriting(file_bytes, mime_type):
@@ -636,14 +688,10 @@ async def _ocr_handwriting(file_bytes, mime_type):
         from google.genai import types
     except Exception as e:
         return None, "google-genai not available: " + repr(e)
-    payload = file_bytes
-    mime = (mime_type or "image/jpeg").lower()
-    if mime.startswith("image/"):
-        try:
-            payload = svc._shrink_image(file_bytes, max_side=1600)
-            mime = "image/jpeg"
-        except Exception:
-            payload = file_bytes
+
+    # Preprocess: rotate / upscale / sharpen
+    payload, mime = _preprocess_for_ocr(file_bytes, mime_type)
+
     try:
         part = types.Part.from_bytes(data=payload, mime_type=mime)
     except Exception as e:
@@ -653,7 +701,15 @@ async def _ocr_handwriting(file_bytes, mime_type):
                                        temperature=0.0, timeout=45)
     except Exception as e:
         return None, "AI call failed: " + str(e)
+
     text = (raw or "").strip()
+    # Strip wrapping quotes / backticks the model sometimes adds
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'", "`"):
+        text = text[1:-1].strip()
+    # Collapse 3+ blank lines down to 2
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+
     if not text:
         return "", _t("ocr_empty")
     return text, None
