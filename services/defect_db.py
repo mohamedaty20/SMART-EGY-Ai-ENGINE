@@ -208,7 +208,9 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE, password_hash TEXT, name TEXT,
-                title TEXT, photo_bytes BLOB, created_at TEXT
+                title TEXT, photo_bytes BLOB, created_at TEXT,
+                is_admin INTEGER DEFAULT 0,
+                is_suspended INTEGER DEFAULT 0
             )
         """)
         cur.execute("""
@@ -302,6 +304,8 @@ def init_db():
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
+            ("is_admin", "INTEGER DEFAULT 0"),
+            ("is_suspended", "INTEGER DEFAULT 0"),
         ])
         _ensure_columns(cur, "projects", [
             ("user_id", "INTEGER"), ("subcontractor", "TEXT"),
@@ -1440,6 +1444,8 @@ def get_ms_full_text(project_id, max_chars=150000):
     return "\n\n".join(parts)
 def is_admin(user_id):
     """Return True if the user has the is_admin flag set."""
+    if not user_id:
+        return False
     c = _conn()
     cur = c.cursor()
     try:
@@ -1451,9 +1457,106 @@ def is_admin(user_id):
             v = row.get("is_admin") or 0
         else:
             v = row[0]
-        return bool(int(v))
+        return bool(int(v or 0))
     except Exception:
         return False
+
+
+def set_admin(user_id, flag):
+    """Promote / demote a user. Returns (ok, message)."""
+    try:
+        with _LOCK:
+            c = _conn()
+            cur = c.cursor()
+            cur.execute("UPDATE users SET is_admin=? WHERE id=?",
+                        (1 if flag else 0, user_id))
+            c.commit()
+            _sync(c)
+        return True, "ok"
+    except Exception as e:
+        return False, str(e)
+
+
+def is_suspended(user_id):
+    """Return True if the user is currently suspended."""
+    if not user_id:
+        return False
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("SELECT is_suspended FROM users WHERE id=?", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return False
+        if isinstance(row, dict):
+            v = row.get("is_suspended") or 0
+        else:
+            v = row[0]
+        return bool(int(v or 0))
+    except Exception:
+        return False
+
+
+def set_suspended(user_id, flag):
+    """Suspend / unsuspend a user. Returns (ok, message)."""
+    try:
+        with _LOCK:
+            c = _conn()
+            cur = c.cursor()
+            cur.execute("UPDATE users SET is_suspended=? WHERE id=?",
+                        (1 if flag else 0, user_id))
+            c.commit()
+            _sync(c)
+        return True, "ok"
+    except Exception as e:
+        return False, str(e)
+
+
+def admin_list_users():
+    """All users with admin/suspended flags + project count."""
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("""
+            SELECT id, email, name, title,
+                   COALESCE(is_admin, 0),
+                   COALESCE(is_suspended, 0)
+            FROM users
+            ORDER BY name COLLATE NOCASE ASC
+        """)
+        rows = cur.fetchall()
+    except Exception as e:
+        print("[db] admin_list_users failed: " + repr(e))
+        return []
+    out = []
+    for r in rows:
+        try:
+            if isinstance(r, dict):
+                uid = r.get("id"); email = r.get("email")
+                name = r.get("name"); title = r.get("title")
+                is_adm = r.get("is_admin"); is_sus = r.get("is_suspended")
+            else:
+                uid, email, name, title = r[0], r[1], r[2], r[3]
+                is_adm, is_sus = r[4], r[5]
+            try:
+                cnt = cur.execute(
+                    "SELECT COUNT(*) FROM project_members WHERE user_id=?",
+                    (uid,)).fetchone()
+                proj_count = int(cnt[0]) if cnt else 0
+            except Exception:
+                proj_count = 0
+            out.append({
+                "id": uid,
+                "email": email or "",
+                "name": name or "",
+                "title": title or "",
+                "is_admin": bool(int(is_adm or 0)),
+                "is_suspended": bool(int(is_sus or 0)),
+                "projects": proj_count,
+            })
+        except Exception:
+            pass
+    return out
 
 
 def ms_chat_delete(msg_id, user_id):
