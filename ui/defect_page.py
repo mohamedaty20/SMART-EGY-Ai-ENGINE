@@ -1251,18 +1251,23 @@ def build_defect_ui(user_id):
                 _build_chat(state)
             elif tab == "mschat":
                 _build_ms_chat(state)
+            elif tab == "admin":
+                _build_admin(state)
             else:
                 _build_dashboard(state)
 
     def _build_nav():
         nav_holder.clear()
         with nav_holder:
-            for key, label in [
+            tabs = [
                 ("new", _t("new_defect")), ("logs", _t("logs")),
                 ("subs", _t("subs")), ("chat", _t("chat")),
                 ("mschat", _t("ms_chat")),
                 ("dashboard", _t("dashboard")),
-            ]:
+            ]
+            if _is_admin_ui(state.get("user_id")):
+                tabs.append(("admin", "ADMIN"))
+            for key, label in tabs:
                 active = state["tab"]["value"] == key
                 cls = "top-tab-btn active" if active else "top-tab-btn"
                 btn = ui.element('button').classes(cls)
@@ -2364,6 +2369,23 @@ def _build_drawer(state, drawer):
                             ui.html('<span class="badge-role" style="color:' +
                                     rc + ';border:1px solid ' + rc +
                                     '55;">' + role + '</span>')
+                            try:
+                                if m.get("user_id") and \
+                                        _is_admin_ui(m["user_id"]):
+                                    ui.html(
+                                        '<span class="badge-role" style="'
+                                        'color:#fbbf24;border:1px solid '
+                                        '#fbbf2455;margin-left:4px;">'
+                                        'ADMIN</span>')
+                                if m.get("user_id") and \
+                                        db.is_suspended(m["user_id"]):
+                                    ui.html(
+                                        '<span class="badge-role" style="'
+                                        'color:#f87171;border:1px solid '
+                                        '#f8717155;margin-left:4px;">'
+                                        'SUSPENDED</span>')
+                            except Exception:
+                                pass
                             if (state.get("role") == "owner"
                                     and role != "owner"):
                                 def _rm(mem=m):
@@ -5040,3 +5062,262 @@ def _open_member_profile(user_id):
             "width:100%;"
         )
     dlg.open()
+# =====================================================================
+# ADMIN PANEL — audit trail + user management (admin only)
+# =====================================================================
+def _build_admin(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    if not _is_admin_ui(state.get("user_id")):
+        with ui.element('div').classes("card").style(
+            "text-align:center;padding:32px 20px;"
+        ):
+            ui.icon("lock").style("font-size:28px;color:#fbbf24;")
+            ui.label("Only admins can open this page.").classes(
+                "muted").style("margin-top:10px;line-height:1.6;")
+            ui.label("Your role: " + _role_label(state)).classes(
+                "mono-sm").style("margin-top:6px;")
+        return
+
+    with ui.element('div').classes("section-head"):
+        ui.label("ADMIN").classes("h1")
+
+        def _refresh():
+            state["render_main"]()
+        ui.button(icon="refresh", on_click=_refresh).props(
+            "flat round dense size=sm").style("color:#808080;")
+
+    with ui.tabs().style("width:100%;margin-bottom:12px;") as atabs:
+        a_audit = ui.tab("Audit Trail")
+        a_users = ui.tab("Users")
+
+    with ui.tab_panels(atabs, value=a_audit).style("width:100%;"):
+        with ui.tab_panel(a_audit):
+            _build_admin_audit(state)
+        with ui.tab_panel(a_users):
+            _build_admin_users(state)
+
+
+def _build_admin_audit(state):
+    pid = state["project_id"]
+    fstate = {"action": "all", "query": ""}
+
+    @ui.refreshable
+    def audit_list():
+        try:
+            rows = db.activity_list(pid, limit=500) or []
+        except Exception:
+            rows = []
+        if fstate["action"] != "all":
+            rows = [r for r in rows
+                    if (r.get("action") or "") == fstate["action"]]
+        if fstate["query"]:
+            q = fstate["query"]
+
+            def _match(r):
+                hay = " ".join([
+                    str(r.get("user_name") or ""),
+                    str(r.get("action") or ""),
+                    str(r.get("target_id") or ""),
+                    str(r.get("details") or ""),
+                ]).lower()
+                return q in hay
+            rows = [r for r in rows if _match(r)]
+
+        ui.label(str(len(rows)) + " events").classes("mono-sm").style(
+            "margin-bottom:10px;")
+        if not rows:
+            ui.label("No events match.").classes("mono-sm").style(
+                "text-align:center;padding:32px 0;color:#5a5a5a;")
+            return
+        for r in rows:
+            action = (r.get("action") or "").replace("_", " ")
+            nm = r.get("user_name") or "user"
+            tgt = r.get("target_id") or ""
+            detail = r.get("details") or ""
+            when = str(r.get("created_at") or "")[:19]
+            a_raw = (r.get("action") or "").lower()
+            color = "#b8b8b8"
+            if "delete" in a_raw:
+                color = "#f87171"
+            elif "close" in a_raw:
+                color = "#4ade80"
+            elif "raise" in a_raw or "invite" in a_raw:
+                color = "#5eead4"
+            with ui.element('div').style(
+                "background:#101010;border:1px solid #1e1e1e;"
+                "border-radius:3px;padding:8px 10px;margin-bottom:4px;"
+            ):
+                with ui.element('div').style(
+                    "display:flex;justify-content:space-between;"
+                    "align-items:center;gap:8px;"
+                ):
+                    ui.label(str(nm) + "  " + action).style(
+                        "font-size:11px;font-weight:600;color:" + color + ";")
+                    ui.label(when).classes("mono-sm").style(
+                        "font-size:9px;color:#5a5a5a;")
+                if tgt:
+                    ui.label("target: " + str(tgt)[:60]).classes(
+                        "mono-sm").style("font-size:9px;")
+                if detail:
+                    ui.label(str(detail)[:120]).classes("mono-sm").style(
+                        "font-size:9px;color:#808080;")
+
+    def _on_action(e):
+        fstate["action"] = (e.value if e and e.value else "all")
+        audit_list.refresh()
+
+    def _on_query(e):
+        fstate["query"] = (e.value or "").strip().lower()
+        audit_list.refresh()
+
+    ui.select(
+        {"all": "All actions",
+         "raised_defect": "Raised defect",
+         "edited_defect": "Edited defect",
+         "closed_defect": "Closed defect",
+         "deleted_defect": "Deleted defect",
+         "invited_member": "Invited member"},
+        value="all", label="Filter by action", on_change=_on_action,
+    ).style("width:100%;margin-bottom:8px;").props("dense")
+
+    ui.input(placeholder="Search user, target, details...",
+             on_change=_on_query).style(
+        "width:100%;margin-bottom:12px;").props("dense clearable")
+
+    audit_list()
+
+
+def _build_admin_users(state):
+    my_uid = state.get("user_id")
+    search_in = ui.input(placeholder="Search name, email, title...").style(
+        "width:100%;margin-bottom:12px;").props("dense clearable")
+
+    holder = ui.element('div').style("width:100%;")
+
+    def render():
+        holder.clear()
+        q = (search_in.value or "").strip().lower()
+        try:
+            users = db.admin_list_users() or []
+        except Exception as e:
+            with holder:
+                ui.label("Failed to load users: " + str(e)).style(
+                    "color:#f87171;font-size:11px;")
+            return
+        if q:
+            users = [u for u in users if q in (
+                (u.get("name") or "") + " " +
+                (u.get("email") or "") + " " +
+                (u.get("title") or "")).lower()]
+
+        with holder:
+            if not users:
+                ui.label("No users match.").classes("mono-sm").style(
+                    "text-align:center;padding:26px 0;color:#5a5a5a;")
+                return
+
+            ui.label(str(len(users)) + " users").classes("mono-sm").style(
+                "margin-bottom:10px;")
+
+            for u in users:
+                uid = u["id"]
+                is_me = (uid == my_uid)
+                with ui.element('div').style(
+                    "background:#101010;border:1px solid #1e1e1e;"
+                    "border-radius:3px;padding:10px 12px;margin-bottom:6px;"
+                ):
+                    with ui.element('div').style(
+                        "display:flex;justify-content:space-between;"
+                        "align-items:flex-start;gap:10px;"
+                    ):
+                        with ui.element('div').style(
+                            "flex:1;min-width:0;"
+                        ):
+                            nm = u.get("name") or "—"
+                            if is_me:
+                                nm += "  (you)"
+                            ui.label(nm).style(
+                                "font-size:12px;font-weight:600;"
+                                "color:#e8e8e8;overflow:hidden;"
+                                "text-overflow:ellipsis;")
+                            sub = u.get("email") or ""
+                            if sub:
+                                ui.label(sub).classes("mono-sm").style(
+                                    "font-size:10px;")
+                            meta = []
+                            if u.get("title"):
+                                meta.append(u["title"])
+                            meta.append(str(u.get("projects") or 0) +
+                                        " project(s)")
+                            ui.label(" · ".join(meta)).classes(
+                                "mono-sm").style(
+                                "font-size:9px;color:#808080;")
+
+                            with ui.element('div').style(
+                                "margin-top:6px;display:flex;gap:4px;"
+                                "flex-wrap:wrap;"
+                            ):
+                                if u.get("is_admin"):
+                                    ui.html(
+                                        '<span class="badge-role" style="'
+                                        'color:#fbbf24;border:1px solid '
+                                        '#fbbf2455;">ADMIN</span>')
+                                if u.get("is_suspended"):
+                                    ui.html(
+                                        '<span class="badge-role" style="'
+                                        'color:#f87171;border:1px solid '
+                                        '#f8717155;">SUSPENDED</span>')
+
+                        with ui.element('div').style(
+                            "display:flex;flex-direction:column;gap:4px;"
+                            "min-width:120px;"
+                        ):
+                            admin_flag = bool(u.get("is_admin"))
+                            susp_flag = bool(u.get("is_suspended"))
+
+                            def _toggle_admin(uid_=uid, cur=admin_flag):
+                                ok, msg = db.set_admin(uid_, not cur)
+                                if ok:
+                                    ui.notify(
+                                        "Admin " +
+                                        ("removed" if cur else "granted"),
+                                        type="positive")
+                                    render()
+                                else:
+                                    ui.notify("Failed: " + str(msg),
+                                              type="negative")
+                            ui.button(
+                                "Demote" if admin_flag else "Make admin",
+                                on_click=_toggle_admin,
+                            ).classes(
+                                BTN_SOFT if admin_flag else BTN_PRIMARY
+                            ).style("width:100%;font-size:10px;"
+                                    "min-height:28px;")
+
+                            def _toggle_susp(uid_=uid, cur=susp_flag):
+                                if uid_ == my_uid and not cur:
+                                    ui.notify(
+                                        "You can't suspend yourself.",
+                                        type="warning")
+                                    return
+                                ok, msg = db.set_suspended(uid_, not cur)
+                                if ok:
+                                    ui.notify(
+                                        "Suspended" if not cur else "Active",
+                                        type="positive")
+                                    render()
+                                else:
+                                    ui.notify("Failed: " + str(msg),
+                                              type="negative")
+                            ui.button(
+                                "Unsuspend" if susp_flag else "Suspend",
+                                on_click=_toggle_susp,
+                            ).classes(
+                                BTN_SOFT if not susp_flag else BTN_DANGER
+                            ).style("width:100%;font-size:10px;"
+                                    "min-height:28px;")
+
+    search_in.on("update:model-value", lambda e: render())
+    render()
