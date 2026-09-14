@@ -924,6 +924,43 @@ def _inject_theme():
   .avatar-big img { width: 100%; height: 100%; object-fit: cover; }
   .chart-card { background: var(--surface); border: 1px solid var(--border);
                 border-radius: 4px; padding: 12px; margin-bottom: 12px; }
+                /* Defect status bar (item 2/3) */
+  .status-bar {
+    display: inline-block; width: 6px; height: 22px;
+    border-radius: 2px; vertical-align: middle; margin-right: 8px;
+    flex-shrink: 0;
+  }
+  .status-bar.orange { background: #d97706;
+    box-shadow: 0 0 6px rgba(217,119,6,0.55); }
+  .status-bar.green { background: #16a34a;
+    box-shadow: 0 0 6px rgba(22,163,74,0.55); }
+  .status-bar.red { background: #dc2626;
+    box-shadow: 0 0 6px rgba(220,38,38,0.55); }
+  .log-legend {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    font-size: 10px; color: #808080; margin-bottom: 12px;
+    padding: 8px 10px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .log-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .log-legend .status-bar { height: 12px; width: 5px; margin: 0; }
+  .log-dates {
+    font-size: 10px; color: #b8b8b8; margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .log-dates b { color: #e8e8e8; }
+  /* Floating chat tools */
+  .chat-tools {
+    position: fixed; top: 110px; right: 14px; z-index: 500;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .chat-tools .q-btn {
+    background: rgba(11,11,11,0.94) !important;
+    color: #5eead4 !important;
+    border: 1px solid #262626 !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4) !important;
+  }
+  
   .ocr-box { background: var(--surface-2); border: 1px dashed var(--border-2);
              border-radius: 4px; padding: 10px; margin-top: 6px; }
   /* MS chat */
@@ -979,6 +1016,44 @@ BTN_DANGER = "btn-danger"
 def _initial(name):
     s = (name or "?").strip()
     return s[0].upper() if s else "?"
+
+
+_DASH_CACHE = {}
+_DASH_TTL = 60  # seconds
+
+
+def _dash_data(project_id):
+    """Compute dashboard data with a 60s cache. Cleared on writes."""
+    import time as _t
+    now = _t.time()
+    ent = _DASH_CACHE.get(project_id)
+    if ent and (now - ent["ts"]) < _DASH_TTL:
+        return ent["data"]
+    data = {
+        "kpis": db.kpi_summary(project_id),
+        "zones": db.kpi_per_zone(project_id),
+        "weeks": db.kpi_per_week(project_id, weeks=8),
+        "scores": db.subcontractor_scores(project_id),
+        "types": db.kpi_per_type(project_id),
+        "scatter": db.defect_scatter_data(project_id),
+        "rows": db.list_defects(project_id),
+    }
+    _DASH_CACHE[project_id] = {"ts": now, "data": data}
+    return data
+
+
+def _dash_invalidate(project_id):
+    try:
+        _DASH_CACHE.pop(project_id, None)
+    except Exception:
+        pass
+
+
+def _is_admin_ui(user_id):
+    try:
+        return db.is_admin(user_id)
+    except Exception:
+        return False
 
 
 # =====================================================================
@@ -1147,7 +1222,8 @@ def _build_dashboard(state):
             ui.button(icon="refresh", on_click=_refresh).props(
                 "flat round dense size=sm").style("color:#808080;")
 
-    kpis = db.kpi_summary(pid)
+    _d = _dash_data(pid)
+    kpis = _d["kpis"]
     if not kpis or kpis.get("total", 0) == 0:
         with ui.element('div').classes("card").style(
             "text-align:center;padding:32px;"
@@ -1157,10 +1233,10 @@ def _build_dashboard(state):
                 "margin-top:10px;")
         return
 
-    zones = db.kpi_per_zone(pid)
-    weeks = db.kpi_per_week(pid, weeks=8)
-    scores = db.subcontractor_scores(pid)
-    types = db.kpi_per_type(pid) if hasattr(db, "kpi_per_type") else []
+    zones = _d["zones"]
+    weeks = _d["weeks"]
+    scores = _d["scores"]
+    types = _d["types"]
     top_zone = zones[0]["zone"] if zones else "-"
     top_sub = scores[0]["name"] if scores else "-"
 
@@ -1189,7 +1265,7 @@ def _build_dashboard(state):
         labels = [w["label"] for w in weeks]
         raised = [w["count"] for w in weeks]
         try:
-            rows = db.list_defects(pid) or []
+            rows = _d.get("rows") or []
             now = datetime.datetime.utcnow()
             closed_counts = []
             for i in range(len(weeks) - 1, -1, -1):
@@ -1258,10 +1334,7 @@ def _build_dashboard(state):
                 ],
             }).style("height:230px;width:100%;")
 
-    try:
-        scatter = db.defect_scatter_data(pid) or []
-    except Exception:
-        scatter = []
+    scatter = _d.get("scatter") or []
     if scatter:
         open_pts = [[p["x"], p["y"], p.get("uid", "")]
                     for p in scatter if p["status"] == "open"]
@@ -1421,10 +1494,11 @@ def _build_dashboard_pdf(state, filename="dashboard.pdf"):
 
     project = state["project"]
     pid = state["project_id"]
-    kpis = db.kpi_summary(pid)
-    zones = db.kpi_per_zone(pid)
-    weeks = db.kpi_per_week(pid, weeks=8)
-    scores = db.subcontractor_scores(pid)
+    _d = _dash_data(pid)
+    kpis = _d["kpis"]
+    zones = _d["zones"]
+    weeks = _d["weeks"]
+    scores = _d["scores"]
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1581,7 +1655,7 @@ def _build_subs(state):
         ui.button(icon="add", on_click=_open_add).props(
             "flat round dense size=sm").style("color:#5eead4;")
 
-    ui.label(_t("subs_sub")).classes("muted").style("margin-bottom:14px;")
+    ui.label(_t("subs_sub")).classes("muted").style("margin-bottom:8px;")
 
     if not masters:
         with ui.element('div').classes("card").style(
@@ -1593,88 +1667,121 @@ def _build_subs(state):
                 "margin-top:4px;")
         return
 
-    for m in masters:
-        name = m.get("name") or ""
-        score = scores_by_name.get(name) or {
-            "open": 0, "closed": 0, "overdue": 0, "total": 0}
-        with ui.element('div').classes("sub-card"):
+    search_in = ui.input(placeholder="Search by name, trade, phone...").style(
+        "width:100%;margin-bottom:12px;").props("dense clearable")
+
+    sub_holder = ui.element('div').style("width:100%;")
+
+    def _render_list(q=""):
+        sub_holder.clear()
+        q = (q or "").strip().lower()
+        filtered = []
+        for m in masters:
+            hay = " ".join([
+                str(m.get("name") or ""),
+                str(m.get("trade") or ""),
+                str(m.get("phone") or ""),
+                str(m.get("notes") or ""),
+            ]).lower()
+            if not q or q in hay:
+                filtered.append(m)
+
+        with sub_holder:
+            if not filtered:
+                msg = "No matches." if q else _t("no_subs")
+                ui.label(msg).classes("mono-sm").style(
+                    "text-align:center;padding:26px 0;color:#5a5a5a;")
+                return
+            for m in filtered:
+                _render_sub_card(state, pid, m, scores_by_name)
+
+    def _on_search(e):
+        _render_list(e.value or "")
+
+    search_in.on("update:model-value", _on_search)
+    _render_list()
+
+
+def _render_sub_card(state, pid, m, scores_by_name):
+    name = m.get("name") or ""
+    score = scores_by_name.get(name) or {
+        "open": 0, "closed": 0, "overdue": 0, "total": 0}
+    with ui.element('div').classes("sub-card"):
+        with ui.element('div').style(
+            "display:flex;justify-content:space-between;"
+            "align-items:flex-start;gap:10px;"
+        ):
+            with ui.element('div').style("flex:1;min-width:0;"):
+                ui.label(str(name)).classes("h2").style(
+                    "margin-bottom:4px;word-break:break-word;")
+                meta_bits = []
+                if m.get("trade"):
+                    meta_bits.append(str(m["trade"]))
+                if m.get("phone"):
+                    meta_bits.append(str(m["phone"]))
+                if meta_bits:
+                    ui.label(" · ".join(meta_bits)).classes("mono-sm")
+                if not m.get("from_master"):
+                    ui.html('<span class="badge-seen">' +
+                            _t("from_defects") + '</span>').style(
+                        "margin-top:6px;display:inline-block;")
+
+            if m.get("id"):
+                def _del(sub_id=m["id"]):
+                    _confirm_delete_sub(state, sub_id, state["render_main"])
+                ui.button(icon="close", on_click=_del).props(
+                    "flat round dense size=sm").style("color:#5a5a5a;")
+
+        with ui.element('div').style(
+            "display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;"
+        ):
+            if score["open"]:
+                ui.html('<span class="badge-open">' +
+                        str(score["open"]) + ' ' + _t("sub_open") + '</span>')
+            if score["overdue"]:
+                ui.html('<span class="badge-overdue">' +
+                        str(score["overdue"]) + ' ' +
+                        _t("sub_overdue") + '</span>')
+            if score["closed"]:
+                ui.html('<span class="badge-closed">' +
+                        str(score["closed"]) + ' ' +
+                        _t("sub_closed") + '</span>')
+            if score["total"] == 0:
+                ui.label(_t("no_data")).classes("mono-sm")
+
+        if score["total"]:
             with ui.element('div').style(
-                "display:flex;justify-content:space-between;"
-                "align-items:flex-start;gap:10px;"
+                "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+                "margin-top:10px;"
             ):
-                with ui.element('div').style("flex:1;min-width:0;"):
-                    ui.label(str(name)).classes("h2").style(
-                        "margin-bottom:4px;word-break:break-word;")
-                    meta_bits = []
-                    if m.get("trade"):
-                        meta_bits.append(str(m["trade"]))
-                    if m.get("phone"):
-                        meta_bits.append(str(m["phone"]))
-                    if meta_bits:
-                        ui.label(" · ".join(meta_bits)).classes("mono-sm")
-                    if not m.get("from_master"):
-                        ui.html('<span class="badge-seen">' +
-                                _t("from_defects") + '</span>').style(
-                            "margin-top:6px;display:inline-block;")
+                def _view(nm=name):
+                    state["sub_filter"] = nm
+                    state["tab"]["value"] = "logs"
+                    if state.get("build_nav"):
+                        state["build_nav"]()
+                    state["render_main"]()
 
-                if m.get("id"):
-                    def _del(sub_id=m["id"]):
-                        _confirm_delete_sub(state, sub_id,
-                                             state["render_main"])
-                    ui.button(icon="close", on_click=_del).props(
-                        "flat round dense size=sm").style("color:#5a5a5a;")
+                def _pdf(nm=name, sc=score):
+                    try:
+                        rows = [r for r in db.list_defects(pid)
+                                if (r.get("subcontractor") or "") == nm]
+                        pdf = svc.build_sub_pdf(
+                            state["project"], nm, sc, rows,
+                            logo_bytes=state["project"].get("logo_bytes"))
+                        ui.download(pdf, filename="sub_" +
+                                    nm.replace(" ", "_") + ".pdf")
+                    except Exception as ex:
+                        import traceback
+                        traceback.print_exc()
+                        ui.notify("PDF failed: " + str(ex),
+                                   type="negative")
 
-            with ui.element('div').style(
-                "display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;"
-            ):
-                if score["open"]:
-                    ui.html('<span class="badge-open">' +
-                            str(score["open"]) + ' ' +
-                            _t("sub_open") + '</span>')
-                if score["overdue"]:
-                    ui.html('<span class="badge-overdue">' +
-                            str(score["overdue"]) + ' ' +
-                            _t("sub_overdue") + '</span>')
-                if score["closed"]:
-                    ui.html('<span class="badge-closed">' +
-                            str(score["closed"]) + ' ' +
-                            _t("sub_closed") + '</span>')
-                if score["total"] == 0:
-                    ui.label(_t("no_data")).classes("mono-sm")
-
-            if score["total"]:
-                with ui.element('div').style(
-                    "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
-                    "margin-top:10px;"
-                ):
-                    def _view(nm=name):
-                        state["sub_filter"] = nm
-                        state["tab"]["value"] = "logs"
-                        if state.get("build_nav"):
-                            state["build_nav"]()
-                        state["render_main"]()
-
-                    def _pdf(nm=name, sc=score):
-                        try:
-                            rows = [r for r in db.list_defects(pid)
-                                    if (r.get("subcontractor") or "") == nm]
-                            pdf = svc.build_sub_pdf(
-                                state["project"], nm, sc, rows,
-                                logo_bytes=state["project"].get("logo_bytes"))
-                            ui.download(pdf, filename="sub_" +
-                                        nm.replace(" ", "_") + ".pdf")
-                        except Exception as ex:
-                            import traceback
-                            traceback.print_exc()
-                            ui.notify("PDF failed: " + str(ex),
-                                       type="negative")
-
-                    ui.button(_t("view_defects"), icon="list_alt",
-                              on_click=_view).classes(BTN_SOFT).style(
-                        "width:100%;font-size:10px;min-height:30px;")
-                    ui.button(_t("download_sub_pdf"), icon="picture_as_pdf",
-                              on_click=_pdf).classes(BTN_SOFT).style(
-                        "width:100%;font-size:10px;min-height:30px;")
+                ui.button(_t("view_defects"), icon="list_alt",
+                          on_click=_view).classes(BTN_SOFT).style(
+                    "width:100%;font-size:10px;min-height:30px;")
+                ui.button(_t("download_sub_pdf"), icon="picture_as_pdf",
+                          on_click=_pdf).classes(BTN_SOFT).style(
+                    "width:100%;font-size:10px;min-height:30px;")
 
 
 def _open_add_sub_dialog(state, refresh_fn):
@@ -2538,6 +2645,43 @@ def _open_no_photo_dialog(state, stage, refresh_fn):
 
         btn.on("click", do_analyze)
         btn.classes(BTN_PRIMARY).style("width:100%;margin-top:14px;")
+
+        def _raise_direct():
+            desc = (desc_in.value or "").strip()
+            if not desc:
+                ui.notify(_t("desc_required"), type="warning")
+                return
+            lines = desc.split("\n", 1)
+            name = (lines[0].strip() or "Defect")[:120]
+            extra_context = lines[1].strip() if len(lines) > 1 else ""
+            loc_hint = extra_context or (place_in.value or "").strip()
+            stage["candidates"] = [{
+                "name": name,
+                "location_hint": loc_hint,
+                "severity": "Medium",
+                "ms_violations": [],
+                "code_violations": [],
+                "repair_action": "",
+                "context_mismatch": True,
+                "_sel": True,
+                "_manual": True,
+                "_nophoto": True,
+            }]
+            stage["manual"] = []
+            stage["photos"] = []
+            stage["text_only"] = True
+            stage["text_desc"] = desc
+            stage["note"] = ""
+            stage["zone"] = (zone_in.value or "A").strip() or "A"
+            stage["place"] = (place_in.value or "").strip()
+            stage["element"] = _guess_element(place_in.value)
+            dlg.close()
+            ui.timer(0.15, refresh_fn, once=True)
+
+        ui.button("Raise without AI analysis", icon="arrow_forward",
+                  on_click=_raise_direct).classes(BTN_SOFT).style(
+            "width:100%;margin-top:6px;")
+
         with ui.element('div').style("margin-top:6px;"):
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
                 BTN_SOFT).style("width:100%;")
@@ -2853,7 +2997,15 @@ def _build_logs(state):
         ui.button(icon="refresh", on_click=_refresh).props(
             "flat round dense size=sm").style("color:#808080;")
 
-    ui.label(_t("logs_sub")).classes("muted").style("margin-bottom:12px;")
+    ui.label(_t("logs_sub")).classes("muted").style("margin-bottom:8px;")
+
+    ui.html(
+        '<div class="log-legend">'
+        '<span><i class="status-bar orange"></i>OPEN — not yet overdue</span>'
+        '<span><i class="status-bar red"></i>OVERDUE / LATE</span>'
+        '<span><i class="status-bar green"></i>CLOSED on time</span>'
+        '</div>'
+    )
 
     if state.get("sub_filter"):
         with ui.element('div').style(
@@ -2958,7 +3110,7 @@ def _build_logs(state):
                 "text-align:center;padding:32px 0;")
             return
         for r in rows:
-            _render_log_card(r, log_list.refresh)
+            _render_log_card(r, log_list.refresh, state)
 
     def _on_filter(e):
         fstate["filter"] = (e.value if e and e.value else "all")
@@ -3000,11 +3152,40 @@ def _build_logs(state):
     log_list()
 
 
-def _render_log_card(row, refresh_fn):
+def _render_log_card(row, refresh_fn, state=None):
     status = row.get("status", "open")
     is_open = status == "open"
-    badge = "badge-open" if is_open else "badge-closed"
-    badge_txt = _t("open") if is_open else _t("closed")
+
+    created_raw = row.get("created_at") or ""
+    closed_raw = row.get("closed_at") or ""
+    dl_days = int(row.get("deadline_days") or 3)
+    created_dt = _parse_dt(created_raw)
+    closed_dt = _parse_dt(closed_raw) if closed_raw else None
+    now = datetime.datetime.utcnow()
+
+    deadline_dt = None
+    if created_dt:
+        deadline_dt = created_dt + datetime.timedelta(days=dl_days)
+
+    overdue = bool(deadline_dt and is_open and now > deadline_dt)
+    closed_late = bool(closed_dt and deadline_dt and closed_dt > deadline_dt)
+
+    if is_open and overdue:
+        bar = "red"
+    elif is_open:
+        bar = "orange"
+    elif closed_late:
+        bar = "red"
+    else:
+        bar = "green"
+
+    created_s = created_dt.strftime("%Y-%m-%d") if created_dt else "—"
+    deadline_s = deadline_dt.strftime("%Y-%m-%d") if deadline_dt else "—"
+    if closed_dt:
+        close_s = closed_dt.strftime("%Y-%m-%d")
+    else:
+        close_s = "STILL NOT"
+
     title = row.get("first_defect") or row.get("uid", "")
     extra = ""
     if row.get("count", 0) > 1:
@@ -3015,38 +3196,62 @@ def _render_log_card(row, refresh_fn):
             "display:flex;justify-content:space-between;"
             "align-items:flex-start;gap:10px;"
         ):
-            with ui.element('div').style("flex:1;min-width:0;"):
-                ui.label(str(title) + extra).classes("mono-lg").style(
-                    "margin-bottom:4px;")
-                meta_bits = []
-                if row.get("engineer_name"):
-                    meta_bits.append(str(row["engineer_name"]))
-                if row.get("place"):
-                    meta_bits.append(str(row["place"]))
-                if meta_bits:
-                    ui.label(" · ".join(meta_bits)).classes("mono-sm").style(
-                        "margin-bottom:4px;color:#c8c8c8;")
-                ui.label(
-                    row.get("uid", "") + "  " +
-                    str(row.get("zone", "")) + "  " +
-                    str(row.get("subcontractor", ""))
-                ).classes("mono-sm")
-                dt = row.get("defect_type") or ""
-                if dt:
-                    ui.html('<span class="badge-seen" style="margin-top:4px;'
-                            'display:inline-block;">' +
-                            _html_mod.escape(str(dt)) + '</span>')
-            ui.html('<span class="' + badge + '">' + badge_txt + '</span>')
+            with ui.element('div').style(
+                "flex:1;min-width:0;display:flex;gap:8px;"
+            ):
+                ui.html('<div class="status-bar ' + bar + '"></div>')
+                with ui.element('div').style("flex:1;min-width:0;"):
+                    ui.label(str(title) + extra).classes("mono-lg").style(
+                        "margin-bottom:4px;")
+                    meta_bits = []
+                    if row.get("engineer_name"):
+                        meta_bits.append(str(row["engineer_name"]))
+                    if row.get("place"):
+                        meta_bits.append(str(row["place"]))
+                    if meta_bits:
+                        ui.label(" · ".join(meta_bits)).classes("mono-sm").style(
+                            "margin-bottom:4px;color:#c8c8c8;")
+                    ui.label(
+                        row.get("uid", "") + "  " +
+                        str(row.get("zone", "")) + "  " +
+                        str(row.get("subcontractor", ""))
+                    ).classes("mono-sm")
+                    ui.html(
+                        '<div class="log-dates">'
+                        'CREATED <b>' + _html_mod.escape(created_s) + '</b>'
+                        '  ·  DEADLINE <b>' + str(dl_days) + 'd</b>'
+                        ' (by <b>' + _html_mod.escape(deadline_s) + '</b>)'
+                        '  ·  CLOSE: <b>' + _html_mod.escape(close_s) +
+                        '</b></div>'
+                    )
+                    dt = row.get("defect_type") or ""
+                    if dt:
+                        ui.html('<span class="badge-seen" style="margin-top:4px;'
+                                'display:inline-block;">' +
+                                _html_mod.escape(str(dt)) + '</span>')
+
+            with ui.element('div').style(
+                "display:flex;flex-direction:column;align-items:flex-end;gap:4px;"
+            ):
+                if is_open and overdue:
+                    ui.html('<span class="badge-overdue">OVERDUE</span>')
+                elif is_open:
+                    ui.html('<span class="badge-open">OPEN</span>')
+                elif closed_late:
+                    ui.html('<span class="badge-overdue">LATE</span>')
+                else:
+                    ui.html('<span class="badge-closed">CLOSED</span>')
 
         def _click():
-            _show_defect_dialog(row.get("id"), refresh_fn)
+            uid = state.get("user_id") if state else None
+            _show_defect_dialog(row.get("id"), refresh_fn, user_id=uid)
         card.on("click", _click)
 
 
 # =====================================================================
 # DEFECT DETAIL / EDIT / DELETE
 # =====================================================================
-def _show_defect_dialog(defect_id, on_close_cb):
+def _show_defect_dialog(defect_id, on_close_cb, user_id=None):
     d = db.get_defect(defect_id)
     if not d:
         ui.notify(_t("not_found"), type="negative")
@@ -3149,7 +3354,8 @@ def _show_defect_dialog(defect_id, on_close_cb):
 
                 def _delete():
                     dialog.close()
-                    _open_delete_defect_dialog(d, on_close_cb)
+                    _open_delete_defect_dialog(d, on_close_cb,
+                                                 user_id=user_id)
 
                 ui.button(_t("edit_defect"), icon="edit",
                           on_click=_edit).classes(BTN_SOFT).style(
@@ -3462,7 +3668,25 @@ def _open_edit_defect_dialog(d, on_close_cb):
 # =====================================================================
 # DELETE DEFECT DIALOG
 # =====================================================================
-def _open_delete_defect_dialog(d, on_close_cb):
+def _open_delete_defect_dialog(d, on_close_cb, user_id=None):
+    is_closed = (d.get("status") or "open") != "open"
+    is_adm = _is_admin_ui(user_id) if user_id else False
+
+    if is_closed and not is_adm:
+        with ui.dialog() as dlg, ui.card().style(
+            "padding:20px;min-width:300px;max-width:95vw;width:400px;"
+        ):
+            ui.icon("lock").style("font-size:32px;color:#fbbf24;")
+            ui.label("Closed notices can't be deleted").classes("h3").style(
+                "margin-top:10px;margin-bottom:6px;")
+            ui.label("Only an admin can delete a closed defect. "
+                      "If this is an error, ask your admin to remove it.").classes(
+                "mono-sm").style("line-height:1.5;margin-bottom:14px;")
+            ui.button(_t("close"), on_click=dlg.close).classes(BTN_SOFT).style(
+                "width:100%;")
+        dlg.open()
+        return
+
     with ui.dialog() as dlg, ui.card().style(
         "padding:20px;min-width:300px;max-width:95vw;width:400px;"
     ):
@@ -3780,8 +4004,16 @@ def _build_chat(state):
                                     pass
                             ui.timer(remaining, _hide, once=True)
 
-    ui.input(placeholder=_t("chat_search"), on_change=_on_search).style(
-        "width:100%;margin-bottom:12px;").props("dense clearable")
+    # Floating search button (fixed on right)
+    with ui.element('div').classes("chat-tools"):
+        def _toggle_search():
+            search_box.set_visibility(not search_box.visible)
+        ui.button(icon="search", on_click=_toggle_search).props(
+            "round dense size=sm")
+
+    search_box = ui.input(placeholder=_t("chat_search"),
+                            on_change=_on_search).style(
+        "width:100%;margin-bottom:12px;display:none;").props("dense clearable")
 
     chat_list()
 
@@ -3850,9 +4082,17 @@ def _build_chat(state):
 
         ui.button(_t("chat_send"), icon="send", on_click=_send).classes(
             BTN_PRIMARY).style("width:100%;margin-top:6px;")
+        body_in.on('keydown.enter', lambda _: _send())
 
     state.setdefault("_chat_last_id", db.chat_max_id(pid))
-    ui.timer(0.4, lambda: ui.run_javascript(
+    # jump to bottom on open (two attempts — one for after layout)
+    ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});")
+    ui.timer(0.35, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+    ui.timer(0.9, lambda: ui.run_javascript(
         "window.scrollTo({top: document.body.scrollHeight,"
         " behavior:'auto'});"), once=True)
 
@@ -3892,25 +4132,39 @@ def _build_ms_chat(state):
         _render_no_project(state, state["render_main"])
         return
     pid = state["project_id"]
+    uid = state["user_id"]
+    _current_uid_holder["uid"] = uid
     user = state.get("user") or {}
     my_name = (user.get("name") or user.get("email") or "me")
 
-    with ui.element('div').classes("section-head"):
-        ui.label(_t("ms_chat_title")).classes("h1")
-
-        with ui.element('div').style("display:flex;gap:6px;"):
-            def _clear_hist():
+    # Floating tool buttons (top-right, always visible)
+    with ui.element('div').classes("chat-tools"):
+        def _clear_hist():
+            try:
+                db.ms_chat_clear(pid, uid)
                 ui.notify(_t("ms_chat_cleared"), type="positive")
                 ms_list.refresh()
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("Clear failed: " + str(ex), type="negative")
+        ui.button(icon="delete_sweep", on_click=_clear_hist).props(
+            "round dense size=sm")
 
-            ui.button(_t("ms_chat_clear"), icon="delete_sweep",
-                      on_click=_clear_hist).classes(BTN_SOFT).style(
-                "font-size:10px;min-height:28px;")
+        def _refresh():
+            state["render_main"]()
+        ui.button(icon="refresh", on_click=_refresh).props(
+            "round dense size=sm")
 
-            def _refresh():
-                state["render_main"]()
-            ui.button(icon="refresh", on_click=_refresh).props(
-                "flat round dense size=sm").style("color:#808080;")
+        def _scroll_bottom():
+            ui.run_javascript(
+                "window.scrollTo({top: document.body.scrollHeight,"
+                " behavior:'smooth'});")
+        ui.button(icon="vertical_align_bottom", on_click=_scroll_bottom).props(
+            "round dense size=sm")
+
+    with ui.element('div').classes("section-head"):
+        ui.label(_t("ms_chat_title")).classes("h1")
 
     ui.label(_t("ms_chat_sub")).classes("muted").style("margin-bottom:12px;")
 
@@ -3929,43 +4183,39 @@ def _build_ms_chat(state):
 
     @ui.refreshable
     def ms_list():
-        msgs = db.ms_chat_list(pid, state["user_id"], limit=200)
+        msgs = db.ms_chat_list(pid, uid, limit=200)
         if not msgs:
             ui.label(_t("ms_chat_empty")).classes("mono-sm").style(
                 "text-align:center;padding:32px 0;color:#5a5a5a;")
             return
         for m in msgs:
-            _render_ms_message(m)
+            _render_ms_message(m, on_delete=ms_list.refresh)
 
     ms_list()
 
-    # --- Composer ---
+    # Composer
     with ui.element('div').classes("chat-composer"):
         ui.label(_t("ms_chat_ask")).classes("label").style(
             "display:block;margin-bottom:4px;")
         q_in = ui.textarea(
-            placeholder=_t("ms_chat_ask_placeholder")).style("width:100%;"
-        ).props("dense autogrow")
+            placeholder=_t("ms_chat_ask_placeholder")).style(
+            "width:100%;").props("dense autogrow")
 
         async def _ask():
             q = (q_in.value or "").strip()
             if not q:
                 ui.notify("Type a question first.", type="warning")
                 return
-
-            print("[mschat] asking: " + q[:150])
             try:
                 btn_ask.props("loading")
                 btn_ask.set_text(_t("analyzing"))
             except Exception:
                 pass
-
             try:
                 result = await msc.ask_ms_question(pid, q, call_gemini_json)
             except Exception as ex:
                 import traceback
                 traceback.print_exc()
-                print("[mschat] ask_ms_question raised: " + repr(ex))
                 try:
                     btn_ask.props(remove="loading")
                     btn_ask.set_text(_t("ms_chat_send"))
@@ -3973,58 +4223,42 @@ def _build_ms_chat(state):
                     pass
                 ui.notify("Ask error: " + str(ex), type="negative")
                 return
-
-            print("[mschat] result: " + repr(result)[:800])
-
             try:
                 btn_ask.props(remove="loading")
                 btn_ask.set_text(_t("ms_chat_send"))
             except Exception:
                 pass
-
             if not result:
-                ui.notify("Empty result from AI. Check server logs.",
-                           type="negative")
+                ui.notify("Empty result.", type="negative")
                 return
-
             if result.get("error"):
                 ui.notify(_t("ms_chat_failed") + str(result["error"]),
                            type="negative")
                 return
-
             answer = result.get("answer") or ""
             if not answer.strip():
-                ui.notify("AI returned an empty answer.",
-                           type="warning")
+                ui.notify("Empty answer.", type="warning")
                 return
-
             try:
-                db.ms_chat_add(pid, state["user_id"], my_name,
-                                "question", q, {"answer": answer})
+                db.ms_chat_add(pid, uid, my_name, "question", q,
+                                {"answer": answer})
             except Exception as ex:
                 import traceback
                 traceback.print_exc()
-                print("[mschat] ms_chat_add failed: " + repr(ex))
                 ui.notify("Save failed: " + str(ex), type="negative")
                 return
-
             q_in.value = ""
             try:
                 ms_list.refresh()
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                print("[mschat] ms_list.refresh failed: " + repr(ex))
-                ui.notify("Refresh failed: " + str(ex), type="negative")
-            try:
-                ui.run_javascript(
-                    "window.scrollTo({top: document.body.scrollHeight,"
-                    " behavior:'smooth'});")
             except Exception:
                 pass
+            ui.run_javascript(
+                "window.scrollTo({top: document.body.scrollHeight,"
+                " behavior:'smooth'});")
 
         btn_ask = ui.button(_t("ms_chat_send"), icon="send", on_click=_ask)
         btn_ask.classes(BTN_PRIMARY).style("width:100%;margin-top:6px;")
+        q_in.on('keydown.enter', lambda _: _ask())
 
         with ui.element('div').classes("or-divider"):
             ui.label(_t("or_divider"))
@@ -4077,8 +4311,8 @@ def _build_ms_chat(state):
             resp = {k: result.get(k) for k in
                     ("doc_type", "extracted", "checks", "overall",
                      "summary", "ocr_text")}
-            db.ms_chat_add(pid, state["user_id"], my_name,
-                            "check", _t("ms_chat_check_btn"), resp)
+            db.ms_chat_add(pid, uid, my_name, "check",
+                            _t("ms_chat_check_btn"), resp)
             ms_list.refresh()
             ui.run_javascript(
                 "window.scrollTo({top: document.body.scrollHeight,"
@@ -4090,12 +4324,22 @@ def _build_ms_chat(state):
             _t("ms_chat_check_btn") + "'")
         doc_status
 
-    state.setdefault("_ms_chat_last_id",
-                     db.ms_chat_max_id(pid, state["user_id"]))
+    # scroll to bottom on open
+    ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});")
+    ui.timer(0.35, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+    ui.timer(0.9, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+
+    state.setdefault("_ms_chat_last_id", db.ms_chat_max_id(pid, uid))
 
     async def _ms_poll():
         try:
-            cur_max = db.ms_chat_max_id(pid, state["user_id"])
+            cur_max = db.ms_chat_max_id(pid, uid)
         except Exception:
             return
         if cur_max != state.get("_ms_chat_last_id"):
@@ -4107,14 +4351,15 @@ def _build_ms_chat(state):
 
     ui.timer(5.0, _ms_poll)
 
-
-def _render_ms_message(m):
+_current_uid_holder = {"uid": None}
+def _render_ms_message(m, on_delete=None):
     kind = (m.get("kind") or "question").lower()
     cls = "ms-msg kind-question" if kind == "question" else "ms-msg kind-check"
     author = m.get("author") or "?"
     created = str(m.get("created_at") or "")[:16]
     body = m.get("body") or ""
     resp = m.get("response") or {}
+    mid = m.get("id")
 
     with ui.element('div').classes(cls):
         with ui.element('div').style(
@@ -4130,7 +4375,20 @@ def _render_ms_message(m):
                             else _t("ms_chat_kind_check")) + '</span>')
                 ui.label(author).style(
                     "font-size:11px;color:#b8b8b8;font-weight:600;")
-            ui.label(created).classes("chat-time")
+            with ui.element('div').style(
+                "display:flex;align-items:center;gap:6px;"
+            ):
+                ui.label(created).classes("chat-time")
+
+                def _del(did=mid):
+                    db.ms_chat_delete(did, _current_uid_holder.get("uid"))
+                    ui.notify("Deleted.", type="positive")
+                    if on_delete:
+                        on_delete()
+                if mid:
+                    ui.button(icon="delete", on_click=_del).props(
+                        "flat round dense size=xs").style(
+                        "color:#808080;").tooltip("Delete")
 
         if kind == "question":
             with ui.element('div').style(
