@@ -1,5 +1,5 @@
 """
-services/defect_db.py — Thread-local connections. Adds defect_type.
+services/defect_db.py — Thread-local connections. Adds defect_type + team + MS chat.
 """
 import os
 import re
@@ -36,7 +36,6 @@ def _use_turso():
 
 
 def _conn():
-    """One connection per thread, reused. No close() calls elsewhere."""
     c = getattr(_TL, "c", None)
     if c is not None:
         return c
@@ -157,6 +156,12 @@ SUB_COLS = ["id", "name", "trade", "phone", "notes"]
 CHAT_COLS = ["id", "project_id", "user_id", "author", "body",
              "reply_to_id", "mentions", "created_at"]
 
+MEMBER_COLS = ["id", "project_id", "user_id", "role", "added_at",
+               "email", "name", "title"]
+
+MS_CHAT_COLS = ["id", "project_id", "user_id", "author", "kind",
+                "body", "response_json", "created_at"]
+
 
 def _ensure_columns(cur, table, wanted):
     cur.execute("PRAGMA table_info(" + table + ")")
@@ -191,6 +196,7 @@ def _ensure_columns(cur, table, wanted):
                     continue
                 print("[db] add col failed: " + repr(e))
 
+
 def init_db():
     with _LOCK:
         c = _conn()
@@ -209,6 +215,16 @@ def init_db():
                 name TEXT, contractor TEXT, subcontractor TEXT,
                 consultant TEXT, location TEXT, engineer_name TEXT,
                 logo_bytes BLOB, created_at TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS project_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL DEFAULT 'engineer',
+                added_at TEXT,
+                UNIQUE(project_id, user_id)
             )
         """)
         cur.execute("""
@@ -246,6 +262,14 @@ def init_db():
                 created_at TEXT
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS ms_chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, user_id INTEGER, author TEXT,
+                kind TEXT, body TEXT, response_json TEXT,
+                created_at TEXT
+            )
+        """)
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
@@ -261,6 +285,19 @@ def init_db():
             ("defect_type", "TEXT"),
         ])
 
+        # Backfill: every existing project owner becomes a member
+        try:
+            cur.execute("""
+                INSERT OR IGNORE INTO project_members
+                    (project_id, user_id, role, added_at)
+                SELECT id, user_id, 'owner',
+                       COALESCE(created_at, '2020-01-01 00:00:00')
+                FROM projects
+                WHERE user_id IS NOT NULL
+            """)
+        except Exception as e:
+            print("[db] backfill members failed: " + repr(e))
+
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_defects_project "
             "ON defects(project_id)",
@@ -270,6 +307,12 @@ def init_db():
             "ON subcontractors(project_id)",
             "CREATE INDEX IF NOT EXISTS idx_chat_project "
             "ON chat_messages(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_members_project "
+            "ON project_members(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_members_user "
+            "ON project_members(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_mschat_project "
+            "ON ms_chat_messages(project_id)",
         ]:
             try:
                 cur.execute(idx)
@@ -361,19 +404,133 @@ def update_user_profile(user_id, name, title, photo_bytes=None):
 
 
 # =====================================================================
-# PROJECTS
+# PROJECT MEMBERS
 # =====================================================================
-def list_projects(user_id):
+def is_project_member(user_id, project_id):
     c = _conn()
     cur = c.cursor()
     cur.execute("""
-        SELECT id, user_id, name, contractor, subcontractor, consultant,
-               location, engineer_name, logo_bytes, created_at
-        FROM projects WHERE user_id=? ORDER BY id DESC
+        SELECT 1 FROM project_members
+        WHERE user_id=? AND project_id=? LIMIT 1
+    """, (user_id, project_id))
+    return cur.fetchone() is not None
+
+
+def get_user_role_in_project(user_id, project_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT role FROM project_members
+        WHERE user_id=? AND project_id=? LIMIT 1
+    """, (user_id, project_id))
+    row = cur.fetchone()
+    if not row:
+        return None
+    if isinstance(row, dict):
+        return row.get("role")
+    try:
+        return row[0]
+    except Exception:
+        return None
+
+
+def list_project_members(project_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT m.id, m.project_id, m.user_id, m.role, m.added_at,
+               u.email, u.name, u.title
+        FROM project_members m
+        LEFT JOIN users u ON u.id = m.user_id
+        WHERE m.project_id=?
+        ORDER BY m.id ASC
+    """, (project_id,))
+    rows = _to_dicts(cur.fetchall(), MEMBER_COLS)
+    out = []
+    for r in rows:
+        out.append({
+            "id": r.get("id"),
+            "project_id": r.get("project_id"),
+            "user_id": r.get("user_id"),
+            "role": r.get("role") or "engineer",
+            "added_at": r.get("added_at") or "",
+            "email": r.get("email") or "",
+            "name": r.get("name") or r.get("email") or "—",
+            "title": r.get("title") or "",
+        })
+    return out
+
+
+def add_project_member(project_id, email, role="engineer"):
+    email = (email or "").strip().lower()
+    if not email:
+        return False, "Email required."
+    user = get_user_by_email(email)
+    if not user:
+        return False, "No account with that email. Ask them to sign up first."
+    uid = user.get("id")
+    if not uid:
+        return False, "Invalid user."
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            cur.execute("""
+                INSERT OR IGNORE INTO project_members
+                    (project_id, user_id, role, added_at)
+                VALUES (?, ?, ?, ?)
+            """, (project_id, uid, role or "engineer", _now()))
+            c.commit()
+            _sync(c)
+        except Exception as e:
+            return False, "Add failed: " + str(e)
+    return True, "Added to project."
+
+
+def remove_project_member(project_id, user_id):
+    """Remove a member. Owner can't be removed."""
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            DELETE FROM project_members
+            WHERE project_id=? AND user_id=? AND role != 'owner'
+        """, (project_id, user_id))
+        c.commit()
+        _sync(c)
+    return True
+
+
+def list_projects(user_id):
+    """Projects the user is a member of (owner or invited)."""
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT p.id, p.user_id, p.name, p.contractor, p.subcontractor,
+               p.consultant, p.location, p.engineer_name,
+               p.logo_bytes, p.created_at
+        FROM projects p
+        JOIN project_members m ON m.project_id = p.id
+        WHERE m.user_id=?
+        ORDER BY p.id DESC
     """, (user_id,))
     return _to_dicts(cur.fetchall(), PROJECT_COLS)
 
 
+def count_owned_projects(user_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("SELECT COUNT(*) FROM projects WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    try:
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+# =====================================================================
+# PROJECTS
+# =====================================================================
 def create_project(user_id, name, contractor="", subcontractor="",
                    consultant="", location="", engineer_name="",
                    logo_bytes=None):
@@ -388,6 +545,14 @@ def create_project(user_id, name, contractor="", subcontractor="",
         """, (user_id, name, contractor, subcontractor, consultant,
               location, engineer_name, logo_bytes, _now()))
         pid = cur.lastrowid
+        try:
+            cur.execute("""
+                INSERT OR IGNORE INTO project_members
+                    (project_id, user_id, role, added_at)
+                VALUES (?, ?, 'owner', ?)
+            """, (pid, user_id, _now()))
+        except Exception as e:
+            print("[db] add owner member failed: " + repr(e))
         c.commit()
         _sync(c)
         return pid
@@ -420,6 +585,10 @@ def delete_project(project_id):
         cur.execute("DELETE FROM subcontractors WHERE project_id=?",
                     (project_id,))
         cur.execute("DELETE FROM chat_messages WHERE project_id=?",
+                    (project_id,))
+        cur.execute("DELETE FROM ms_chat_messages WHERE project_id=?",
+                    (project_id,))
+        cur.execute("DELETE FROM project_members WHERE project_id=?",
                     (project_id,))
         cur.execute("DELETE FROM projects WHERE id=?", (project_id,))
         c.commit()
@@ -479,7 +648,6 @@ def list_ms(project_id):
 
 
 def get_clauses_for_element(project_id, element_type=None):
-    """Return all clauses for the project. element_type is ignored now."""
     c = _conn()
     cur = c.cursor()
     cur.execute("SELECT clauses_json FROM method_statements "
@@ -1015,6 +1183,7 @@ def chat_authors(project_id):
     rows = _to_dicts(cur.fetchall(), ["author"])
     return [r["author"] for r in rows if r.get("author")]
 
+
 def chat_max_id(project_id):
     """Highest chat message id for a project (0 if none). Cheap poll."""
     c = _conn()
@@ -1029,8 +1198,6 @@ def chat_max_id(project_id):
 
 
 def chat_delete_secure(msg_id, user_id, within_seconds=60):
-    """Delete a chat message only if it belongs to user_id and is younger
-    than within_seconds. Returns (ok, reason)."""
     c = _conn()
     cur = c.cursor()
     cur.execute("SELECT user_id, created_at FROM chat_messages WHERE id=?",
@@ -1064,3 +1231,70 @@ def chat_delete_secure(msg_id, user_id, within_seconds=60):
         c2.commit()
         _sync(c2)
     return True, None
+
+
+# =====================================================================
+# MS CHAT (Q&A + document check)
+# =====================================================================
+def ms_chat_add(project_id, user_id, author, kind, body, response_dict):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            payload = json.dumps(response_dict or {})
+        except Exception:
+            payload = "{}"
+        cur.execute("""
+            INSERT INTO ms_chat_messages
+                (project_id, user_id, author, kind, body,
+                 response_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (project_id, user_id, author, kind, body, payload, _now()))
+        mid = cur.lastrowid
+        c.commit()
+        _sync(c)
+        return mid
+
+
+def ms_chat_list(project_id, limit=200):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, user_id, author, kind, body,
+               response_json, created_at
+        FROM ms_chat_messages
+        WHERE project_id=?
+        ORDER BY id DESC LIMIT ?
+    """, (project_id, int(limit)))
+    rows = _to_dicts(cur.fetchall(), MS_CHAT_COLS)
+    out = []
+    for r in rows:
+        try:
+            r["response"] = json.loads(r.get("response_json") or "{}")
+        except Exception:
+            r["response"] = {}
+        out.append(r)
+    out.reverse()
+    return out
+
+
+def ms_chat_max_id(project_id):
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("SELECT COALESCE(MAX(id),0) FROM ms_chat_messages "
+                    "WHERE project_id=?", (project_id,))
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+def ms_chat_clear(project_id):
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("DELETE FROM ms_chat_messages WHERE project_id=?",
+                    (project_id,))
+        c.commit()
+        _sync(c)
