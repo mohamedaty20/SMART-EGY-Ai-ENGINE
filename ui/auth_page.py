@@ -7,6 +7,7 @@ from ui.pwa import inject_pwa
 from services import defect_db as db
 from services import billing_db as bdb
 from services import auth_service as auth
+from services import defect_db as db
 from ui.onboarding import show_onboarding
 
 
@@ -97,10 +98,26 @@ def login_page():
                     return
                 token = auth.make_session(u["id"])
                 app.storage.user["session"] = token
-                # Onboarding for first login
+
+                # If they arrived via an invite link, join them now
+                pending = app.storage.user.pop("pending_invite", None)
+                if pending:
+                    try:
+                        ok, reason, project_id, role = db.invite_consume(
+                            pending, u["id"])
+                        if ok and project_id:
+                            app.storage.user["project_id"] = project_id
+                            bdb.mark_onboarded(u["id"])
+                            ui.navigate.to("/app")
+                            return
+                    except Exception as e:
+                        print("[invite] auto-join failed: " + repr(e))
+
                 if not bdb.has_onboarded(u["id"]):
                     show_onboarding(u["id"],
                                      on_done=lambda: ui.navigate.to("/app"))
+                else:
+                    ui.navigate.to("/app")
                 else:
                     ui.navigate.to("/app")
 
@@ -169,7 +186,21 @@ def signup_page():
                 bdb.start_trial(uid)
                 token = auth.make_session(uid)
                 app.storage.user["session"] = token
-                # Show onboarding
+
+                # If they arrived via an invite link, join them now
+                pending = app.storage.user.pop("pending_invite", None)
+                if pending:
+                    try:
+                        ok, reason, project_id, role = db.invite_consume(
+                            pending, uid)
+                        if ok and project_id:
+                            app.storage.user["project_id"] = project_id
+                            bdb.mark_onboarded(uid)
+                            ui.navigate.to("/app")
+                            return
+                    except Exception as e:
+                        print("[invite] auto-join failed: " + repr(e))
+
                 show_onboarding(uid,
                                  on_done=lambda: ui.navigate.to("/app"))
 
