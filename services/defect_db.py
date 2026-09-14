@@ -277,6 +277,9 @@ def init_db():
         _ensure_columns(cur, "projects", [
             ("user_id", "INTEGER"), ("subcontractor", "TEXT"),
         ])
+        _ensure_columns(cur, "method_statements", [
+            ("full_text", "TEXT"),
+        ])
         _ensure_columns(cur, "defects", [
             ("raise_type", "TEXT"), ("closed_at", "TEXT"),
             ("notice_pdf", "BLOB"), ("consultant_ncr", "TEXT"),
@@ -612,17 +615,18 @@ def get_project(project_id):
 # MS
 # =====================================================================
 def save_ms(project_id, ms_number, title, element_type, discipline,
-            pdf_bytes, clauses):
+            pdf_bytes, clauses, full_text=None):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
         cur.execute("""
             INSERT INTO method_statements
                 (project_id, ms_number, title, element_type, discipline,
-                 pdf_bytes, clauses_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 pdf_bytes, clauses_json, full_text, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (project_id, ms_number, title, element_type, discipline,
-              pdf_bytes, json.dumps(clauses), _now()))
+              pdf_bytes, json.dumps(clauses),
+              (full_text or "")[:200000], _now()))
         c.commit()
         _sync(c)
 
@@ -1359,3 +1363,40 @@ def ms_chat_clear(project_id, user_id):
             (project_id, int(user_id)))
         c.commit()
         _sync(c)
+def get_ms_full_text(project_id, max_chars=150000):
+    """Concatenate the FULL text of every MS uploaded to this project.
+    Falls back to reconstructing from clauses for old uploads."""
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT ms_number, title, full_text, clauses_json
+        FROM method_statements WHERE project_id=? ORDER BY id ASC
+    """, (project_id,))
+    rows = _to_dicts(cur.fetchall(),
+                     ["ms_number", "title", "full_text", "clauses_json"])
+    parts = []
+    total = 0
+    for r in rows:
+        hdr = "# " + str(r.get("ms_number") or "") + " " + \
+              str(r.get("title") or "")
+        ft = r.get("full_text")
+        if not ft:
+            try:
+                cls_ = json.loads(r.get("clauses_json") or "[]")
+                ft = "\n".join(
+                    "S" + str(cl.get("id", "")) + " " +
+                    str(cl.get("title", "")) + ": " +
+                    str(cl.get("text", ""))
+                    for cl in cls_)
+            except Exception:
+                ft = ""
+        if not ft:
+            continue
+        chunk = hdr + "\n" + ft
+        if total + len(chunk) > max_chars:
+            chunk = chunk[:max(0, max_chars - total)]
+        parts.append(chunk)
+        total += len(chunk)
+        if total >= max_chars:
+            break
+    return "\n\n".join(parts)
