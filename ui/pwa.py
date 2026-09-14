@@ -4,6 +4,7 @@ Call inject_pwa() at the top of every page so the browser can offer
 "Add to Home Screen" (iOS) / "Install app" (Android).
 """
 from nicegui import ui
+from ui.pwa import inject_pwa
 
 
 def inject_pwa():
