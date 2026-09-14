@@ -6,6 +6,7 @@ from nicegui import ui, app
 from services import billing_db as bdb
 from services import payment_service as pay
 from services import auth_service as auth
+from ui.pwa import inject_pwa
 
 
 STYLE = """
