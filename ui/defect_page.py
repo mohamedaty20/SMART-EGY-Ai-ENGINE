@@ -3949,23 +3949,78 @@ def _build_ms_chat(state):
         async def _ask():
             q = (q_in.value or "").strip()
             if not q:
+                ui.notify("Type a question first.", type="warning")
                 return
-            btn_ask.props("loading")
-            btn_ask.set_text(_t("analyzing"))
-            result = await msc.ask_ms_question(pid, q, call_gemini_json)
-            btn_ask.props(remove="loading")
-            btn_ask.set_text(_t("ms_chat_send"))
+
+            print("[mschat] asking: " + q[:150])
+            try:
+                btn_ask.props("loading")
+                btn_ask.set_text(_t("analyzing"))
+            except Exception:
+                pass
+
+            try:
+                result = await msc.ask_ms_question(pid, q, call_gemini_json)
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                print("[mschat] ask_ms_question raised: " + repr(ex))
+                try:
+                    btn_ask.props(remove="loading")
+                    btn_ask.set_text(_t("ms_chat_send"))
+                except Exception:
+                    pass
+                ui.notify("Ask error: " + str(ex), type="negative")
+                return
+
+            print("[mschat] result: " + repr(result)[:800])
+
+            try:
+                btn_ask.props(remove="loading")
+                btn_ask.set_text(_t("ms_chat_send"))
+            except Exception:
+                pass
+
+            if not result:
+                ui.notify("Empty result from AI. Check server logs.",
+                           type="negative")
+                return
+
             if result.get("error"):
                 ui.notify(_t("ms_chat_failed") + str(result["error"]),
                            type="negative")
                 return
-            db.ms_chat_add(pid, state["user_id"], my_name,
-                            "question", q, {"answer": result["answer"]})
+
+            answer = result.get("answer") or ""
+            if not answer.strip():
+                ui.notify("AI returned an empty answer.",
+                           type="warning")
+                return
+
+            try:
+                db.ms_chat_add(pid, state["user_id"], my_name,
+                                "question", q, {"answer": answer})
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                print("[mschat] ms_chat_add failed: " + repr(ex))
+                ui.notify("Save failed: " + str(ex), type="negative")
+                return
+
             q_in.value = ""
-            ms_list.refresh()
-            ui.run_javascript(
-                "window.scrollTo({top: document.body.scrollHeight,"
-                " behavior:'smooth'});")
+            try:
+                ms_list.refresh()
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                print("[mschat] ms_list.refresh failed: " + repr(ex))
+                ui.notify("Refresh failed: " + str(ex), type="negative")
+            try:
+                ui.run_javascript(
+                    "window.scrollTo({top: document.body.scrollHeight,"
+                    " behavior:'smooth'});")
+            except Exception:
+                pass
 
         btn_ask = ui.button(_t("ms_chat_send"), icon="send", on_click=_ask)
         btn_ask.classes(BTN_PRIMARY).style("width:100%;margin-top:6px;")
