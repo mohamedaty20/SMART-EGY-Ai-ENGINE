@@ -4,6 +4,7 @@ Adds build_sub_pdf() + photo strip in notice PDF.
 Arabic PDF rendering hardened: multi-mirror font download, system-font
 fallback, mixed Arabic/Latin run wrapping, right-aligned Arabic blocks.
 Feature #3: nothing renders below the signature tables anymore.
+Feature #10: builders accept an optional template_config dict.
 """
 import io
 import os
@@ -833,14 +834,29 @@ def _make_qr_buffer(text):
 
 
 # =====================================================================
+# TEMPLATE HELPERS
+# =====================================================================
+def _tpl_bool(cfg, key, default=True):
+    if not cfg:
+        return default
+    try:
+        v = cfg.get(key)
+        if v is None:
+            return default
+        return bool(v)
+    except Exception:
+        return default
+
+
+# =====================================================================
 # NOTICE PDF (with photo strip)
 # =====================================================================
 def build_notice_pdf(project, defects, notice_uid, subcontractor,
                      deadline_days, raise_type="qc_internal",
-                     logo_bytes=None, photos=None):
+                     logo_bytes=None, photos=None, template_config=None):
     """
-    photos: optional list of bytes (photos to embed after the header).
-            If None, no photo strip is added.
+    template_config: optional dict; currently ignored for notices
+    (notices are always full). Accepted for API symmetry.
     """
     _ensure_fonts()
     from reportlab.platypus import (
@@ -851,6 +867,9 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
+
+    include_logo = _tpl_bool(template_config, "include_logo", True)
+    include_photos = _tpl_bool(template_config, "include_photos", True)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -885,7 +904,7 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
     story = []
 
     logo_img = ""
-    if logo_bytes:
+    if logo_bytes and include_logo:
         try:
             logo_img = ReportLabImage(io.BytesIO(logo_bytes),
                                        width=26 * mm, height=13 * mm)
@@ -936,7 +955,7 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
     story.append(t_meta)
     story.append(Spacer(1, 10))
 
-    if photos:
+    if photos and include_photos:
         valid = [p for p in photos if p][:4]
         if valid:
             thumbs = []
@@ -1020,7 +1039,6 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
     ]))
     story.append(t_sig)
-    # Feature #3: nothing below the signature block.
 
     doc.build(story)
     buf.seek(0)
@@ -1030,7 +1048,7 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
 # =====================================================================
 # REGISTER PDF
 # =====================================================================
-def build_register_pdf(project, rows, logo_bytes=None):
+def build_register_pdf(project, rows, logo_bytes=None, template_config=None):
     _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Spacer, Table, TableStyle, HRFlowable,
@@ -1039,6 +1057,8 @@ def build_register_pdf(project, rows, logo_bytes=None):
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import mm
+
+    include_logo = _tpl_bool(template_config, "include_logo", True)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1108,7 +1128,8 @@ def build_register_pdf(project, rows, logo_bytes=None):
 # =====================================================================
 # CLOSURE PDF
 # =====================================================================
-def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
+def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None,
+                      template_config=None):
     _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Spacer, Table, TableStyle,
@@ -1121,6 +1142,10 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
 
     if report_uid is None:
         report_uid = generate_uid("CLR")
+
+    include_logo = _tpl_bool(template_config, "include_logo", True)
+    include_signatures = _tpl_bool(template_config, "include_signatures", True)
+    include_summary = _tpl_bool(template_config, "include_summary", True)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1155,7 +1180,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
 
     story = []
     logo_img = ""
-    if logo_bytes:
+    if logo_bytes and include_logo:
         try:
             logo_img = ReportLabImage(io.BytesIO(logo_bytes),
                                        width=26 * mm, height=13 * mm)
@@ -1198,25 +1223,26 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
     story.append(t_meta)
     story.append(Spacer(1, 10))
 
-    summary = [
-        [_para("TOTAL DEFECTS", label_style, bold=True),
-         _para(str(len(rows)), meta_style)],
-        [_para("CLOSED", label_style, bold=True),
-         _para(str(len(closed_rows)), meta_style)],
-        [_para("STILL OPEN", label_style, bold=True),
-         _para(str(len(open_rows)), meta_style)],
-    ]
-    t_sum = Table(summary, colWidths=[50 * mm, 30 * mm])
-    t_sum.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F5F5F5")),
-        ('BOX', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
-        ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-    ]))
-    story.append(t_sum)
-    story.append(Spacer(1, 14))
+    if include_summary:
+        summary = [
+            [_para("TOTAL DEFECTS", label_style, bold=True),
+             _para(str(len(rows)), meta_style)],
+            [_para("CLOSED", label_style, bold=True),
+             _para(str(len(closed_rows)), meta_style)],
+            [_para("STILL OPEN", label_style, bold=True),
+             _para(str(len(open_rows)), meta_style)],
+        ]
+        t_sum = Table(summary, colWidths=[50 * mm, 30 * mm])
+        t_sum.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F5F5F5")),
+            ('BOX', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(t_sum)
+        story.append(Spacer(1, 14))
 
     for idx, r in enumerate(rows, start=1):
         status = str(r.get("status", "")).upper()
@@ -1238,23 +1264,23 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
                                 meta_style))
         story.append(Spacer(1, 6))
 
-    story.append(Spacer(1, 18))
-    sig_data = [
-        [_para("QC ENGINEER", label_style, bold=True),
-         _para("CONSULTANT", label_style, bold=True)],
-        [_para("_" * 32, body_style), _para("_" * 32, body_style)],
-        [_para(project.get("engineer_name", ""), meta_style),
-         _para("Name / Date / Signature", small_style)],
-    ]
-    t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
-    t_sig.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    story.append(t_sig)
-    # Feature #3: nothing below the signature block.
+    if include_signatures:
+        story.append(Spacer(1, 18))
+        sig_data = [
+            [_para("QC ENGINEER", label_style, bold=True),
+             _para("CONSULTANT", label_style, bold=True)],
+            [_para("_" * 32, body_style), _para("_" * 32, body_style)],
+            [_para(project.get("engineer_name", ""), meta_style),
+             _para("Name / Date / Signature", small_style)],
+        ]
+        t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
+        t_sig.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        story.append(t_sig)
 
     doc.build(story)
     buf.seek(0)
@@ -1265,7 +1291,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
 # PER-SUBCONTRACTOR PERFORMANCE PDF
 # =====================================================================
 def build_sub_pdf(project, sub_name, score, defects,
-                   report_uid=None, logo_bytes=None):
+                   report_uid=None, logo_bytes=None, template_config=None):
     _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Spacer, Table, TableStyle,
@@ -1278,6 +1304,9 @@ def build_sub_pdf(project, sub_name, score, defects,
 
     if report_uid is None:
         report_uid = generate_uid("SUB")
+
+    include_logo = _tpl_bool(template_config, "include_logo", True)
+    include_signatures = _tpl_bool(template_config, "include_signatures", True)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1311,7 +1340,7 @@ def build_sub_pdf(project, sub_name, score, defects,
     story = []
 
     logo_img = ""
-    if logo_bytes:
+    if logo_bytes and include_logo:
         try:
             logo_img = ReportLabImage(io.BytesIO(logo_bytes),
                                        width=26 * mm, height=13 * mm)
@@ -1422,23 +1451,23 @@ def build_sub_pdf(project, sub_name, score, defects,
         "Generated " + datetime.date.today().strftime("%Y-%m-%d") +
         "  ·  " + str(len(defects)) + " record(s)", small_style))
 
-    story.append(Spacer(1, 24))
-    sig_data = [
-        [_para("QC ENGINEER", label_style, bold=True),
-         _para("PROJECT MANAGER", label_style, bold=True)],
-        [_para("_" * 32, meta_style), _para("_" * 32, meta_style)],
-        [_para(project.get("engineer_name", ""), meta_style),
-         _para("Name / Date / Signature", small_style)],
-    ]
-    t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
-    t_sig.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    story.append(t_sig)
-    # Feature #3: nothing below the signature block.
+    if include_signatures:
+        story.append(Spacer(1, 24))
+        sig_data = [
+            [_para("QC ENGINEER", label_style, bold=True),
+             _para("PROJECT MANAGER", label_style, bold=True)],
+            [_para("_" * 32, meta_style), _para("_" * 32, meta_style)],
+            [_para(project.get("engineer_name", ""), meta_style),
+             _para("Name / Date / Signature", small_style)],
+        ]
+        t_sig = Table(sig_data, colWidths=[90 * mm, 90 * mm])
+        t_sig.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        story.append(t_sig)
 
     doc.build(story)
     buf.seek(0)
