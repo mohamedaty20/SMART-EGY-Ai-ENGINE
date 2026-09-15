@@ -3,6 +3,7 @@ services/defect_service.py — Full file.
 Adds build_sub_pdf() + photo strip in notice PDF.
 Arabic PDF rendering hardened: multi-mirror font download, system-font
 fallback, mixed Arabic/Latin run wrapping, right-aligned Arabic blocks.
+Feature #3: nothing renders below the signature tables anymore.
 """
 import io
 import os
@@ -44,16 +45,15 @@ _MONO_BOLD_URLS = [
     "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Bold.ttf",
 ]
 
-# System font candidates for Arabic if the download fails.
 _SYSTEM_ARABIC_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "/Library/Fonts/Arial Unicode.ttf",                     # macOS
-    "C:\\Windows\\Fonts\\tahoma.ttf",                        # Windows
-    "C:\\Windows\\Fonts\\segoeui.ttf",                       # Windows
+    "/Library/Fonts/Arial Unicode.ttf",
+    "C:\\Windows\\Fonts\\tahoma.ttf",
+    "C:\\Windows\\Fonts\\segoeui.ttf",
 ]
 
 _FONT_NAME = "Helvetica"
@@ -61,7 +61,6 @@ _FONT_BOLD = "Helvetica-Bold"
 _MONO_NAME = "Courier"
 _MONO_BOLD = "Courier-Bold"
 
-# Detect whether the shaping libraries are available once at import.
 _SHAPING_OK = False
 _SHAPING_ERR = ""
 try:
@@ -75,7 +74,6 @@ except Exception as _e:
 
 
 def _writable_dir():
-    """Prefer assets/, fall back to /tmp if assets is read-only."""
     try:
         os.makedirs(_FONT_DIR, exist_ok=True)
         probe = os.path.join(_FONT_DIR, ".w")
@@ -138,10 +136,6 @@ def _try_register(name, path):
 
 
 def _resolve_path(preferred, urls, fallback_names=None):
-    """
-    Return a font path that exists. Try preferred (assets), then /tmp,
-    download from urls, finally look at system candidates.
-    """
     if os.path.exists(preferred):
         return preferred
     alt = os.path.join(_FONT_FALLBACK_DIR, os.path.basename(preferred))
@@ -171,7 +165,6 @@ def _ensure_fonts():
 
     have = _registered()
 
-    # -------- Mono --------
     if "MonoReg" not in have:
         mono_reg = _resolve_path(_MONO_REG_PATH, _MONO_REG_URLS)
         mono_bold = _resolve_path(_MONO_BOLD_PATH, _MONO_BOLD_URLS)
@@ -188,7 +181,6 @@ def _ensure_fonts():
         _MONO_NAME = "Courier"
         _MONO_BOLD = "Courier-Bold"
 
-    # -------- Arabic --------
     if "ArReg" not in have:
         ar_reg = _resolve_path(_FONT_REG_PATH, _FONT_REG_URLS,
                                 fallback_names=_SYSTEM_ARABIC_CANDIDATES)
@@ -204,7 +196,6 @@ def _ensure_fonts():
         _FONT_NAME = "ArReg"
         _FONT_BOLD = "ArBold" if "ArBold" in have else "ArReg"
     else:
-        # Absolute worst case — keep going with Helvetica so nothing crashes.
         _FONT_NAME = "Helvetica"
         _FONT_BOLD = "Helvetica-Bold"
         print("[defect] WARNING: no Arabic-capable font available.")
@@ -243,7 +234,6 @@ def _esc_xml(s):
 
 
 def _shape_run_arabic(s):
-    """Shape + bidi a pure Arabic run. Returns raw string on failure."""
     if not s:
         return s
     if not _SHAPING_OK:
@@ -258,10 +248,6 @@ def _shape_run_arabic(s):
 
 
 def _split_script_runs(s):
-    """
-    Split s into consecutive runs of (is_arabic, text).
-    Used so mixed Arabic+Latin gets each part rendered with the right font.
-    """
     runs = []
     if not s:
         return runs
@@ -281,10 +267,6 @@ def _split_script_runs(s):
 
 
 def _fix(text):
-    """
-    Backward-compat: shape the whole string if it contains Arabic.
-    Used by callers that only need a plain string (e.g. filenames).
-    """
     if text is None:
         return ""
     s = str(text)
@@ -294,7 +276,6 @@ def _fix(text):
 
 
 def _font_for(text, bold=False):
-    """Pick the right font name for a run of text."""
     reg = _registered()
     if _has_arabic(text):
         if bold and "ArBold" in reg:
@@ -310,11 +291,6 @@ def _font_for(text, bold=False):
 
 
 def _wrap_runs(s, bold=False):
-    """
-    Wrap a raw string in <font> tags so each script uses its own font.
-    Arabic runs are shaped + reordered, then escaped.
-    Latin runs are escaped as-is.
-    """
     if not s:
         return ""
     runs = _split_script_runs(s)
@@ -335,18 +311,12 @@ def _wrap_runs(s, bold=False):
 
 
 def _para(text, base_style, bold=False):
-    """
-    Return a Paragraph. Arabic-only content is right-aligned.
-    Mixed content keeps the paragraph's natural alignment.
-    """
     from reportlab.platypus import Paragraph
     from reportlab.lib.enums import TA_RIGHT
     raw = str(text or "")
     if not raw:
         return Paragraph("", base_style)
     wrapped = _wrap_runs(raw, bold=bold)
-
-    # If the text is predominantly Arabic, use right alignment.
     if _has_arabic(raw):
         arabic_chars = sum(1 for c in raw if _is_arabic_char(c))
         latin_chars = sum(1 for c in raw if c.isascii() and c.isalnum())
@@ -401,7 +371,6 @@ def _detect_image_type(data):
 
 
 def _thumb(photo_bytes, max_side=280):
-    """Small JPEG thumbnail for embedding in PDF tables."""
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(photo_bytes))
@@ -556,7 +525,6 @@ async def extract_clauses_from_pdf(pdf_bytes, call_gemini_json_fn,
                 "error": "File has no readable text.",
                 "full_text": ""}
 
-    # Keep the FULL text for MS Chat; only send a slice for clause extraction.
     full_text = text[:180000]
     prompt_text = text[:30000]
 
@@ -968,7 +936,6 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
     story.append(t_meta)
     story.append(Spacer(1, 10))
 
-    # ---- Photos strip (up to 4) ----
     if photos:
         valid = [p for p in photos if p][:4]
         if valid:
@@ -1053,25 +1020,7 @@ def build_notice_pdf(project, defects, notice_uid, subcontractor,
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
     ]))
     story.append(t_sig)
-    story.append(Spacer(1, 14))
-
-    qr_buf = _make_qr_buffer("UID: " + notice_uid + " | " +
-                              project.get("name", ""))
-    if qr_buf:
-        try:
-            qr_img = ReportLabImage(qr_buf, width=18 * mm, height=18 * mm)
-            t_qr = Table([[qr_img, _para("UID: " + notice_uid, meta_style)]],
-                          colWidths=[22 * mm, 158 * mm])
-            t_qr.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ]))
-            story.append(t_qr)
-        except Exception as e:
-            print("[defect] QR embed fail: " + repr(e))
-            story.append(_para("UID: " + notice_uid, meta_style))
-    else:
-        story.append(_para("UID: " + notice_uid, meta_style))
+    # Feature #3: nothing below the signature block.
 
     doc.build(story)
     buf.seek(0)
@@ -1305,6 +1254,7 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
     ]))
     story.append(t_sig)
+    # Feature #3: nothing below the signature block.
 
     doc.build(story)
     buf.seek(0)
@@ -1316,11 +1266,6 @@ def build_closure_pdf(project, rows, report_uid=None, logo_bytes=None):
 # =====================================================================
 def build_sub_pdf(project, sub_name, score, defects,
                    report_uid=None, logo_bytes=None):
-    """
-    One-page performance report for a single subcontractor.
-    score: {"open": N, "closed": N, "overdue": N, "total": N}
-    defects: list of dicts (rows from db.list_defects for this sub)
-    """
     _ensure_fonts()
     from reportlab.platypus import (
         SimpleDocTemplate, Spacer, Table, TableStyle,
@@ -1389,7 +1334,6 @@ def build_sub_pdf(project, sub_name, score, defects,
     story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
                              spaceAfter=10))
 
-    # Sub name + big
     story.append(_para("SUBCONTRACTOR", label_style, bold=True))
     name_style = ParagraphStyle("NameBig", fontName=_MONO_BOLD, fontSize=13,
                                  textColor=NAVY, leading=16)
@@ -1412,7 +1356,6 @@ def build_sub_pdf(project, sub_name, score, defects,
     story.append(t_meta)
     story.append(Spacer(1, 14))
 
-    # KPI strip
     kpi = [
         [_para("TOTAL", label_style, bold=True),
          _para("OPEN", label_style, bold=True),
@@ -1436,7 +1379,6 @@ def build_sub_pdf(project, sub_name, score, defects,
     story.append(t_kpi)
     story.append(Spacer(1, 16))
 
-    # Defects table
     story.append(_para("DEFECTS ISSUED TO THIS SUBCONTRACTOR",
                         label_style, bold=True))
     story.append(Spacer(1, 6))
@@ -1496,6 +1438,7 @@ def build_sub_pdf(project, sub_name, score, defects,
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
     ]))
     story.append(t_sig)
+    # Feature #3: nothing below the signature block.
 
     doc.build(story)
     buf.seek(0)
