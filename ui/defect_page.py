@@ -1407,6 +1407,107 @@ def _inject_theme():
     color: #b8b8b8; font-size: 11px; margin-top: 4px;
     line-height: 1.55; white-space: pre-wrap;
   }
+
+  /* ============================================================
+     MS READER TAB
+     ============================================================ */
+  .reader-content { width: 100%; padding: 0 !important;
+                    max-width: none !important; margin: 0 !important; }
+  .reader-wrap { display: flex; width: 100%; min-height: 70vh;
+                 position: relative; }
+  .reader-menu {
+    width: 260px; flex-shrink: 0;
+    background: #0e0e0e; border-right: 1px solid var(--border);
+    padding: 12px 10px; box-sizing: border-box; overflow-y: auto;
+    max-height: calc(100vh - 140px);
+  }
+  .reader-main { flex: 1; min-width: 0; position: relative; }
+  .reader-topbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 5;
+    background: rgba(11,11,11,0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .reader-menu-btn {
+    background: transparent; border: 1px solid var(--border-2);
+    color: var(--text); padding: 4px 8px; border-radius: 3px;
+    cursor: pointer; display: none; flex-shrink: 0;
+  }
+  .reader-title {
+    font-size: 12px; font-weight: 700; color: #e8e8e8;
+    flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .reader-readall {
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    border: 1px solid rgba(94,234,212,0.4); border-radius: 3px;
+    padding: 4px 8px; cursor: pointer; background: transparent;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .reader-readall:hover { background: rgba(94,234,212,0.1); }
+  .reader-ms-item {
+    display: block; padding: 8px 10px; border-radius: 3px;
+    background: transparent; border: 1px solid transparent;
+    color: var(--text); cursor: pointer;
+    margin-bottom: 4px; width: 100%; box-sizing: border-box;
+  }
+  .reader-ms-item:hover { background: var(--surface-2); }
+  .reader-ms-item.active {
+    background: var(--surface-2);
+    border-color: rgba(94,234,212,0.5);
+  }
+  .reader-chapters { margin: 4px 0 12px 12px; }
+  .reader-chapter-item {
+    display: block; padding: 5px 8px; font-size: 11px;
+    color: #b8b8b8; cursor: pointer; border-radius: 3px;
+    border: none; background: transparent; width: 100%;
+    box-sizing: border-box; text-align: left;
+  }
+  .reader-chapter-item:hover { background: #161616; color: var(--accent); }
+  .reader-chapter-item.active {
+    color: var(--accent); background: rgba(94,234,212,0.08);
+  }
+  .reader-search {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    background: #0b0b0b;
+  }
+  .reader-body {
+    padding: 14px 16px 100px 16px;
+    font-family: 'JetBrains Mono','Amiri',monospace;
+    font-size: 13px; line-height: 1.75; color: #d8d8d8;
+    word-break: break-word;
+  }
+  .reader-body pre {
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+    font-family: inherit; font-size: inherit; color: inherit;
+  }
+  .reader-body .reader-hl {
+    background: rgba(94,234,212,0.32); color: #0b0b0b;
+    border-radius: 2px; padding: 0 2px;
+  }
+  .reader-empty {
+    text-align: center; padding: 60px 20px; color: #808080;
+  }
+  @media (max-width: 767px) {
+    .reader-menu-btn { display: inline-flex; }
+    .reader-menu {
+      position: fixed; top: 0; left: 0; bottom: 0;
+      width: 82vw; max-width: 320px; z-index: 1000;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      box-shadow: 4px 0 20px rgba(0,0,0,0.6);
+      max-height: 100vh; padding-top: 20px;
+    }
+    .reader-wrap.menu-open .reader-menu {
+      transform: translateX(0);
+    }
+    .reader-wrap.menu-open::after {
+      content: ''; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55); z-index: 999;
+    }
+  }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -1573,11 +1674,17 @@ def build_defect_ui(user_id):
 
     def _render_tab():
         content.clear()
+        tab = state["tab"]["value"]
+        if tab == "reader":
+            content.classes(remove="main-content")
+            content.classes(add="reader-content")
+        else:
+            content.classes(remove="reader-content")
+            content.classes(add="main-content")
         with content:
             if not state.get("project_id"):
                 _render_no_project(state, _render_tab)
                 return
-            tab = state["tab"]["value"]
             if tab == "new":
                 _build_new_defect(state)
             elif tab == "logs":
@@ -1588,6 +1695,8 @@ def build_defect_ui(user_id):
                 _build_chat(state)
             elif tab == "mschat":
                 _build_ms_chat(state)
+            elif tab == "reader":
+                _build_ms_reader(state)
             elif tab == "admin":
                 _build_admin(state)
             else:
@@ -1601,6 +1710,7 @@ def build_defect_ui(user_id):
                 ("new", _t("new_defect")), ("logs", _t("logs")),
                 ("subs", _t("subs")),
                 ("mschat", _t("ms_chat")),
+                ("reader", "MS READER"),
                 ("dashboard", _t("dashboard")),
             ]
             if _is_admin_ui(state.get("user_id")):
@@ -3075,10 +3185,29 @@ def _open_ms_dialog(state, refresh_drawer):
                 ui.notify(_t("upload_first"), type="warning")
                 return
             preview.clear()
+            status_lbl = None
             with preview:
-                ui.label(_t("extracting")).classes("mono-sm")
+                status_lbl = ui.label(_t("extracting")).classes("mono-sm")
             result = await svc.extract_clauses_from_pdf(
                 holder["bytes"], call_gemini_json, holder["name"])
+            full_text = result.get("full_text") or ""
+
+            chapters = []
+            if not result.get("error") and full_text and \
+                    len(full_text) > 200:
+                try:
+                    if status_lbl:
+                        status_lbl.set_text(
+                            "Extracting chapter structure...")
+                except Exception:
+                    pass
+                try:
+                    chapters = await msc.extract_chapters_from_full_text(
+                        full_text, call_gemini_json)
+                except Exception as e:
+                    print("[ms] chapters extract failed: " + repr(e))
+                    chapters = []
+
             preview.clear()
             if result.get("error"):
                 with preview:
@@ -3087,8 +3216,10 @@ def _open_ms_dialog(state, refresh_drawer):
                 return
             clauses = result["clauses"]
             with preview:
+                extra_bit = ("  ·  " + str(len(chapters)) + " chapters"
+                             if chapters else "")
                 ui.label(_t("extracted") + " " + str(len(clauses)) + " " +
-                          _t("clauses_count")).style(
+                          _t("clauses_count") + extra_bit).style(
                     "font-size:10px;font-weight:600;color:#e8e8e8;"
                     "margin-bottom:6px;display:block;")
                 with ui.element('div').classes("scroll-box"):
@@ -3111,7 +3242,8 @@ def _open_ms_dialog(state, refresh_drawer):
                         element_type=element_in.value,
                         discipline=disc_in.value,
                         pdf_bytes=holder["bytes"], clauses=clauses,
-                        full_text=(result.get("full_text") or ""))
+                        full_text=full_text,
+                        chapters=chapters)
                     ui.notify(_t("ms_saved") + " OK", type="positive")
                     dlg.close()
                     if refresh_drawer:
@@ -3130,6 +3262,360 @@ def _open_ms_dialog(state, refresh_drawer):
                 BTN_PRIMARY).style("flex:1;")
             ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
         preview
+    dlg.open()
+
+
+# =====================================================================
+# MS READER (Feature H) — browse + read full MS text
+# =====================================================================
+def _build_ms_reader(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    pid = state["project_id"]
+    if state.get("reader_pid") != pid:
+        state["reader_pid"] = pid
+        state["reader"] = {
+            "ms_id": None, "chapter_id": None, "menu_open": False,
+            "query": "", "menu_q": "", "ms": None,
+        }
+    rstate = state.setdefault("reader", {
+        "ms_id": None, "chapter_id": None, "menu_open": False,
+        "query": "", "menu_q": "", "ms": None,
+    })
+
+    ms_list = db.list_ms(pid) or []
+
+    wrap = ui.element('div').classes("reader-wrap")
+    if rstate.get("menu_open"):
+        wrap.classes(add="menu-open")
+
+    with wrap:
+        # ---------- Left menu ----------
+        with ui.element('aside').classes("reader-menu"):
+            with ui.element('div').style(
+                "display:flex;align-items:center;"
+                "justify-content:space-between;"
+                "margin-bottom:10px;gap:8px;"
+            ):
+                ui.label("METHOD STATEMENTS").style(
+                    "font-size:11px;font-weight:700;color:#5eead4;"
+                    "letter-spacing:0.06em;")
+
+                def _close_menu():
+                    rstate["menu_open"] = False
+                    state["render_main"]()
+                ui.button(icon="close", on_click=_close_menu).props(
+                    "flat round dense size=sm").style("color:#5a5a5a;")
+
+            menu_search = ui.input(
+                placeholder="Search MS or chapter...",
+                value=rstate.get("menu_q", ""),
+            ).style("width:100%;margin-bottom:10px;").props(
+                "dense clearable")
+
+            @ui.refreshable
+            def render_menu_list():
+                q = (rstate.get("menu_q") or "").strip().lower()
+                if not ms_list:
+                    ui.label(
+                        "No Method Statements uploaded yet."
+                    ).style("color:#808080;font-size:11px;padding:20px 0;"
+                            "text-align:center;")
+                    return
+                shown = 0
+                for m in ms_list:
+                    title_txt = (str(m.get("title") or "") + " " +
+                                 str(m.get("ms_number") or "")).lower()
+                    mid = m.get("id")
+                    is_selected = rstate.get("ms_id") == mid
+                    if q and q not in title_txt and not is_selected:
+                        continue
+                    shown += 1
+                    _render_menu_ms_item(m, rstate, state, q)
+                if q and shown == 0:
+                    ui.label("No matches.").style(
+                        "color:#808080;font-size:11px;padding:20px 0;"
+                        "text-align:center;")
+
+            def _on_menu_q(e):
+                rstate["menu_q"] = e.value or ""
+                render_menu_list.refresh()
+            menu_search.on("update:model-value", _on_menu_q)
+
+            with ui.element('div').style("width:100%;"):
+                render_menu_list()
+
+        # ---------- Main pane ----------
+        with ui.element('main').classes("reader-main"):
+            _render_reader_main_inner(state, rstate, ms_list)
+
+
+def _render_menu_ms_item(m, rstate, state, q=""):
+    mid = m.get("id")
+    is_selected = rstate.get("ms_id") == mid
+    is_chapter_mode = is_selected and rstate.get("chapter_id")
+
+    item = ui.element('div').classes(
+        "reader-ms-item" +
+        (" active" if is_selected and not is_chapter_mode else "")
+    )
+    with item:
+        with ui.element('div').style(
+            "display:flex;justify-content:space-between;"
+            "align-items:flex-start;gap:6px;"
+        ):
+            ui.html(
+                '<span style="font-size:11px;font-weight:700;'
+                'color:#e8e8e8;word-break:break-word;">' +
+                _html_mod.escape(str(m.get("ms_number") or "")) + '  ' +
+                _html_mod.escape(str(m.get("title") or "")) + '</span>'
+            )
+            ui.html(
+                '<span style="font-size:9px;color:#5eead4;">' +
+                ('▾' if is_selected else '▸') + '</span>'
+            )
+
+    def _click_ms():
+        rstate["ms_id"] = mid
+        rstate["chapter_id"] = None
+        rstate["query"] = ""
+        rstate["ms"] = None
+        rstate["menu_open"] = False
+        state["render_main"]()
+    item.on("click", _click_ms)
+
+    if not is_selected:
+        return
+
+    ms = rstate.get("ms")
+    if not ms or ms.get("id") != mid:
+        ms = db.get_ms_by_id(mid)
+        rstate["ms"] = ms
+    chapters = (ms or {}).get("chapters") or []
+
+    with ui.element('div').classes("reader-chapters"):
+        all_active = not rstate.get("chapter_id")
+        itm = ui.element('div').classes(
+            "reader-chapter-item" + (" active" if all_active else ""))
+        with itm:
+            ui.label("Read all")
+
+        def _pick_all():
+            rstate["chapter_id"] = None
+            rstate["menu_open"] = False
+            state["render_main"]()
+        itm.on("click", _pick_all)
+
+        if not chapters:
+            ui.label("No chapters extracted yet.").style(
+                "font-size:10px;color:#808080;padding:4px 8px;")
+        else:
+            for ch in chapters:
+                cid = ch.get("id") or ""
+                title = ch.get("title") or ""
+                if q and q not in (cid + " " + title).lower():
+                    continue
+                active = rstate.get("chapter_id") == cid
+                citm = ui.element('div').classes(
+                    "reader-chapter-item" +
+                    (" active" if active else ""))
+                with citm:
+                    ui.label(
+                        ("S" + cid + "  " if cid else "") + title
+                    ).style("font-size:10.5px;")
+
+                def _pick(c=cid):
+                    rstate["chapter_id"] = c
+                    rstate["query"] = ""
+                    rstate["menu_open"] = False
+                    state["render_main"]()
+                citm.on("click", _pick)
+
+
+def _render_reader_main_inner(state, rstate, ms_list):
+    if not rstate.get("ms_id"):
+        with ui.element('div').classes("reader-empty"):
+            ui.icon("menu_book").style("font-size:36px;color:#5a5a5a;")
+            ui.label("Pick a Method Statement to read").style(
+                "font-size:14px;color:#b8b8b8;margin-top:12px;")
+            ui.label(
+                "Use the left menu to browse documents and chapters, or "
+                "click Read all to see the entire MS."
+            ).style("font-size:11px;color:#808080;margin-top:6px;"
+                    "max-width:320px;margin-left:auto;margin-right:auto;"
+                    "line-height:1.6;")
+            with ui.element('div').style("margin-top:20px;"):
+                def _open_menu():
+                    rstate["menu_open"] = True
+                    state["render_main"]()
+                ui.button("Browse MS", icon="menu_book",
+                          on_click=_open_menu).classes(BTN_PRIMARY).style(
+                    "width:200px;")
+        return
+
+    ms = rstate.get("ms")
+    if not ms or ms.get("id") != rstate["ms_id"]:
+        ms = db.get_ms_by_id(rstate["ms_id"])
+        rstate["ms"] = ms
+
+    if not ms:
+        with ui.element('div').classes("reader-empty"):
+            ui.label("This MS could not be loaded.").style(
+                "font-size:13px;color:#f87171;")
+        return
+
+    full_text = str(ms.get("full_text") or "")
+    chapters = ms.get("chapters") or []
+
+    chap = None
+    if rstate.get("chapter_id"):
+        for c in chapters:
+            if c.get("id") == rstate["chapter_id"]:
+                chap = c
+                break
+
+    # ---------- Topbar ----------
+    with ui.element('div').classes("reader-topbar"):
+        def _toggle_menu():
+            rstate["menu_open"] = not rstate.get("menu_open")
+            state["render_main"]()
+        with ui.element('button').classes("reader-menu-btn") as btn:
+            ui.icon("menu").style("font-size:16px;")
+        btn.on("click", _toggle_menu)
+
+        title_str = (str(ms.get("ms_number") or "") + "  " +
+                     str(ms.get("title") or ""))
+        if chap:
+            title_str = (
+                ("S" + (chap.get("id") or "") + "  "
+                 if chap.get("id") else "") +
+                (chap.get("title") or "")
+            )
+        ui.label(title_str).classes("reader-title")
+
+        def _read_all():
+            rstate["chapter_id"] = None
+            rstate["query"] = ""
+            state["render_main"]()
+        with ui.element('button').classes("reader-readall") as ra:
+            ui.label("Read all" if chap else "✓ All chapters")
+        ra.on("click", _read_all)
+
+    # ---------- Search inside current MS ----------
+    with ui.element('div').classes("reader-search"):
+        s_in = ui.input(
+            placeholder="Search inside this MS...",
+            value=rstate.get("query", ""),
+        ).style("width:100%;").props("dense clearable")
+
+        @ui.refreshable
+        def body_holder():
+            _render_reader_body(full_text, chapters, chap, rstate, state)
+
+        def _on_q(e):
+            rstate["query"] = e.value or ""
+            body_holder.refresh()
+        s_in.on("update:model-value", _on_q)
+
+    # ---------- AI buttons (placeholders for Push I) ----------
+    with ui.element('div').style(
+        "padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;"
+        "gap:6px;border-bottom:1px solid var(--border);"
+    ):
+        def _find_errors():
+            _open_ms_weak_points_dialog(ms)
+        def _rate_ms():
+            _open_ms_rating_dialog(ms)
+        ui.button("Find errors with AI", icon="rule",
+                  on_click=_find_errors).classes(BTN_SOFT).style(
+            "width:100%;font-size:10px;")
+        ui.button("Rate this MS", icon="star",
+                  on_click=_rate_ms).classes(BTN_SOFT).style(
+            "width:100%;font-size:10px;")
+
+    # ---------- Body ----------
+    with ui.element('div'):
+        body_holder()
+
+
+def _render_reader_body(full_text, chapters, chap, rstate, state):
+    if not full_text.strip():
+        ui.html(
+            '<div class="reader-body" style="color:#808080;">'
+            'No full text stored for this MS. Re-upload the document to '
+            'enable reading.</div>')
+        return
+
+    lines = full_text.split("\n")
+    start = 0
+    end = len(lines)
+    if chap:
+        ch_line = chap.get("line")
+        if isinstance(ch_line, int) and 0 <= ch_line < len(lines):
+            start = ch_line
+            next_line = None
+            for c2 in chapters:
+                l2 = c2.get("line")
+                if isinstance(l2, int) and l2 > ch_line:
+                    if next_line is None or l2 < next_line:
+                        next_line = l2
+            end = next_line if next_line is not None else len(lines)
+
+    slice_text = "\n".join(lines[start:end])
+    q = (rstate.get("query") or "").strip()
+
+    if q:
+        safe = _html_mod.escape(slice_text)
+        try:
+            pat = re.compile(re.escape(q), re.IGNORECASE)
+            safe = pat.sub(
+                lambda mm: ('<span class="reader-hl">' +
+                            mm.group(0) + '</span>'), safe)
+        except Exception:
+            pass
+        ui.html('<div class="reader-body">' + safe + '</div>')
+    else:
+        ui.html('<div class="reader-body"><pre>' +
+                _html_mod.escape(slice_text) + '</pre></div>')
+
+
+def _open_ms_weak_points_dialog(ms):
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:22px;min-width:320px;max-width:95vw;width:520px;"
+    ):
+        ui.label("Find errors in MS with AI").classes("h1").style(
+            "margin-bottom:6px;")
+        ui.label("Coming in the next update (Push I).").classes(
+            "muted").style("margin-bottom:12px;color:#fbbf24;")
+        ui.label(
+            "This will compare \"" + str(ms.get("title") or "this MS") +
+            "\" line by line against SCP 203, ECP 202, AASHTO, and ISO. "
+            "For each weak point it will show what the MS says, what the "
+            "code says, and a downloadable PDF of the full table."
+        ).classes("mono-sm").style(
+            "line-height:1.65;color:#b8b8b8;margin-bottom:14px;")
+        ui.button(_t("close"), on_click=dlg.close).classes(
+            BTN_SOFT).style("width:100%;")
+    dlg.open()
+
+
+def _open_ms_rating_dialog(ms):
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:22px;min-width:320px;max-width:95vw;width:520px;"
+    ):
+        ui.label("Rate this MS").classes("h1").style("margin-bottom:6px;")
+        ui.label("Coming in the next update (Push I).").classes(
+            "muted").style("margin-bottom:12px;color:#fbbf24;")
+        ui.label(
+            "This will show a full analytical rating of \"" +
+            str(ms.get("title") or "this MS") +
+            "\" against the Egyptian codes, with charts, a summary, and a "
+            "downloadable PDF containing the same charts and insights."
+        ).classes("mono-sm").style(
+            "line-height:1.65;color:#b8b8b8;margin-bottom:14px;")
+        ui.button(_t("close"), on_click=dlg.close).classes(
+            BTN_SOFT).style("width:100%;")
     dlg.open()
 
 
