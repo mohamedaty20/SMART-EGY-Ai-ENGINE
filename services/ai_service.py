@@ -6,8 +6,15 @@ from google.genai import types
 from config import client, GEMINI_MODEL
 
 
-async def _one_attempt(contents, temperature, timeout):
-    config = types.GenerateContentConfig(temperature=temperature)
+async def _one_attempt(contents, temperature, timeout, max_tokens=None):
+    cfg_kwargs = {"temperature": temperature}
+    if max_tokens is not None:
+        try:
+            cfg_kwargs["max_output_tokens"] = int(max_tokens)
+        except Exception:
+            pass
+    config = types.GenerateContentConfig(**cfg_kwargs)
+
     async def _call():
         return await client.aio.models.generate_content(
             model=GEMINI_MODEL,
@@ -17,16 +24,19 @@ async def _one_attempt(contents, temperature, timeout):
     return await asyncio.wait_for(_call(), timeout=timeout)
 
 
-async def call_gemini_json(contents, temperature=0.0, timeout=45):
+async def call_gemini_json(contents, temperature=0.0, timeout=45,
+                            max_tokens=None):
     if not client:
         raise Exception("GEMINI_API_KEY missing.")
 
-    print("[ai] calling model=" + str(GEMINI_MODEL) + " timeout=" + str(timeout))
+    print("[ai] calling model=" + str(GEMINI_MODEL) + " timeout=" +
+          str(timeout) + " max_tokens=" + str(max_tokens))
 
     last_err = None
     for attempt in range(1, 4):
         try:
-            response = await _one_attempt(contents, temperature, timeout)
+            response = await _one_attempt(contents, temperature, timeout,
+                                            max_tokens=max_tokens)
             txt = response.text or ""
             print("[ai] response length=" + str(len(txt)) +
                   " (attempt " + str(attempt) + ")")
@@ -38,7 +48,6 @@ async def call_gemini_json(contents, temperature=0.0, timeout=45):
             msg = str(e)
             print("[ai] FAILED attempt " + str(attempt) + ": " + repr(e))
             last_err = msg
-            # Retry only on 503 / UNAVAILABLE / high demand
             retryable = ("503" in msg or "UNAVAILABLE" in msg or
                          "high demand" in msg or "overloaded" in msg)
             if not retryable:
