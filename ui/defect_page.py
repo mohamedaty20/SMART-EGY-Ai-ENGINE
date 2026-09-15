@@ -3353,12 +3353,13 @@ def _reader_safe_anchor(cid):
 
 
 def _render_reader_body(full_text, chapters, rstate):
+    """Render reader body. Returns number of search hits."""
     if not (full_text or "").strip():
         ui.html(
             '<div class="reader-body" style="color:#808080;'
             'padding-top:40px;">No full text stored for this MS. '
             'Re-upload the document to enable reading.</div>')
-        return
+        return 0
 
     q = (rstate.get("search_q") or "").strip()
     lines = full_text.split("\n")
@@ -3369,6 +3370,27 @@ def _render_reader_body(full_text, chapters, rstate):
         if isinstance(ln, int) and ln >= 0:
             chapter_at_line[ln] = ch
 
+    hits = 0
+
+    def hl(text):
+        nonlocal hits
+        if not q:
+            return _html_mod.escape(text)
+        try:
+            pat = re.compile(re.escape(q), re.IGNORECASE)
+        except Exception:
+            return _html_mod.escape(text)
+        out = []
+        last = 0
+        for m in pat.finditer(text):
+            out.append(_html_mod.escape(text[last:m.start()]))
+            out.append('<span class="reader-hl">' +
+                       _html_mod.escape(m.group(0)) + '</span>')
+            hits += 1
+            last = m.end()
+        out.append(_html_mod.escape(text[last:]))
+        return "".join(out)
+
     parts = []
     for i, raw in enumerate(lines):
         s = raw.rstrip()
@@ -3376,8 +3398,7 @@ def _render_reader_body(full_text, chapters, rstate):
             ch = chapter_at_line[i]
             cid = str(ch.get("id") or "").strip()
             anchor = _reader_safe_anchor(cid)
-            esc = _reader_highlight(
-                s if s.strip() else (ch.get("title") or ""), q)
+            esc = hl(s if s.strip() else (ch.get("title") or ""))
             parts.append(
                 '<h2 id="' + _html_mod.escape(anchor) +
                 '" class="reader-h1">' + esc + '</h2>')
@@ -3386,7 +3407,7 @@ def _render_reader_body(full_text, chapters, rstate):
             parts.append('<div class="reader-gap"></div>')
             continue
         level = _reader_looks_like_heading(s)
-        esc = _reader_highlight(s, q)
+        esc = hl(s)
         if level == 2:
             parts.append('<h3 class="reader-h2">' + esc + '</h3>')
         elif level == 3:
@@ -3399,6 +3420,8 @@ def _render_reader_body(full_text, chapters, rstate):
         ui.html(body_html, sanitize=False)
     except TypeError:
         ui.html(body_html)
+
+    return hits
 
 
 def _build_ms_reader(state):
@@ -3660,60 +3683,130 @@ def _render_reader_main(state, rstate, pid):
                   on_click=_rate_ms).classes(BTN_SOFT).style(
             "width:100%;font-size:10px;")
 
-    # ----- In-MS search (renders BEFORE body) -----
+    # ----- Search row with hit counter -----
+    search_in_holder = {}
+    hits_lbl_holder = {}
+
     with ui.element('div').classes("reader-search"):
-        search_in = ui.input(
-            placeholder="Search inside this MS...",
-            value=rstate.get("search_q", ""),
-        ).style("width:100%;").props("dense clearable")
+        with ui.element('div').style(
+            "display:flex;align-items:center;gap:8px;"
+        ):
+            s_in = ui.input(
+                placeholder="Search inside this MS...",
+                value=rstate.get("search_q", ""),
+            ).style("flex:1;").props("dense clearable")
+            search_in_holder["el"] = s_in
+            hits_lbl = ui.label("").style(
+                "font-size:10px;color:#5eead4;font-weight:700;"
+                "white-space:nowrap;min-width:56px;text-align:right;")
+            hits_lbl_holder["el"] = hits_lbl
 
-    # ----- Body (renders AFTER search) -----
-    @ui.refreshable
+    # ----- Body slot (manual clear + rebuild) -----
+    body_slot = ui.element('div').style("width:100%;")
+    body_slot.classes("reader-body-outer")
+
+    def _set_hits(hits):
+        try:
+            if hits is None:
+                hits_lbl_holder["el"].set_text("")
+            elif hits == 0:
+                hits_lbl_holder["el"].set_text("")
+            else:
+                hits_lbl_holder["el"].set_text(
+                    str(hits) + (" hit" if hits == 1 else " hits"))
+        except Exception:
+            pass
+
     def render_body():
-        _render_reader_body(full_text, chapters, rstate)
+        body_slot.clear()
+        with body_slot:
+            try:
+                hits = _render_reader_body(full_text, chapters, rstate)
+            except Exception as e:
+                print("[reader] body render error: " + repr(e))
+                hits = 0
+        _set_hits(hits)
 
-    def _on_q(e=None):
+    def _on_q(event_or_value=None):
+        val = None
+        # on_value_change passes the raw value.
+        # .on("update:model-value") passes an event object with .args.
         try:
-            rstate["search_q"] = search_in.value or ""
+            if isinstance(event_or_value, str):
+                val = event_or_value
+            elif hasattr(event_or_value, "value"):
+                val = event_or_value.value
+            elif hasattr(event_or_value, "args"):
+                args = event_or_value.args
+                if isinstance(args, (list, tuple)) and args:
+                    val = args[0]
+                else:
+                    val = args
         except Exception:
-            rstate["search_q"] = ""
+            val = None
+        if val is None:
+            try:
+                val = search_in_holder["el"].value
+            except Exception:
+                val = ""
+        rstate["search_q"] = str(val or "")
         try:
-            render_body.refresh()
+            print("[reader] search_q=" + repr(rstate["search_q"]))
         except Exception:
             pass
+        render_body()
 
+    # Attach with fallback chain
+    _attached = False
     try:
-        search_in.on_value_change(_on_q)
-    except Exception:
+        s_in.on_value_change(_on_q)
+        _attached = True
+    except Exception as e1:
+        print("[reader] on_value_change failed: " + repr(e1))
+    if not _attached:
         try:
-            search_in.on("update:model-value", _on_q)
-        except Exception:
-            pass
+            s_in.on("update:model-value", _on_q)
+            _attached = True
+        except Exception as e2:
+            print("[reader] update:model-value failed: " + repr(e2))
+    if not _attached:
+        try:
+            s_in.on("input", _on_q)
+        except Exception as e3:
+            print("[reader] input event failed: " + repr(e3))
 
     render_body()
 
-    # ----- Scroll to chapter (after re-render) -----
+    # ----- Scroll to chapter (retry loop, survives slow DOM paint) -----
     scroll_target = rstate.get("scroll_to")
     rstate["scroll_to"] = None
     if scroll_target:
         anchor = _reader_safe_anchor(scroll_target)
         js = (
             "(function(){"
-            "var el=document.getElementById(" + json.dumps(anchor) + ");"
-            "if(!el) return;"
-            "try { el.scrollIntoView({behavior:'smooth',block:'start'}); }"
-            "catch(e){ try{ el.scrollIntoView(); }catch(e2){} }"
-            "try {"
-            "  var rect = el.getBoundingClientRect();"
-            "  var top = (window.pageYOffset || "
-            "             document.documentElement.scrollTop || 0);"
-            "  var y = top + rect.top - 140;"
-            "  if (y < 0) y = 0;"
-            "  window.scrollTo({top: y, behavior:'smooth'});"
-            "} catch(e3){}"
+            "var tries=0;"
+            "var t=setInterval(function(){"
+            "  var el=document.getElementById(" + json.dumps(anchor) + ");"
+            "  if(!el){"
+            "    tries++;"
+            "    if(tries>25){clearInterval(t);}"
+            "    return;"
+            "  }"
+            "  clearInterval(t);"
+            "  try{"
+            "    var rect=el.getBoundingClientRect();"
+            "    var top=(window.pageYOffset||"
+            "              document.documentElement.scrollTop||0);"
+            "    var y=top+rect.top-140;"
+            "    if(y<0)y=0;"
+            "    window.scrollTo({top:y,behavior:'smooth'});"
+            "  }catch(e1){"
+            "    try{el.scrollIntoView();}catch(e2){}"
+            "  }"
+            "},80);"
             "})();"
         )
-        ui.timer(0.4, lambda j=js: ui.run_javascript(j), once=True)
+        ui.timer(0.3, lambda j=js: ui.run_javascript(j), once=True)
 
 
 def _open_ms_weak_points_dialog(ms):
