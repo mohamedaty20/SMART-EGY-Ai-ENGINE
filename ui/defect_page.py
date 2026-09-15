@@ -1365,6 +1365,48 @@ def _inject_theme():
     margin-top: 4px; line-height: 1.5;
     grid-column: 1 / -1;
   }
+  .cite-pill {
+    display: inline-block;
+    background: rgba(94,234,212,0.12);
+    color: #5eead4;
+    border: 1px solid rgba(94,234,212,0.35);
+    border-radius: 8px;
+    padding: 0 6px;
+    margin: 0 2px;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1.5;
+    transition: background 0.12s;
+  }
+  .cite-pill:hover { background: rgba(94,234,212,0.22); }
+  .cite-pill.miss {
+    background: rgba(128,128,128,0.08);
+    color: #808080;
+    border-color: #2a2a2a;
+    cursor: default;
+  }
+  .ms-reader-doc {
+    background: #101010; border: 1px solid #1e1e1e;
+    border-radius: 4px; padding: 10px 12px; margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .ms-reader-doc:hover { background: #161616; }
+  .ms-reader-clause {
+    background: #101010; border: 1px solid #1e1e1e;
+    border-radius: 3px; padding: 8px 10px; margin-bottom: 4px;
+  }
+  .ms-reader-clause .cid {
+    color: #5eead4; font-weight: 700; font-size: 11px;
+  }
+  .ms-reader-clause .ctitle {
+    color: #e8e8e8; font-weight: 600; font-size: 12px;
+    margin-left: 6px;
+  }
+  .ms-reader-clause .ctext {
+    color: #b8b8b8; font-size: 11px; margin-top: 4px;
+    line-height: 1.55; white-space: pre-wrap;
+  }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -5777,6 +5819,223 @@ def _build_chat(state):
 # =====================================================================
 # MS CHAT — Gemini style
 # =====================================================================
+# =====================================================================
+# MS READER + CITATIONS (Feature #8)
+# =====================================================================
+_CITE_RE = re.compile(r'\[S([\w.\-]+)\]')
+
+
+def _clause_map_for_project(pid):
+    try:
+        clauses = db.get_clauses_for_element(pid) or []
+    except Exception:
+        return {}
+    out = {}
+    for c in clauses:
+        cid = str(c.get("id", "")).strip()
+        if cid:
+            out[cid] = c
+    return out
+
+
+def _open_clause_modal(cid, pid):
+    clauses = _clause_map_for_project(pid)
+    clause = clauses.get(str(cid))
+    if not clause:
+        ui.notify("Clause S" + str(cid) + " not found in the uploaded MS.",
+                    type="warning")
+        return
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:320px;max-width:95vw;width:520px;"
+        "max-height:88vh;overflow-y:auto;"
+    ):
+        with ui.element('div').style(
+            "display:flex;align-items:center;gap:8px;"
+            "padding-bottom:10px;border-bottom:1px solid #1e1e1e;"
+            "margin-bottom:12px;"
+        ):
+            ui.html('<span class="cite-pill" style="cursor:default;">[S' +
+                    _html_mod.escape(str(cid)) + ']</span>')
+            ui.label(str(clause.get("title", ""))).style(
+                "font-size:14px;font-weight:700;color:#e8e8e8;"
+                "letter-spacing:-0.01em;")
+        body = str(clause.get("text", "") or "")
+        if body:
+            ui.html('<div style="font-size:13px;color:#e3e3e3;'
+                    'line-height:1.7;white-space:pre-wrap;'
+                    'word-break:break-word;">' +
+                    _html_mod.escape(body) + '</div>')
+        else:
+            ui.label("(This clause has no body text stored.)").classes(
+                "mono-sm").style("color:#5a5a5a;")
+        ui.button(_t("close"), on_click=dlg.close).classes(
+            BTN_SOFT).style("width:100%;margin-top:16px;")
+    dlg.open()
+
+
+def _render_answer_with_citations(answer, pid):
+    """Render an AI answer; [S<id>] tokens become clickable pills."""
+    text = str(answer or "")
+    if not text:
+        return
+    clauses = _clause_map_for_project(pid)
+    html_parts = []
+    last = 0
+    for m in _CITE_RE.finditer(text):
+        if m.start() > last:
+            html_parts.append(_html_mod.escape(text[last:m.start()]))
+        cid = m.group(1)
+        if cid in clauses:
+            html_parts.append(
+                '<span class="cite-pill" data-cid="' +
+                _html_mod.escape(cid) +
+                '" title="Tap to view the clause text">[' +
+                _html_mod.escape(cid) + ']</span>'
+            )
+        else:
+            html_parts.append(
+                '<span class="cite-pill miss">[' +
+                _html_mod.escape(cid) + ']</span>'
+            )
+        last = m.end()
+    if last < len(text):
+        html_parts.append(_html_mod.escape(text[last:]))
+    ui.html('<div class="gem-ai">' + "".join(html_parts) + '</div>')
+
+
+def _open_ms_reader_dialog(pid):
+    if not pid:
+        ui.notify(_t("setup_first"), type="warning")
+        return
+    try:
+        docs = db.list_ms(pid) or []
+    except Exception as e:
+        ui.notify("Failed to load MS: " + str(e), type="negative")
+        return
+    if not docs:
+        ui.notify(_t("ms_chat_need_ms"), type="warning")
+        return
+
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:0;max-width:640px;width:95vw;max-height:90vh;"
+        "overflow:hidden;"
+    ):
+        with ui.element('div').style(
+            "padding:16px 18px 12px;border-bottom:1px solid #1e1e1e;"
+            "display:flex;justify-content:space-between;align-items:center;"
+        ):
+            ui.label("METHOD STATEMENTS").style(
+                "font-size:13px;font-weight:700;color:#e8e8e8;"
+                "letter-spacing:0.06em;")
+            ui.label(str(len(docs)) + " uploaded").classes("mono-sm").style(
+                "font-size:10px;color:#808080;")
+
+        view_holder = ui.element('div').style(
+            "padding:14px 18px 18px;max-height:calc(90vh - 120px);"
+            "overflow-y:auto;"
+        )
+
+        def render_list():
+            view_holder.clear()
+            with view_holder:
+                for doc in docs:
+                    with ui.element('div').classes("ms-reader-doc") as card:
+                        with ui.element('div').style(
+                            "display:flex;justify-content:space-between;"
+                            "align-items:flex-start;gap:8px;"
+                        ):
+                            with ui.element('div').style(
+                                "flex:1;min-width:0;"
+                            ):
+                                ui.label(
+                                    str(doc.get("ms_number", "")) + "  " +
+                                    str(doc.get("title", ""))
+                                ).style(
+                                    "font-size:12px;font-weight:700;"
+                                    "color:#e8e8e8;word-break:break-word;")
+                                ui.label(
+                                    str(doc.get("element_type", "")) + " · " +
+                                    str(doc.get("discipline", ""))
+                                ).classes("mono-sm").style(
+                                    "font-size:10px;color:#808080;"
+                                    "margin-top:2px;")
+                            ui.html('<span class="badge-seen">' +
+                                    str(len(doc.get("clauses") or [])) +
+                                    ' clauses</span>')
+
+                        def _open(d=doc):
+                            render_doc(d)
+                        card.on("click", _open)
+
+        def render_doc(doc):
+            view_holder.clear()
+            with view_holder:
+                with ui.element('div').style(
+                    "display:flex;align-items:center;gap:8px;"
+                    "margin-bottom:12px;"
+                ):
+                    def _back():
+                        render_list()
+                    ui.button(icon="arrow_back", on_click=_back).props(
+                        "flat round dense size=sm").style("color:#5eead4;")
+                    with ui.element('div').style("flex:1;min-width:0;"):
+                        ui.label(str(doc.get("title", ""))).style(
+                            "font-size:14px;font-weight:700;color:#e8e8e8;")
+                        ui.label(str(doc.get("ms_number", "")) + " · " +
+                                  str(doc.get("element_type", "")) + " · " +
+                                  str(doc.get("discipline", ""))).classes(
+                            "mono-sm").style(
+                            "font-size:10px;color:#808080;margin-top:2px;")
+
+                clauses = doc.get("clauses") or []
+                if not clauses:
+                    ui.label("No clauses stored for this document.").classes(
+                        "mono-sm").style("color:#5a5a5a;padding:20px 0;"
+                                          "text-align:center;")
+                    return
+                for c in clauses:
+                    with ui.element('div').classes("ms-reader-clause"):
+                        with ui.element('div').style(
+                            "display:flex;align-items:baseline;gap:2px;"
+                        ):
+                            ui.html('<span class="cid">S' +
+                                    _html_mod.escape(str(c.get("id", ""))) +
+                                    '</span>')
+                            ui.html('<span class="ctitle">' +
+                                    _html_mod.escape(
+                                        str(c.get("title", ""))) +
+                                    '</span>')
+                        if c.get("text"):
+                            ui.html('<div class="ctext">' +
+                                    _html_mod.escape(str(c.get("text", "")))
+                                    + '</div>')
+
+        render_list()
+
+        with ui.element('div').style(
+            "padding:10px 18px 16px;border-top:1px solid #1e1e1e;"
+        ):
+            ui.button(_t("close"), on_click=dlg.close).classes(
+                BTN_SOFT).style("width:100%;")
+
+    dlg.open()
+
+
+def _ensure_cite_click_listener():
+    ui.run_javascript("""
+        (function(){
+          if (window._citeListenerAttached) return;
+          window._citeListenerAttached = true;
+          document.body.addEventListener('click', function(ev){
+            var el = ev.target.closest('.cite-pill[data-cid]');
+            if (el) {
+              emitEvent('cite_click', el.getAttribute('data-cid'));
+            }
+          });
+        })();
+    """)
+
+
 def _build_ms_chat(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
@@ -5788,7 +6047,27 @@ def _build_ms_chat(state):
     my_name = (user.get("name") or user.get("email") or "me")
 
     # Floating tools (top-right)
+    # Register the delegated citation-click listener + Python handler
+    # exactly once per page. Safe to call every render.
+    _ensure_cite_click_listener()
+    if not state.get("_cite_handler_registered"):
+        def _on_cite_click(e):
+            try:
+                cid = e.args[0] if e.args else None
+            except Exception:
+                cid = None
+            if cid:
+                _open_clause_modal(cid, state.get("project_id"))
+        ui.on("cite_click", _on_cite_click)
+        state["_cite_handler_registered"] = True
+
+    # Floating tools (top-right)
     with ui.element('div').classes("chat-tools"):
+        def _open_reader():
+            _open_ms_reader_dialog(pid)
+        ui.button(icon="menu_book", on_click=_open_reader).props(
+            "round dense size=sm").tooltip("Browse Method Statements")
+
         def _clear_hist():
             try:
                 db.ms_chat_clear(pid, uid)
@@ -5879,7 +6158,7 @@ def _build_ms_chat(state):
 
         with ui.element('div').classes("gem-wrap"):
             for m in msgs:
-                _render_ms_message(m, on_delete=ms_list.refresh)
+                _render_ms_message(m, on_delete=ms_list.refresh, pid=pid)
 
     ms_list()
 
@@ -6098,7 +6377,7 @@ def _build_ms_chat(state):
     ui.timer(5.0, _ms_poll)
 
 
-def _render_ms_message(m, on_delete=None):
+def _render_ms_message(m, on_delete=None, pid=None):
     """Render a single MS Chat message in Gemini style."""
     kind = (m.get("kind") or "question").lower()
     author = m.get("author") or "?"
@@ -6126,6 +6405,8 @@ def _render_ms_message(m, on_delete=None):
                 if not answer:
                     ui.label("(No answer was saved for this question.)").style(
                         "font-size:12px;color:#808080;font-style:italic;")
+                elif pid:
+                    _render_answer_with_citations(answer, pid)
                 else:
                     ui.label(answer).classes("gem-ai")
             else:
