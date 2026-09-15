@@ -10,6 +10,7 @@ ui/defect_page.py — Full file.
 - Feature 6: per-defect watchlist.
 - Feature 7: bulk actions in Defect Logs.
 - Feature 10: custom report templates.
+- Gemini-style MS Chat UI.
 """
 import io
 import re
@@ -289,6 +290,7 @@ T = {
         "ms_chat_kind_question": "QUESTION",
         "ms_chat_kind_check": "DOCUMENT CHECK",
         "ms_chat_source": "Source",
+        "ms_chat_thinking": "Thinking...",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -486,6 +488,7 @@ T = {
         "ms_chat_kind_question": "سؤال",
         "ms_chat_kind_check": "فحص مستند",
         "ms_chat_source": "المصدر",
+        "ms_chat_thinking": "جاري التفكير...",
     },
 }
 
@@ -718,6 +721,8 @@ def _inject_theme():
     --text:#e8e8e8; --text-soft:#b8b8b8; --muted:#808080;
     --muted-2:#5a5a5a; --accent:#5eead4; --accent-dim:#14b8a6;
     --blue:#60a5fa; --success:#4ade80; --warn:#fbbf24; --danger:#f87171;
+    --gem-bg:#1e1f20; --gem-user:#333537; --gem-input:#2a2b2d;
+    --gem-text:#e3e3e3; --gem-muted:#9aa0a6;
   }
   * { font-variant-ligatures: none; }
   html, body {
@@ -1045,6 +1050,8 @@ def _inject_theme():
     color: #5eead4 !important;
     border: 1px solid #262626 !important;
     box-shadow: 0 4px 10px rgba(0,0,0,0.4) !important;
+    min-width: 32px !important; min-height: 32px !important;
+    padding: 0 !important;
   }
   .ocr-box { background: var(--surface-2); border: 1px dashed var(--border-2);
              border-radius: 4px; padding: 10px; margin-top: 6px; }
@@ -1104,6 +1111,247 @@ def _inject_theme():
     border-radius: 4px;
   }
   .bulk-bar .q-btn { min-height: 30px !important; font-size: 10px !important; }
+
+  /* ============================================================
+     Gemini-style MS Chat
+     ============================================================ */
+  .gem-wrap {
+    display: flex; flex-direction: column;
+    width: 100%;
+    padding: 4px 14px 140px 14px;
+    box-sizing: border-box;
+    gap: 18px;
+  }
+  .gem-row { display: flex; width: 100%; }
+  .gem-row.user { justify-content: flex-end; }
+  .gem-row.ai { justify-content: flex-start; }
+  .gem-user {
+    background: var(--gem-user);
+    color: var(--gem-text);
+    border-radius: 20px;
+    padding: 10px 15px;
+    max-width: 82%;
+    font-size: 14.5px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'JetBrains Mono','Amiri',monospace;
+  }
+  .gem-ai {
+    max-width: 100%;
+    width: 100%;
+    padding: 2px 4px 2px 0;
+    font-size: 14.5px;
+    line-height: 1.68;
+    color: var(--gem-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'JetBrains Mono','Amiri',monospace;
+  }
+  .gem-ai-label {
+    font-size: 9px; letter-spacing: 0.16em;
+    color: #6a6a6a; font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .gem-msg-meta {
+    font-size: 9px; color: #5a5a5a;
+    margin-top: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .gem-del {
+    background: transparent; border: none;
+    color: #4a4a4a; cursor: pointer; padding: 0 4px;
+    font-size: 12px; line-height: 1;
+  }
+  .gem-del:hover { color: #f87171; }
+  .gem-thinking {
+    display: inline-flex; gap: 5px; align-items: center;
+    color: var(--gem-muted);
+    font-size: 13px;
+  }
+  .gem-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent);
+    animation: gemBounce 1.2s infinite ease-in-out both;
+  }
+  .gem-dot:nth-child(2) { animation-delay: 0.15s; }
+  .gem-dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes gemBounce {
+    0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+    40% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  /* Gemini-style composer */
+  .gem-composer {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    padding: 16px 12px 16px;
+    background: linear-gradient(180deg, rgba(11,11,11,0) 0%,
+                                rgba(11,11,11,0.95) 30%,
+                                #0b0b0b 100%);
+    z-index: 400;
+    pointer-events: none;
+  }
+  .gem-composer-inner {
+    max-width: 720px;
+    margin: 0 auto;
+    pointer-events: auto;
+    position: relative;
+  }
+  .gem-pill {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    background: var(--gem-input);
+    border: 1px solid #35363a;
+    border-radius: 26px;
+    padding: 6px 6px 6px 6px;
+    min-height: 50px;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .gem-pill:focus-within {
+    border-color: #4a4b4f;
+    background: #303134;
+  }
+  .gem-pill .q-field { flex: 1; min-width: 0; }
+  .gem-pill .q-field--outlined .q-field__control {
+    background: transparent !important;
+    border: none !important;
+    min-height: 36px !important;
+    padding: 0 !important;
+  }
+  .gem-pill .q-field--outlined .q-field__control:before,
+  .gem-pill .q-field--outlined .q-field__control:after {
+    border: none !important;
+  }
+  .gem-pill .q-field__native,
+  .gem-pill .q-field__input,
+  .gem-pill textarea {
+    color: var(--gem-text) !important;
+    font-family: 'JetBrains Mono','Amiri',monospace !important;
+    font-size: 14.5px !important;
+    padding: 8px 6px !important;
+    line-height: 1.5 !important;
+  }
+  .gem-icon-btn {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    color: #c5c7cb;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
+  }
+  .gem-icon-btn:hover { background: #3a3b3d; color: #ffffff; }
+  .gem-icon-btn .q-icon { font-size: 22px !important; }
+  .gem-icon-btn.send {
+    background: #35363a;
+    color: #6a6d72;
+    cursor: default;
+    transition: background 0.15s, color 0.15s;
+  }
+  .gem-icon-btn.send.active {
+    background: var(--accent);
+    color: #0b0b0b;
+    cursor: pointer;
+  }
+  .gem-icon-btn.send.active:hover { background: #4dd4bf; }
+  .gem-icon-btn.plus { color: #e8e8e8; }
+  .gem-hint {
+    text-align: center;
+    font-size: 10px;
+    color: #5a5a5a;
+    margin-top: 8px;
+    letter-spacing: 0.02em;
+  }
+  .gem-empty {
+    display: flex; flex-direction: column;
+    align-items: flex-start; justify-content: center;
+    padding: 40px 4px 20px;
+    min-height: 40vh;
+  }
+  .gem-empty-title {
+    font-size: 22px; font-weight: 700;
+    color: var(--gem-text);
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+    background: linear-gradient(90deg, #5eead4, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .gem-empty-sub {
+    font-size: 13px; color: #9aa0a6;
+    margin-bottom: 18px; line-height: 1.6;
+  }
+  .gem-empty-chips {
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .gem-chip {
+    background: #1f2022;
+    border: 1px solid #2a2b2d;
+    color: #e3e3e3;
+    border-radius: 18px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .gem-chip:hover { background: #2a2b2d; }
+
+  /* Document check card */
+  .gem-check-card {
+    background: #161718;
+    border: 1px solid #232426;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-top: 6px;
+    max-width: 100%;
+  }
+  .gem-check-title {
+    font-size: 10px; letter-spacing: 0.14em;
+    color: #6a6a6a; font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .gem-kv-row {
+    display: flex; gap: 8px;
+    font-size: 12px; color: #b8b8b8;
+    padding: 4px 0;
+    border-bottom: 1px solid #1e1f21;
+  }
+  .gem-kv-row:last-child { border-bottom: none; }
+  .gem-kv-row b { color: #e3e3e3; min-width: 100px; }
+  .gem-verdict {
+    display: inline-block;
+    font-size: 10px; font-weight: 800;
+    letter-spacing: 0.14em;
+    padding: 4px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+  }
+  .gem-verdict.ok { background: rgba(74,222,128,0.14); color: #4ade80; }
+  .gem-verdict.warn { background: rgba(251,191,36,0.14); color: #fbbf24; }
+  .gem-verdict.fail { background: rgba(248,113,113,0.14); color: #f87171; }
+  .gem-check-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid #1e1f21;
+    align-items: flex-start;
+  }
+  .gem-check-row:last-child { border-bottom: none; }
+  .gem-check-field { font-size: 12px; color: #c8c8c8; }
+  .gem-check-val { font-size: 12px; color: #e3e3e3; font-weight: 600; }
+  .gem-check-note {
+    font-size: 10.5px; color: #808080;
+    margin-top: 4px; line-height: 1.5;
+    grid-column: 1 / -1;
+  }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -3706,10 +3954,8 @@ def _build_logs(state):
         _render_no_project(state, state["render_main"])
         return
 
-    # Feature #7 — selection state
     sel_state = {"on": False, "picked": set()}
 
-    # Feature #10 — templates are seeded on first access
     try:
         db.report_template_ensure_presets(state["project_id"])
     except Exception as e:
@@ -3777,7 +4023,6 @@ def _build_logs(state):
     fstate = {"filter": "all", "query": "", "defect_type": "all",
               "watch_only": False, "template_id": None}
 
-    # Template picker — preselected to the project default if available
     try:
         default_tpl = db.report_template_get_default(state["project_id"])
         if default_tpl:
@@ -3839,7 +4084,6 @@ def _build_logs(state):
                 " · " + _t("closed") + " " + str(len(rows) - open_count)
             ).classes("mono-sm").style("margin-bottom:10px;")
 
-        # Feature #10 — template picker + manage + export buttons
         with ui.element('div').style(
             "display:flex;gap:6px;align-items:center;margin-bottom:8px;"
         ):
@@ -3922,7 +4166,6 @@ def _build_logs(state):
                 "text-align:center;padding:32px 0;")
             return
 
-        # Feature #7 — action bar holder
         bulk_holder = ui.element('div').style("width:100%;")
 
         def _clear_picks():
@@ -5431,7 +5674,7 @@ def _build_chat(state):
 
 
 # =====================================================================
-# MS CHAT
+# MS CHAT — Gemini style
 # =====================================================================
 def _build_ms_chat(state):
     if not state.get("project_id"):
@@ -5443,6 +5686,7 @@ def _build_ms_chat(state):
     user = state.get("user") or {}
     my_name = (user.get("name") or user.get("email") or "me")
 
+    # ---- Floating tools (top-right) ----
     with ui.element('div').classes("chat-tools"):
         def _clear_hist():
             try:
@@ -5454,180 +5698,289 @@ def _build_ms_chat(state):
                 traceback.print_exc()
                 ui.notify("Clear failed: " + str(ex), type="negative")
         ui.button(icon="delete_sweep", on_click=_clear_hist).props(
-            "round dense size=sm")
+            "round dense size=sm").tooltip(_t("ms_chat_clear"))
 
         def _refresh():
             state["render_main"]()
         ui.button(icon="refresh", on_click=_refresh).props(
-            "round dense size=sm")
+            "round dense size=sm").tooltip("Refresh")
 
-        def _scroll_bottom():
-            ui.run_javascript(
-                "window.scrollTo({top: document.body.scrollHeight,"
-                " behavior:'smooth'});")
-        ui.button(icon="vertical_align_bottom", on_click=_scroll_bottom).props(
-            "round dense size=sm")
-
-    with ui.element('div').classes("section-head"):
-        ui.label(_t("ms_chat_title")).classes("h1")
-
-    ui.label(_t("ms_chat_sub")).classes("muted").style("margin-bottom:12px;")
+    # ---- Slim header ----
+    with ui.element('div').style(
+        "padding:0 4px 8px 4px;"
+    ):
+        ui.label(_t("ms_chat_title")).style(
+            "font-size:18px;font-weight:700;color:#e3e3e3;"
+            "letter-spacing:-0.01em;")
 
     clauses_count = len(db.get_clauses_for_element(pid))
     if clauses_count == 0:
-        with ui.element('div').classes("card").style(
-            "text-align:center;padding:26px 20px;margin-bottom:12px;"
+        with ui.element('div').style(
+            "text-align:center;padding:60px 20px;"
         ):
-            ui.icon("description").style("font-size:26px;color:#5a5a5a;")
-            ui.label(_t("ms_chat_need_ms")).classes("muted").style(
-                "margin-top:10px;line-height:1.6;")
+            ui.icon("description").style(
+                "font-size:36px;color:#5a5a5a;")
+            ui.label(_t("ms_chat_need_ms")).style(
+                "color:#9aa0a6;font-size:13px;margin-top:14px;"
+                "line-height:1.7;max-width:320px;margin-left:auto;"
+                "margin-right:auto;display:block;")
         return
 
-    ui.label(str(clauses_count) + " " + _t("clauses_count")).classes(
-        "mono-sm").style("margin-bottom:10px;")
+    # ---- Message list (Gemini style) ----
+    gem_wrap = ui.element('div').classes("gem-wrap")
 
     @ui.refreshable
     def ms_list():
-        msgs = db.ms_chat_list(pid, uid, limit=200)
-        if not msgs:
-            ui.label(_t("ms_chat_empty")).classes("mono-sm").style(
-                "text-align:center;padding:32px 0;color:#5a5a5a;")
-            return
-        for m in msgs:
-            _render_ms_message(m, on_delete=ms_list.refresh)
+        try:
+            msgs = db.ms_chat_list(pid, uid, limit=200) or []
+        except Exception:
+            msgs = []
+
+        with gem_wrap:
+            if not msgs:
+                # Gemini-style empty state
+                with ui.element('div').classes("gem-empty"):
+                    ui.label("Hi " + my_name.split()[0] + " 👋").classes(
+                        "gem-empty-title")
+                    ui.label(
+                        "Ask me anything about your Method Statements. "
+                        "I'll answer from the uploaded MS and cite the "
+                        "clause."
+                    ).classes("gem-empty-sub")
+                    with ui.element('div').classes("gem-empty-chips"):
+                        def _suggest(q):
+                            def _fill():
+                                try:
+                                    q_input.value = q
+                                except Exception:
+                                    pass
+                            return _fill
+                        ui.label("What is the minimum cover for columns?").classes(
+                            "gem-chip").on("click",
+                            _suggest("What is the minimum cover for "
+                                     "columns exposed to weather?"))
+                        ui.label("Lap length for tension bars?").classes(
+                            "gem-chip").on("click",
+                            _suggest("What is the lap length for tension bars?"))
+                        ui.label("Curing requirements?").classes(
+                            "gem-chip").on("click",
+                            _suggest("What are the curing requirements?"))
+                return
+
+            for m in msgs:
+                _render_ms_message(m, on_delete=ms_list.refresh)
 
     ms_list()
 
-    with ui.element('div').classes("chat-composer"):
-        ui.label(_t("ms_chat_ask")).classes("label").style(
-            "display:block;margin-bottom:4px;")
-        q_in = ui.textarea(
-            placeholder=_t("ms_chat_ask_placeholder")).style(
-            "width:100%;").props("dense autogrow")
+    # ---- Gemini-style composer (fixed bottom) ----
+    with ui.element('div').classes("gem-composer"):
+        with ui.element('div').classes("gem-composer-inner"):
 
-        async def _ask():
-            q = (q_in.value or "").strip()
-            if not q:
-                ui.notify("Type a question first.", type="warning")
-                return
-            try:
-                btn_ask.props("loading")
-                btn_ask.set_text(_t("analyzing"))
-            except Exception:
-                pass
-            try:
-                result = await msc.ask_ms_question(pid, q, call_gemini_json)
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
+            # Hidden upload that fires when "+" is tapped
+            upload_state = {"pending": None}
+
+            async def _on_doc(e):
                 try:
-                    btn_ask.props(remove="loading")
-                    btn_ask.set_text(_t("ms_chat_send"))
+                    data = await e.file.read()
+                except Exception as ex:
+                    ui.notify(_t("upload_failed") + str(ex),
+                               type="negative")
+                    return
+                if not data:
+                    ui.notify(_t("empty_file"), type="warning")
+                    return
+                name = (e.file.name or "").lower()
+                if name.endswith(".pdf"):
+                    mime = "application/pdf"
+                elif name.endswith(".png"):
+                    mime = "image/png"
+                else:
+                    mime = "image/jpeg"
+
+                # Show a temporary "reading" AI message
+                try:
+                    ms_list.refresh()
                 except Exception:
                     pass
-                ui.notify("Ask error: " + str(ex), type="negative")
-                return
-            try:
-                btn_ask.props(remove="loading")
-                btn_ask.set_text(_t("ms_chat_send"))
-            except Exception:
-                pass
-            if not result:
-                ui.notify("Empty result.", type="negative")
-                return
-            if result.get("error"):
-                ui.notify(_t("ms_chat_failed") + str(result["error"]),
-                           type="negative")
-                return
-            answer = result.get("answer") or ""
-            if not answer.strip():
-                ui.notify("Empty answer.", type="warning")
-                return
-            try:
-                db.ms_chat_add(pid, uid, my_name, "question", q,
-                                {"answer": answer})
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("Save failed: " + str(ex), type="negative")
-                return
-            q_in.value = ""
-            try:
-                ms_list.refresh()
-            except Exception:
-                pass
-            ui.run_javascript(
-                "window.scrollTo({top: document.body.scrollHeight,"
-                " behavior:'smooth'});")
+                ui.notify(_t("ms_chat_reading"), type="info", timeout=2000)
 
-        btn_ask = ui.button(_t("ms_chat_send"), icon="send", on_click=_ask)
-        btn_ask.classes(BTN_PRIMARY).style("width:100%;margin-top:6px;")
-        q_in.on('keydown.enter', lambda _: _ask())
+                try:
+                    result = await msc.check_document_against_ms(
+                        file_bytes=data, mime_type=mime, project_id=pid,
+                        ocr_fn=_ocr_handwriting,
+                        call_gemini_json_fn=call_gemini_json)
+                except Exception as ex:
+                    ui.notify(_t("ms_chat_failed") + str(ex),
+                               type="negative")
+                    return
+                if result.get("error"):
+                    ui.notify(_t("ms_chat_failed") +
+                               str(result["error"]), type="negative")
+                    return
+                resp = {k: result.get(k) for k in
+                        ("doc_type", "extracted", "checks", "overall",
+                         "summary", "ocr_text")}
+                try:
+                    db.ms_chat_add(pid, uid, my_name, "check",
+                                    _t("ms_chat_check_btn"), resp)
+                except Exception as ex:
+                    ui.notify("Save failed: " + str(ex), type="negative")
+                    return
+                try:
+                    ms_list.refresh()
+                except Exception:
+                    pass
+                ui.run_javascript(
+                    "window.scrollTo({top: document.body.scrollHeight,"
+                    " behavior:'smooth'});")
 
-        with ui.element('div').classes("or-divider"):
-            ui.label(_t("or_divider"))
+            # Hidden upload widget (Quasar renders it; we hide it visually
+            # and trigger via JS from the "+" button).
+            hidden_upload_holder = ui.element('div').style(
+                "position:absolute;left:-9999px;top:-9999px;width:1px;"
+                "height:1px;overflow:hidden;")
+            with hidden_upload_holder:
+                ui.upload(on_upload=_on_doc, auto_upload=True).props(
+                    "flat bordered accept=image/*,.pdf").style(
+                    "width:1px;height:1px;")
 
-        ui.label(_t("ms_chat_check_hint")).classes("mono-sm").style(
-            "display:block;margin-bottom:6px;line-height:1.5;")
+            # The pill
+            with ui.element('div').classes("gem-pill"):
+                # + button
+                def _open_picker():
+                    try:
+                        ui.run_javascript("""
+                            (function() {
+                              var holders = document.querySelectorAll(
+                                '.gem-composer-inner .q-uploader');
+                              for (var i = 0; i < holders.length; i++) {
+                                var inp = holders[i].querySelector(
+                                  'input[type=file]');
+                                if (inp) { inp.click(); return; }
+                              }
+                            })();
+                        """)
+                    except Exception as e:
+                        print("[ms] open picker failed: " + repr(e))
 
-        doc_status = ui.label("").classes("mono-sm").style(
-            "margin-top:6px;display:block;min-height:14px;")
+                ui.button(icon="add", on_click=_open_picker).classes(
+                    "gem-icon-btn plus").props("flat round dense")
 
-        async def _handle_doc(e):
-            try:
-                data = await e.file.read()
-            except Exception as ex:
-                ui.notify(_t("upload_failed") + str(ex), type="negative")
-                return
-            if not data:
-                ui.notify(_t("empty_file"), type="warning")
-                return
-            name = (e.file.name or "").lower()
-            if name.endswith(".pdf"):
-                mime = "application/pdf"
-            elif name.endswith(".png"):
-                mime = "image/png"
-            else:
-                mime = "image/jpeg"
+                # Text input
+                q_input = ui.textarea(
+                    placeholder=_t("ms_chat_ask_placeholder")
+                ).style("width:100%;").props("dense autogrow borderless")
 
-            doc_status.set_text(_t("ms_chat_reading"))
-            doc_status.style("color:#fbbf24;font-size:10px;margin-top:6px;"
-                              "display:block;min-height:14px;")
-            try:
-                result = await msc.check_document_against_ms(
-                    file_bytes=data, mime_type=mime, project_id=pid,
-                    ocr_fn=_ocr_handwriting,
-                    call_gemini_json_fn=call_gemini_json)
-            except Exception as ex:
-                doc_status.set_text(_t("ms_chat_failed") + str(ex))
-                doc_status.style("color:#f87171;font-size:10px;"
-                                  "margin-top:6px;display:block;"
-                                  "min-height:14px;")
-                return
-            if result.get("error"):
-                doc_status.set_text(_t("ms_chat_failed") +
-                                     str(result["error"]))
-                doc_status.style("color:#f87171;font-size:10px;"
-                                  "margin-top:6px;display:block;"
-                                  "min-height:14px;")
-                return
-            doc_status.set_text("")
-            resp = {k: result.get(k) for k in
-                    ("doc_type", "extracted", "checks", "overall",
-                     "summary", "ocr_text")}
-            db.ms_chat_add(pid, uid, my_name, "check",
-                            _t("ms_chat_check_btn"), resp)
-            ms_list.refresh()
-            ui.run_javascript(
-                "window.scrollTo({top: document.body.scrollHeight,"
-                " behavior:'smooth'});")
+                # Send button (disabled until text)
+                send_btn = ui.button(icon="arrow_upward").classes(
+                    "gem-icon-btn send").props("flat round dense")
 
-        ui.upload(on_upload=_handle_doc, auto_upload=True).style(
-            "width:100%;").props(
-            "flat bordered accept=image/*,.pdf label='" +
-            _t("ms_chat_check_btn") + "'")
-        doc_status
+                send_state = {"busy": False}
 
+                async def _ask():
+                    if send_state["busy"]:
+                        return
+                    q = (q_input.value or "").strip()
+                    if not q:
+                        return
+                    send_state["busy"] = True
+                    try:
+                        send_btn.classes(remove="active")
+                        send_btn.props("loading")
+                    except Exception:
+                        pass
+
+                    # Optimistically render the user message immediately
+                    # (we already saved it to DB after; refresh will
+                    # pick it up but this gives instant feedback).
+                    try:
+                        ms_list.refresh()
+                    except Exception:
+                        pass
+
+                    try:
+                        result = await msc.ask_ms_question(
+                            pid, q, call_gemini_json)
+                    except Exception as ex:
+                        import traceback
+                        traceback.print_exc()
+                        try:
+                            send_btn.props(remove="loading")
+                        except Exception:
+                            pass
+                        send_state["busy"] = False
+                        ui.notify("Ask error: " + str(ex),
+                                   type="negative")
+                        return
+
+                    try:
+                        send_btn.props(remove="loading")
+                    except Exception:
+                        pass
+                    send_state["busy"] = False
+
+                    if not result or result.get("error"):
+                        ui.notify(
+                            _t("ms_chat_failed") +
+                            str((result or {}).get("error", "empty")),
+                            type="negative")
+                        return
+                    answer = (result.get("answer") or "").strip()
+                    if not answer:
+                        ui.notify("Empty answer.", type="warning")
+                        return
+
+                    try:
+                        db.ms_chat_add(pid, uid, my_name, "question", q,
+                                        {"answer": answer})
+                    except Exception as ex:
+                        import traceback
+                        traceback.print_exc()
+                        ui.notify("Save failed: " + str(ex),
+                                   type="negative")
+                        return
+
+                    q_input.value = ""
+                    try:
+                        send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                    try:
+                        ms_list.refresh()
+                    except Exception:
+                        pass
+                    ui.run_javascript(
+                        "window.scrollTo({top: document.body.scrollHeight,"
+                        " behavior:'smooth'});")
+
+                def _on_send():
+                    try:
+                        ui.timer(0.01, _ask, once=True)
+                    except Exception:
+                        pass
+
+                send_btn.on("click", _on_send)
+
+                # Enable/disable send based on text
+                def _on_input(e):
+                    txt = (q_input.value or "").strip()
+                    try:
+                        if txt:
+                            send_btn.classes(add="active")
+                        else:
+                            send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                q_input.on("update:model-value", _on_input)
+
+                # Enter key sends
+                q_input.on("keydown.enter", lambda _: _on_send())
+
+            # Small hint
+            ui.label("MS Chat · answers only from the uploaded Method "
+                       "Statements").classes("gem-hint")
+
+    # Auto-scroll on open
     ui.run_javascript(
         "window.scrollTo({top: document.body.scrollHeight,"
         " behavior:'auto'});")
@@ -5656,126 +6009,131 @@ def _build_ms_chat(state):
 
 
 def _render_ms_message(m, on_delete=None):
+    """Render a single MS Chat message in Gemini style:
+    - user question = right-aligned rounded pill
+    - AI answer / doc check = left-aligned plain body
+    """
     kind = (m.get("kind") or "question").lower()
-    cls = "ms-msg kind-question" if kind == "question" else "ms-msg kind-check"
     author = m.get("author") or "?"
     created = str(m.get("created_at") or "")[:16]
-    body = m.get("body") or ""
+    body = str(m.get("body") or "")
     resp = m.get("response") or {}
     mid = m.get("id")
 
-    with ui.element('div').classes(cls):
+    # -------- 1) User message --------
+    with ui.element('div').classes("gem-row user"):
         with ui.element('div').style(
-            "display:flex;justify-content:space-between;"
-            "align-items:center;gap:8px;margin-bottom:6px;"
+            "display:flex;flex-direction:column;align-items:flex-end;"
+            "max-width:82%;"
         ):
-            with ui.element('div').style(
-                "display:flex;align-items:center;gap:6px;"
-            ):
-                ui.html('<span class="badge-seen" style="color:#b8b8b8;">' +
-                        _html_mod.escape(
-                            _t("ms_chat_kind_question") if kind == "question"
-                            else _t("ms_chat_kind_check")) + '</span>')
-                ui.label(author).style(
-                    "font-size:11px;color:#b8b8b8;font-weight:600;")
-            with ui.element('div').style(
-                "display:flex;align-items:center;gap:6px;"
-            ):
-                ui.label(created).classes("chat-time")
+            with ui.element('div').classes("gem-user"):
+                ui.label(body)
+            with ui.element('div').classes("gem-msg-meta"):
+                ui.label(created)
 
-                def _del(did=mid):
-                    db.ms_chat_delete(did, _current_uid_holder.get("uid"))
-                    ui.notify("Deleted.", type="positive")
-                    if on_delete:
-                        on_delete()
+    # -------- 2) AI reply --------
+    with ui.element('div').classes("gem-row ai"):
+        with ui.element('div').style("width:100%;min-width:0;"):
+
+            if kind == "question":
+                answer = str(resp.get("answer") or "")
+                if not answer:
+                    with ui.element('div').classes("gem-thinking"):
+                        ui.element('span').classes("gem-dot")
+                        ui.element('span').classes("gem-dot")
+                        ui.element('span').classes("gem-dot")
+                        ui.label(_t("ms_chat_thinking")).style(
+                            "margin-left:6px;")
+                else:
+                    ui.label(answer).classes("gem-ai")
+
+            else:
+                # Document check — subtle Gemini-style card
+                _render_gem_check_card(resp)
+
+            with ui.element('div').classes("gem-msg-meta"):
+                ui.label(_t("ms_chat_kind_question") if kind == "question"
+                          else _t("ms_chat_kind_check"))
                 if mid:
-                    ui.button(icon="delete", on_click=_del).props(
-                        "flat round dense size=xs").style(
-                        "color:#808080;").tooltip("Delete")
+                    def _del(did=mid):
+                        db.ms_chat_delete(
+                            did, _current_uid_holder.get("uid"))
+                        ui.notify("Deleted.", type="positive")
+                        if on_delete:
+                            on_delete()
+                    btn = ui.label("Delete").classes("gem-del")
+                    btn.on("click", _del)
 
-        if kind == "question":
-            with ui.element('div').style(
-                "background:#161616;border:1px solid #1e1e1e;"
-                "border-radius:3px;padding:8px 10px;margin-bottom:8px;"
-            ):
-                ui.label("Q: " + str(body)).classes("ms-q").style(
-                    "margin-bottom:0;")
-            answer = str(resp.get("answer") or "")
-            ui.label(_t("ms_chat_answer_from")).classes("label").style(
-                "display:block;margin-bottom:4px;")
-            ui.label(answer).classes("ms-a")
-        else:
-            ui.label(_t("ms_chat_check_btn")).classes("label").style(
-                "display:block;margin-bottom:6px;")
-            doc_type = resp.get("doc_type") or ""
-            if doc_type:
-                ui.label(_t("ms_chat_doc_type") + ": " + str(doc_type)).style(
-                    "font-size:12px;color:#e8e8e8;font-weight:600;"
-                    "margin-bottom:8px;")
-            extracted = resp.get("extracted") or {}
-            if extracted:
-                ui.label(_t("ms_chat_extracted")).classes("label").style(
-                    "display:block;margin-bottom:4px;")
-                with ui.element('div').classes("ms-kv"):
-                    for k, v in extracted.items():
-                        ui.html("<div><b>" + _html_mod.escape(str(k)) +
-                                ":</b> " + _html_mod.escape(str(v)) +
-                                "</div>")
-            checks = resp.get("checks") or []
-            if checks:
-                ui.label(_t("ms_chat_checks")).classes("label").style(
-                    "display:block;margin-top:10px;margin-bottom:4px;")
+
+def _render_gem_check_card(resp):
+    """Doc check shown as a compact Gemini-like info card."""
+    with ui.element('div').classes("gem-check-card"):
+        ui.label(_t("ms_chat_check_btn")).classes("gem-check-title")
+
+        doc_type = resp.get("doc_type") or ""
+        if doc_type:
+            with ui.element('div').classes("gem-kv-row"):
+                ui.html("<b>Type</b> " +
+                        _html_mod.escape(str(doc_type)))
+
+        extracted = resp.get("extracted") or {}
+        if extracted:
+            for k, v in extracted.items():
+                with ui.element('div').classes("gem-kv-row"):
+                    ui.html("<b>" + _html_mod.escape(str(k)) + "</b> " +
+                            _html_mod.escape(str(v)))
+
+        checks = resp.get("checks") or []
+        if checks:
+            with ui.element('div').style("margin-top:10px;"):
                 for c in checks:
                     v = (c.get("verdict") or "").lower()
-                    vcls = ("verdict-ok" if v == "ok" else
-                            "verdict-warn" if v == "warn" else
-                            "verdict-fail")
+                    vcls = ("ok" if v == "ok" else
+                            "warn" if v == "warn" else "fail")
                     field = str(c.get("field") or "")
                     val = str(c.get("value") or "")
                     req = str(c.get("ms_requirement") or "")
                     cid = str(c.get("clause_id") or "")
                     note = str(c.get("note") or "")
-                    with ui.element('div').classes("ms-check"):
-                        ui.html("<div class='field'>" +
-                                _html_mod.escape(field) + "</div>")
-                        ui.html("<div class='val'>" +
-                                _html_mod.escape(val) + "</div>")
-                        extra = (v or "").upper()
-                        ui.html("<div class='" + vcls + "'>" + extra +
-                                "</div>")
-                        line2 = []
-                        if req:
-                            line2.append("MS: " + req)
-                        if cid:
-                            line2.append("[" + _html_mod.escape("S" + cid) +
-                                          "]")
-                        if note:
-                            line2.append(note)
-                        if line2:
-                            ui.html("<div class='note'>" +
-                                    _html_mod.escape(" · ".join(line2)) +
-                                    "</div>")
-            overall = (resp.get("overall") or "").lower()
-            if overall:
-                ocls = ("overall-ok" if overall == "compliant" else
-                        "overall-warn" if overall == "conditional" else
-                        "overall-fail")
-                olabel = ("ms_chat_compliant" if overall == "compliant" else
-                          "ms_chat_conditional" if overall == "conditional"
-                          else "ms_chat_non_compliant")
-                ui.element('div').style("height:10px;")
-                with ui.element('div').style(
-                    "display:flex;justify-content:space-between;"
-                    "align-items:center;padding-top:6px;"
-                    "border-top:1px solid #1e1e1e;margin-top:6px;"
-                ):
-                    ui.label(_t("ms_chat_overall")).classes("label")
-                    ui.html("<div class='" + ocls + "'>" +
-                            _html_mod.escape(_t(olabel)) + "</div>")
-            summary = resp.get("summary") or ""
-            if summary:
-                ui.label(str(summary)).classes("mono-sm").style(
-                    "margin-top:8px;line-height:1.5;")
+                    with ui.element('div').classes("gem-check-row"):
+                        with ui.element('div'):
+                            ui.label(field).classes("gem-check-field")
+                            ui.label(val).classes("gem-check-val")
+                        ui.html('<span class="gem-verdict ' + vcls + '">' +
+                                (v or "").upper() + '</span>')
+                        if req or cid or note:
+                            bits = []
+                            if req:
+                                bits.append("MS: " + req)
+                            if cid:
+                                bits.append("[S" + cid + "]")
+                            if note:
+                                bits.append(note)
+                            ui.html('<div class="gem-check-note">' +
+                                    _html_mod.escape(" · ".join(bits)) +
+                                    '</div>')
+
+        overall = (resp.get("overall") or "").lower()
+        if overall:
+            ocls = ("ok" if overall == "compliant" else
+                    "warn" if overall == "conditional" else "fail")
+            olabel = ("COMPLIANT" if overall == "compliant" else
+                      "CONDITIONAL" if overall == "conditional"
+                      else "NON-COMPLIANT")
+            with ui.element('div').style(
+                "display:flex;justify-content:space-between;"
+                "align-items:center;margin-top:12px;"
+                "padding-top:10px;border-top:1px solid #232426;"
+            ):
+                ui.label(_t("ms_chat_overall")).classes("gem-check-title")
+                ui.html('<span class="gem-verdict ' + ocls + '">' +
+                        olabel + '</span>')
+
+        summary = resp.get("summary") or ""
+        if summary:
+            ui.label(str(summary)).style(
+                "font-size:12.5px;color:#b8b8b8;"
+                "margin-top:10px;line-height:1.6;")
 
 
 def _open_member_profile(user_id):
