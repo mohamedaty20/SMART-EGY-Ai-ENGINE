@@ -3315,8 +3315,6 @@ def _reader_looks_like_heading(s):
             dots = 0
         if dots == 0:
             return 2
-        if dots == 1:
-            return 3
         return 3
     if (len(t) < 80 and t == t.upper()
             and any(c.isalpha() for c in t)
@@ -3344,145 +3342,219 @@ def _reader_highlight(text, q):
     return "".join(out)
 
 
-def _reader_safe_anchor(cid):
-    """DOM-safe anchor id for a chapter number."""
-    s = re.sub(r'[^0-9A-Za-z]+', '_', str(cid or "").strip())
-    if not s:
-        s = "x"
-    return "ch-" + s
+def _build_ms_reader(state):
+    try:
+        _build_ms_reader_inner(state)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print("[reader] FATAL: " + repr(e))
+        with ui.element('div').style(
+            "padding:40px 20px;text-align:center;"
+        ):
+            ui.icon("error_outline").style(
+                "font-size:40px;color:#f87171;")
+            ui.label("MS Reader failed to load").style(
+                "font-size:14px;margin-top:12px;font-weight:700;"
+                "color:#e8e8e8;")
+            ui.label(str(e)).style(
+                "font-size:11px;margin-top:10px;color:#808080;"
+                "font-family:monospace;word-break:break-word;")
+            ui.label(
+                "Check Render Logs for [reader] errors."
+            ).style("font-size:10px;margin-top:8px;color:#5a5a5a;")
+
+            def _retry():
+                state["render_main"]()
+            ui.button("Retry", icon="refresh",
+                      on_click=_retry).classes(BTN_SOFT).style(
+                "margin-top:16px;")
 
 
-def _render_reader_body(full_text, chapters, rstate):
-    if not (full_text or "").strip():
-        ui.html(
-            '<div class="reader-body" style="color:#808080;'
-            'padding-top:40px;">No full text stored for this MS. '
-            'Re-upload the document to enable reading.</div>')
+def _build_ms_reader_inner(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    pid = state["project_id"]
+
+    if state.get("reader_pid") != pid:
+        state["reader_pid"] = pid
+        state["reader"] = {
+            "ms_id": None, "menu_open": False,
+            "menu_q": "", "search_q": "", "active_chapter": None,
+        }
+    rstate = state["reader"]
+
+    try:
+        ms_list = db.list_ms(pid) or []
+    except Exception:
+        ms_list = []
+
+    wrap = ui.element('div').classes("reader-wrap")
+    if rstate.get("menu_open"):
+        wrap.classes(add="menu-open")
+
+    with wrap:
+        with ui.element('aside').classes("reader-menu"):
+            _render_reader_menu(state, rstate, ms_list, pid)
+        with ui.element('main').classes("reader-main"):
+            _render_reader_main(state, rstate, pid)
+
+
+def _render_reader_menu(state, rstate, ms_list, pid):
+    with ui.element('div').style(
+        "display:flex;align-items:center;justify-content:space-between;"
+        "margin-bottom:10px;gap:8px;"
+    ):
+        ui.label("METHOD STATEMENTS").style(
+            "font-size:11px;font-weight:700;color:#5eead4;"
+            "letter-spacing:0.06em;")
+
+        def _close_menu():
+            rstate["menu_open"] = False
+            state["render_main"]()
+        ui.button(icon="close", on_click=_close_menu).props(
+            "flat round dense size=sm").style("color:#5a5a5a;")
+
+    menu_search = ui.input(
+        placeholder="Search MS or chapter...",
+        value=rstate.get("menu_q", ""),
+    ).style("width:100%;margin-bottom:10px;").props("dense clearable")
+
+    holder = ui.element('div').style("width:100%;")
+
+    def _render_menu_list():
+        holder.clear()
+        q = (rstate.get("menu_q") or "").strip().lower()
+        with holder:
+            if not ms_list:
+                ui.label("No Method Statements uploaded yet.").style(
+                    "color:#808080;font-size:11px;padding:20px 0;"
+                    "text-align:center;")
+                return
+            shown = 0
+            for m in ms_list:
+                mid = m.get("id")
+                title_txt = (
+                    str(m.get("title") or "") + " " +
+                    str(m.get("ms_number") or "")
+                ).lower()
+                is_selected = rstate.get("ms_id") == mid
+                if q and q not in title_txt and not is_selected:
+                    continue
+                shown += 1
+                _render_menu_ms_item(m, rstate, state, q)
+            if q and shown == 0:
+                ui.label("No matches.").style(
+                    "color:#808080;font-size:11px;padding:20px 0;"
+                    "text-align:center;")
+
+    def _on_menu_search(e=None):
+        try:
+            rstate["menu_q"] = menu_search.value or ""
+        except Exception:
+            rstate["menu_q"] = ""
+        _render_menu_list()
+
+    _attached = False
+    try:
+        menu_search.on_value_change(_on_menu_search)
+        _attached = True
+    except Exception as e1:
+        print("[reader] menu on_value_change err: " + repr(e1))
+    if not _attached:
+        try:
+            menu_search.on("update:model-value", _on_menu_search)
+        except Exception as e2:
+            print("[reader] menu update:model-value err: " + repr(e2))
+
+    _render_menu_list()
+
+
+def _render_menu_ms_item(m, rstate, state, q):
+    mid = m.get("id")
+    is_selected = rstate.get("ms_id") == mid
+    active_chapter = rstate.get("active_chapter")
+
+    item = ui.element('div').classes(
+        "reader-ms-item" +
+        (" active" if is_selected and not active_chapter else "")
+    )
+    with item:
+        with ui.element('div').style(
+            "display:flex;justify-content:space-between;"
+            "align-items:flex-start;gap:6px;"
+        ):
+            ui.html(
+                '<span style="font-size:11px;font-weight:700;'
+                'color:#e8e8e8;word-break:break-word;line-height:1.35;">' +
+                _html_mod.escape(str(m.get("ms_number") or "")) + '  ' +
+                _html_mod.escape(str(m.get("title") or "")) + '</span>'
+            )
+            ui.html(
+                '<span style="font-size:10px;color:#5eead4;">' +
+                ('▾' if is_selected else '▸') + '</span>'
+            )
+
+    def _click_ms():
+        if rstate.get("ms_id") == mid:
+            rstate["ms_id"] = None
+            rstate["active_chapter"] = None
+        else:
+            rstate["ms_id"] = mid
+            rstate["active_chapter"] = None
+            rstate["search_q"] = ""
+        rstate["menu_open"] = False
+        state["render_main"]()
+    item.on("click", _click_ms)
+
+    if not is_selected:
         return
 
-    lines = full_text.split("\n")
-    valid_chapters = [c for c in chapters
-                       if isinstance(c.get("line"), int)
-                       and c.get("line", -1) >= 0]
-    valid_chapters.sort(key=lambda c: c["line"])
-    chapter_at_line = {c["line"]: c for c in valid_chapters}
-
-    parts = []
-    for i, raw in enumerate(lines):
-        s = raw.rstrip()
-        if i in chapter_at_line:
-            ch = chapter_at_line[i]
-            cid = str(ch.get("id") or "").strip()
-            anchor = _reader_safe_anchor(cid)
-            esc = _html_mod.escape(s if s.strip()
-                                    else (ch.get("title") or ""))
-            parts.append(
-                '<h2 id="' + _html_mod.escape(anchor) +
-                '" class="reader-h1">' + esc + '</h2>')
-            continue
-        if not s.strip():
-            parts.append('<div class="reader-gap"></div>')
-            continue
-        level = _reader_looks_like_heading(s)
-        esc = _html_mod.escape(s)
-        if level == 2:
-            parts.append('<h3 class="reader-h2">' + esc + '</h3>')
-        elif level == 3:
-            parts.append('<h4 class="reader-h3">' + esc + '</h4>')
-        else:
-            parts.append('<p class="reader-para">' + esc + '</p>')
-
-    body_html = ('<div class="reader-body">' + "".join(parts) + '</div>')
     try:
-        ui.html(body_html, sanitize=False)
-    except TypeError:
-        ui.html(body_html)
+        ms = db.get_ms_by_id(mid)
+    except Exception:
+        ms = None
+    chapters = (ms or {}).get("chapters") or []
 
+    with ui.element('div').classes("reader-chapters"):
+        all_active = not active_chapter
+        itm = ui.element('div').classes(
+            "reader-chapter-item" + (" active" if all_active else ""))
+        with itm:
+            ui.label("● Read all").style("font-size:10.5px;")
 
-def _reader_client_js(scroll_pos):
-    """All reader interactivity: search highlighting + chapter scroll.
-    Runs entirely in the browser. No server events involved."""
-    pos_literal = "null" if scroll_pos is None else str(int(scroll_pos))
-    return (
-        "(function(){"
-        "function apply(){"
-        "  var inp=document.getElementById('msReaderInput');"
-        "  var body=document.querySelector('.reader-body');"
-        "  var hits=document.getElementById('msReaderHits');"
-        "  if(!inp||!body) return;"
-        "  if(!body.__msOrig){ body.__msOrig=body.innerHTML; }"
-        "  var q=window.__msQ||inp.value||'';"
-        "  if(inp.value!==q) inp.value=q;"
-        "  body.innerHTML=body.__msOrig;"
-        "  if(!q){ if(hits) hits.textContent=''; return; }"
-        "  var lower=q.toLowerCase();"
-        "  var count=0;"
-        "  var w=document.createTreeWalker(body,NodeFilter.SHOW_TEXT,null,false);"
-        "  var nodes=[]; var n;"
-        "  while((n=w.nextNode())){"
-        "    if(n.nodeValue&&n.nodeValue.toLowerCase().indexOf(lower)>=0){"
-        "      nodes.push(n);"
-        "    }"
-        "  }"
-        "  nodes.forEach(function(tn){"
-        "    var t=tn.nodeValue, lt=t.toLowerCase();"
-        "    var frag=document.createDocumentFragment();"
-        "    var last=0, idx=0, pos;"
-        "    while((pos=lt.indexOf(lower,idx))>=0){"
-        "      if(pos>last){"
-        "        frag.appendChild(document.createTextNode(t.substring(last,pos)));"
-        "      }"
-        "      var sp=document.createElement('span');"
-        "      sp.className='reader-hl';"
-        "      sp.textContent=t.substring(pos,pos+q.length);"
-        "      frag.appendChild(sp);"
-        "      count++; last=pos+q.length; idx=last;"
-        "    }"
-        "    if(last<t.length){"
-        "      frag.appendChild(document.createTextNode(t.substring(last)));"
-        "    }"
-        "    if(tn.parentNode) tn.parentNode.replaceChild(frag,tn);"
-        "  });"
-        "  if(hits){"
-        "    hits.textContent=count?(count+' hit'+(count===1?'':'s')):'';"
-        "  }"
-        "}"
-        "window.__msApply=apply;"
-        "var inp=document.getElementById('msReaderInput');"
-        "if(inp&&!inp.__msBound){"
-        "  inp.__msBound=true;"
-        "  inp.addEventListener('input',function(){"
-        "    window.__msQ=this.value||'';"
-        "    apply();"
-        "  });"
-        "}"
-        "apply();"
-        "var pos=" + pos_literal + ";"
-        "if(pos!==null){"
-        "  setTimeout(function(){"
-        "    var attempt=0;"
-        "    var t=setInterval(function(){"
-        "      var els=document.querySelectorAll('.reader-h1');"
-        "      if(els.length>pos){"
-        "        clearInterval(t);"
-        "        var el=els[pos];"
-        "        try{"
-        "          var r=el.getBoundingClientRect();"
-        "          var y=(window.pageYOffset||document.documentElement.scrollTop||0)+r.top-140;"
-        "          if(y<0)y=0;"
-        "          window.scrollTo({top:y,behavior:'smooth'});"
-        "        }catch(e){"
-        "          try{el.scrollIntoView();}catch(e2){}"
-        "        }"
-        "      } else {"
-        "        attempt++;"
-        "        if(attempt>50) clearInterval(t);"
-        "      }"
-        "    },80);"
-        "  },350);"
-        "}"
-        "})();"
-    )
+        def _pick_all():
+            rstate["active_chapter"] = None
+            rstate["menu_open"] = False
+            state["render_main"]()
+        itm.on("click", _pick_all)
+
+        if not chapters:
+            ui.label("No chapters extracted yet.").style(
+                "font-size:10px;color:#808080;padding:4px 8px;"
+                "line-height:1.5;")
+        else:
+            for ch in chapters:
+                cid = str(ch.get("id") or "").strip()
+                title = str(ch.get("title") or "").strip()
+                if not cid and not title:
+                    continue
+                if q and q not in (cid + " " + title).lower():
+                    continue
+                active = active_chapter == cid
+                citm = ui.element('div').classes(
+                    "reader-chapter-item" +
+                    (" active" if active else ""))
+                with citm:
+                    label = (("S" + cid + "  ") if cid else "") + title
+                    ui.label(label)
+
+                def _pick(c=cid):
+                    rstate["active_chapter"] = c
+                    rstate["menu_open"] = False
+                    state["render_main"]()
+                citm.on("click", _pick)
 
 
 def _render_reader_main(state, rstate, pid):
@@ -3506,7 +3578,10 @@ def _render_reader_main(state, rstate, pid):
                     "width:200px;")
         return
 
-    ms = db.get_ms_by_id(rstate["ms_id"])
+    try:
+        ms = db.get_ms_by_id(rstate["ms_id"])
+    except Exception:
+        ms = None
     if not ms:
         with ui.element('div').classes("reader-empty"):
             ui.label("This MS could not be loaded.").style(
@@ -3540,7 +3615,6 @@ def _render_reader_main(state, rstate, pid):
 
         def _read_all():
             rstate["active_chapter"] = None
-            rstate["scroll_to"] = None
             state["render_main"]()
         with ui.element('button').classes("reader-readall") as ra:
             ui.label("Read all")
@@ -3562,50 +3636,166 @@ def _render_reader_main(state, rstate, pid):
                   on_click=_rate_ms).classes(BTN_SOFT).style(
             "width:100%;font-size:10px;")
 
-    # ----- Search row (RAW HTML, no NiceGUI events) -----
-    ui.html(
-        '<div class="reader-search" style="padding:8px 12px;'
-        'border-bottom:1px solid #1e1e1e;background:#0b0b0b;">'
-        '<div style="display:flex;align-items:center;gap:8px;">'
-        '<input id="msReaderInput" type="text" '
-        'placeholder="Search inside this MS..." autocomplete="off" '
-        'style="flex:1;background:#161616;border:1px solid #262626;'
-        'color:#e8e8e8;padding:8px 10px;border-radius:3px;'
-        "font-family:'JetBrains Mono',monospace;font-size:12px;"
-        'outline:none;">'
-        '<span id="msReaderHits" style="font-size:10px;color:#5eead4;'
-        'font-weight:700;min-width:56px;text-align:right;'
-        'white-space:nowrap;"></span>'
-        '</div></div>',
-        sanitize=False
-    )
+    # ----- Search row (NiceGUI components only) -----
+    hits_holder = {"label": None}
 
-    # ----- Body -----
+    with ui.element('div').classes("reader-search"):
+        with ui.element('div').style(
+            "display:flex;align-items:center;gap:8px;"
+        ):
+            s_in = ui.input(
+                placeholder="Search inside this MS...",
+                value=rstate.get("search_q", ""),
+            ).style("flex:1;").props("dense clearable")
+            h_lbl = ui.label("").style(
+                "font-size:10px;color:#5eead4;font-weight:700;"
+                "min-width:56px;text-align:right;white-space:nowrap;")
+            hits_holder["label"] = h_lbl
+
+    # ----- Body slot (server-side rebuild) -----
     body_slot = ui.element('div').style("width:100%;")
-    with body_slot:
-        _render_reader_body(full_text, chapters, rstate)
+    body_slot.classes("reader-body-outer")
 
-    # ----- Compute scroll target (index into .reader-h1 elements) -----
-    valid = sorted(
-        [c for c in chapters
-         if isinstance(c.get("line"), int) and c.get("line", -1) >= 0],
-        key=lambda c: c["line"])
-    scroll_pos = None
-    target = rstate.get("scroll_to")
-    if target:
-        tgt = str(target).strip()
-        for i, c in enumerate(valid):
-            if str(c.get("id") or "").strip() == tgt:
-                scroll_pos = i
-                break
-        rstate["scroll_to"] = None
+    def _set_hits(n):
+        try:
+            if not n:
+                hits_holder["label"].set_text("")
+            else:
+                hits_holder["label"].set_text(
+                    str(n) + (" hit" if n == 1 else " hits"))
+        except Exception:
+            pass
 
-    # ----- Fire the client-side JS (search + optional scroll) -----
-    js = _reader_client_js(scroll_pos)
+    def render_body():
+        body_slot.clear()
+        hits = 0
+        with body_slot:
+            try:
+                hits = _render_reader_body(full_text, chapters, rstate)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print("[reader] body err: " + repr(e))
+        _set_hits(hits)
+
+    def _on_search_change(e=None):
+        val = None
+        try:
+            if isinstance(e, str):
+                val = e
+            elif e is not None and hasattr(e, "value"):
+                val = e.value
+        except Exception:
+            val = None
+        if val is None:
+            try:
+                val = s_in.value or ""
+            except Exception:
+                val = ""
+        rstate["search_q"] = str(val or "")
+        print("[reader] search_q=" + repr(rstate["search_q"]))
+        render_body()
+
+    _bound = False
     try:
-        ui.run_javascript(js)
-    except Exception as e:
-        print("[reader] js err: " + repr(e))
+        s_in.on_value_change(_on_search_change)
+        _bound = True
+        print("[reader] search bound: on_value_change")
+    except Exception as e1:
+        print("[reader] on_value_change err: " + repr(e1))
+    if not _bound:
+        try:
+            s_in.on("update:model-value", _on_search_change)
+            print("[reader] search bound: update:model-value")
+        except Exception as e2:
+            print("[reader] update:model-value err: " + repr(e2))
+
+    render_body()
+
+
+def _render_reader_body(full_text, chapters, rstate):
+    """Render reader body. Returns number of search hits."""
+    if not (full_text or "").strip():
+        ui.html(
+            '<div class="reader-body" style="color:#808080;'
+            'padding-top:40px;">No full text stored for this MS. '
+            'Re-upload the document to enable reading.</div>')
+        return 0
+
+    q = (rstate.get("search_q") or "").strip()
+    active = rstate.get("active_chapter")
+    lines = full_text.split("\n")
+
+    valid_chapters = [c for c in chapters
+                       if isinstance(c.get("line"), int)
+                       and c.get("line", -1) >= 0]
+    valid_chapters.sort(key=lambda c: c["line"])
+    chapter_at_line = {c["line"]: c for c in valid_chapters}
+
+    start_line = 0
+    end_line = len(lines)
+    if active:
+        for i, c in enumerate(valid_chapters):
+            if str(c.get("id") or "").strip() == str(active).strip():
+                start_line = c["line"]
+                if i + 1 < len(valid_chapters):
+                    end_line = valid_chapters[i + 1]["line"]
+                break
+
+    hits = 0
+
+    def hl(text):
+        nonlocal hits
+        if not q:
+            return _html_mod.escape(text)
+        try:
+            pat = re.compile(re.escape(q), re.IGNORECASE)
+        except Exception:
+            return _html_mod.escape(text)
+        out = []
+        last = 0
+        for m in pat.finditer(text):
+            out.append(_html_mod.escape(text[last:m.start()]))
+            out.append('<span class="reader-hl">' +
+                       _html_mod.escape(m.group(0)) + '</span>')
+            hits += 1
+            last = m.end()
+        out.append(_html_mod.escape(text[last:]))
+        return "".join(out)
+
+    parts = []
+    for i, raw in enumerate(lines):
+        if i < start_line or i >= end_line:
+            continue
+        s = raw.rstrip()
+        if i in chapter_at_line:
+            ch = chapter_at_line[i]
+            cid = str(ch.get("id") or "").strip()
+            anchor = "ch-" + re.sub(r'[^0-9A-Za-z]+', '_', cid or "x")
+            esc = hl(s if s.strip() else (ch.get("title") or ""))
+            parts.append(
+                '<h2 id="' + _html_mod.escape(anchor) +
+                '" class="reader-h1">' + esc + '</h2>')
+            continue
+        if not s.strip():
+            parts.append('<div class="reader-gap"></div>')
+            continue
+        level = _reader_looks_like_heading(s)
+        esc = hl(s)
+        if level == 2:
+            parts.append('<h3 class="reader-h2">' + esc + '</h3>')
+        elif level == 3:
+            parts.append('<h4 class="reader-h3">' + esc + '</h4>')
+        else:
+            parts.append('<p class="reader-para">' + esc + '</p>')
+
+    body_html = ('<div class="reader-body">' + "".join(parts) + '</div>')
+    try:
+        ui.html(body_html, sanitize=False)
+    except TypeError:
+        ui.html(body_html)
+
+    return hits
 
 
 def _open_ms_weak_points_dialog(ms):
@@ -3645,8 +3835,6 @@ def _open_ms_rating_dialog(ms):
         ui.button(_t("close"), on_click=dlg.close).classes(
             BTN_SOFT).style("width:100%;")
     dlg.open()
-
-
 # =====================================================================
 # NEW DEFECT
 # =====================================================================
