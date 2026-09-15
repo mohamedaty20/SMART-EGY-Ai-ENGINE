@@ -17,6 +17,7 @@ ui/defect_page.py — Full file.
 import io
 import re
 import json
+import asyncio
 import base64
 import datetime
 import html as _html_mod
@@ -5891,6 +5892,8 @@ def _build_ms_chat(state):
 
                 async def _ask():
                     if send_state["busy"]:
+                        ui.notify("Still waiting for the previous answer…",
+                                   type="warning")
                         return
                     q = (q_input.value or "").strip()
                     if not q:
@@ -5902,36 +5905,41 @@ def _build_ms_chat(state):
                     except Exception:
                         pass
 
+                    result = None
+                    err_msg = None
                     try:
-                        result = await msc.ask_ms_question(
-                            pid, q, call_gemini_json)
+                        result = await asyncio.wait_for(
+                            msc.ask_ms_question(pid, q, call_gemini_json),
+                            timeout=90.0)
+                    except asyncio.TimeoutError:
+                        err_msg = ("The AI did not respond within 90s. "
+                                    "Please try again.")
                     except Exception as ex:
                         import traceback
                         traceback.print_exc()
+                        err_msg = repr(ex)
+                    finally:
                         try:
                             send_btn.props(remove="loading")
                         except Exception:
                             pass
                         send_state["busy"] = False
-                        ui.notify("Ask error: " + str(ex),
-                                   type="negative")
-                        return
 
-                    try:
-                        send_btn.props(remove="loading")
-                    except Exception:
-                        pass
-                    send_state["busy"] = False
+                    if err_msg:
+                        ui.notify(_t("ms_chat_failed") + err_msg,
+                                   type="negative", timeout=9000)
+                        return
 
                     if not result or result.get("error"):
                         ui.notify(
                             _t("ms_chat_failed") +
-                            str((result or {}).get("error", "empty")),
+                            str((result or {}).get("error", "Empty result")),
                             type="negative")
                         return
                     answer = (result.get("answer") or "").strip()
                     if not answer:
-                        ui.notify("Empty answer.", type="warning")
+                        ui.notify("The AI returned an empty answer.",
+                                   type="warning")
                         return
 
                     try:
@@ -5940,7 +5948,7 @@ def _build_ms_chat(state):
                     except Exception as ex:
                         import traceback
                         traceback.print_exc()
-                        ui.notify("Save failed: " + str(ex),
+                        ui.notify("Could not save the answer: " + str(ex),
                                    type="negative")
                         return
 
@@ -5956,7 +5964,6 @@ def _build_ms_chat(state):
                     ui.run_javascript(
                         "window.scrollTo({top: document.body.scrollHeight,"
                         " behavior:'smooth'});")
-
                 def _on_send():
                     try:
                         ui.timer(0.01, _ask, once=True)
@@ -6033,12 +6040,8 @@ def _render_ms_message(m, on_delete=None):
             if kind == "question":
                 answer = str(resp.get("answer") or "")
                 if not answer:
-                    with ui.element('div').classes("gem-thinking"):
-                        ui.element('span').classes("gem-dot")
-                        ui.element('span').classes("gem-dot")
-                        ui.element('span').classes("gem-dot")
-                        ui.label(_t("ms_chat_thinking")).style(
-                            "margin-left:6px;")
+                    ui.label("(No answer was saved for this question.)").style(
+                        "font-size:12px;color:#808080;font-style:italic;")
                 else:
                     ui.label(answer).classes("gem-ai")
             else:
