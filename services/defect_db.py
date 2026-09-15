@@ -167,6 +167,9 @@ MS_CHAT_COLS = ["id", "project_id", "user_id", "author", "kind",
 COMMENT_COLS = ["id", "defect_id", "user_id", "author", "body",
                 "created_at"]
 
+REPORT_TEMPLATE_COLS = ["id", "project_id", "name", "config_json",
+                        "is_default", "created_at"]
+
 
 def _ensure_columns(cur, table, wanted):
     cur.execute("PRAGMA table_info(" + table + ")")
@@ -323,6 +326,16 @@ def init_db():
                 UNIQUE(defect_id, user_id)
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS report_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                config_json TEXT,
+                is_default INTEGER DEFAULT 0,
+                created_at TEXT
+            )
+        """)
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
@@ -381,6 +394,8 @@ def init_db():
             "ON defect_watchers(defect_id)",
             "CREATE INDEX IF NOT EXISTS idx_watchers_user "
             "ON defect_watchers(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_templates_project "
+            "ON report_templates(project_id)",
         ]:
             try:
                 cur.execute(idx)
@@ -657,6 +672,11 @@ def delete_project(project_id):
                 DELETE FROM defect_watchers WHERE defect_id IN
                 (SELECT id FROM defects WHERE project_id=?)
             """, (project_id,))
+        except Exception:
+            pass
+        try:
+            cur.execute("DELETE FROM report_templates WHERE project_id=?",
+                        (project_id,))
         except Exception:
             pass
         cur.execute("DELETE FROM method_statements WHERE project_id=?",
@@ -944,6 +964,29 @@ def delete_defect(defect_id):
             pass
         c.commit()
         _sync(c)
+
+
+def bulk_update_subcontractor(defect_ids, new_sub):
+    """Assign a new subcontractor to a batch of defects."""
+    if not defect_ids:
+        return 0
+    _bump_list_cache()
+    n = 0
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        for did in defect_ids:
+            try:
+                cur.execute("""
+                    UPDATE defects SET subcontractor=? WHERE id=?
+                """, (new_sub, int(did)))
+                n += 1
+            except Exception as e:
+                print("[db] bulk_update_sub failed for " + str(did) +
+                      ": " + repr(e))
+        c.commit()
+        _sync(c)
+    return n
 
 
 # =====================================================================
@@ -1741,7 +1784,7 @@ def activity_list(project_id, limit=200):
 
 
 # =====================================================================
-# DEFECT COMMENTS — per-notice discussion thread
+# DEFECT COMMENTS
 # =====================================================================
 def comment_add(defect_id, user_id, author, body):
     if not defect_id:
@@ -1823,7 +1866,7 @@ def comment_delete(comment_id, user_id=None, is_admin_user=False):
 
 
 # =====================================================================
-# DEFECT WATCHERS — follow a defect to keep it visible
+# DEFECT WATCHERS
 # =====================================================================
 def watch_add(defect_id, user_id):
     if not defect_id or not user_id:
@@ -1875,7 +1918,6 @@ def watch_is_watching(defect_id, user_id):
 
 
 def watch_list_for_user(user_id):
-    """Return the set of defect_ids this user is watching."""
     if not user_id:
         return set()
     c = _conn()
@@ -1906,3 +1948,248 @@ def watch_count(defect_id):
         return int(v or 0)
     except Exception:
         return 0
+
+
+# =====================================================================
+# REPORT TEMPLATES — custom export presets per project
+# =====================================================================
+DEFAULT_TEMPLATES = [
+    {
+        "name": "Full",
+        "is_default": True,
+        "config": {
+            "include_logo": True,
+            "include_signatures": True,
+            "include_summary": True,
+            "include_photos": True,
+        },
+    },
+    {
+        "name": "Compact",
+        "is_default": False,
+        "config": {
+            "include_logo": False,
+            "include_signatures": False,
+            "include_summary": False,
+            "include_photos": False,
+        },
+    },
+    {
+        "name": "Management",
+        "is_default": False,
+        "config": {
+            "include_logo": True,
+            "include_signatures": True,
+            "include_summary": True,
+            "include_photos": False,
+        },
+    },
+]
+
+
+def report_template_ensure_presets(project_id):
+    """Seed Full/Compact/Management on first access, if none exist."""
+    if not project_id:
+        return
+    try:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("SELECT COUNT(*) FROM report_templates WHERE project_id=?",
+                    (project_id,))
+        row = cur.fetchone()
+        n = 0
+        if row:
+            v = row[0] if not isinstance(row, dict) else list(row.values())[0]
+            n = int(v or 0)
+        if n > 0:
+            return
+    except Exception as e:
+        print("[db] template count failed: " + repr(e))
+        return
+    for t in DEFAULT_TEMPLATES:
+        try:
+            report_template_add(project_id, t["name"], t["config"],
+                                 is_default=t.get("is_default", False))
+        except Exception as e:
+            print("[db] seed template failed: " + repr(e))
+
+
+def report_template_list(project_id):
+    if not project_id:
+        return []
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, name, config_json, is_default, created_at
+        FROM report_templates
+        WHERE project_id=?
+        ORDER BY is_default DESC, id ASC
+    """, (project_id,))
+    rows = _to_dicts(cur.fetchall(), REPORT_TEMPLATE_COLS)
+    out = []
+    for r in rows:
+        try:
+            cfg = json.loads(r.get("config_json") or "{}")
+        except Exception:
+            cfg = {}
+        out.append({
+            "id": r.get("id"),
+            "project_id": r.get("project_id"),
+            "name": r.get("name") or "",
+            "config": cfg,
+            "is_default": bool(int(r.get("is_default") or 0)),
+            "created_at": r.get("created_at") or "",
+        })
+    return out
+
+
+def report_template_get(template_id):
+    if not template_id:
+        return None
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, name, config_json, is_default, created_at
+        FROM report_templates WHERE id=?
+    """, (int(template_id),))
+    row = cur.fetchone()
+    d = _to_dict(row, REPORT_TEMPLATE_COLS)
+    if not d:
+        return None
+    try:
+        cfg = json.loads(d.get("config_json") or "{}")
+    except Exception:
+        cfg = {}
+    return {
+        "id": d.get("id"),
+        "project_id": d.get("project_id"),
+        "name": d.get("name") or "",
+        "config": cfg,
+        "is_default": bool(int(d.get("is_default") or 0)),
+        "created_at": d.get("created_at") or "",
+    }
+
+
+def report_template_add(project_id, name, config, is_default=False):
+    if not project_id or not (name or "").strip():
+        return None
+    try:
+        payload = json.dumps(config or {})
+    except Exception:
+        payload = "{}"
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        if is_default:
+            try:
+                cur.execute(
+                    "UPDATE report_templates SET is_default=0 "
+                    "WHERE project_id=?", (project_id,))
+            except Exception:
+                pass
+        cur.execute("""
+            INSERT INTO report_templates
+                (project_id, name, config_json, is_default, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (project_id, name.strip()[:60], payload,
+              1 if is_default else 0, _now()))
+        tid = cur.lastrowid
+        c.commit()
+        _sync(c)
+        return tid
+
+
+def report_template_update(template_id, name=None, config=None,
+                            is_default=None):
+    if not template_id:
+        return False
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            if name is not None:
+                cur.execute(
+                    "UPDATE report_templates SET name=? WHERE id=?",
+                    (name.strip()[:60], int(template_id)))
+            if config is not None:
+                try:
+                    payload = json.dumps(config or {})
+                except Exception:
+                    payload = "{}"
+                cur.execute(
+                    "UPDATE report_templates SET config_json=? WHERE id=?",
+                    (payload, int(template_id)))
+            if is_default is not None:
+                if is_default:
+                    row = cur.execute(
+                        "SELECT project_id FROM report_templates WHERE id=?",
+                        (int(template_id),)).fetchone()
+                    pid = None
+                    if row:
+                        pid = row[0] if not isinstance(row, dict) \
+                            else list(row.values())[0]
+                    if pid:
+                        cur.execute(
+                            "UPDATE report_templates SET is_default=0 "
+                            "WHERE project_id=?", (pid,))
+                    cur.execute(
+                        "UPDATE report_templates SET is_default=1 WHERE id=?",
+                        (int(template_id),))
+                else:
+                    cur.execute(
+                        "UPDATE report_templates SET is_default=0 WHERE id=?",
+                        (int(template_id),))
+            c.commit()
+            _sync(c)
+        except Exception as e:
+            print("[db] template update failed: " + repr(e))
+            return False
+    return True
+
+
+def report_template_delete(template_id):
+    if not template_id:
+        return False
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("DELETE FROM report_templates WHERE id=?",
+                    (int(template_id),))
+        c.commit()
+        _sync(c)
+    return True
+
+
+def report_template_get_default(project_id):
+    if not project_id:
+        return None
+    try:
+        report_template_ensure_presets(project_id)
+    except Exception:
+        pass
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("""
+            SELECT id, project_id, name, config_json, is_default, created_at
+            FROM report_templates
+            WHERE project_id=?
+            ORDER BY is_default DESC, id ASC LIMIT 1
+        """, (project_id,))
+        row = cur.fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    d = _to_dict(row, REPORT_TEMPLATE_COLS)
+    try:
+        cfg = json.loads(d.get("config_json") or "{}")
+    except Exception:
+        cfg = {}
+    return {
+        "id": d.get("id"),
+        "project_id": d.get("project_id"),
+        "name": d.get("name") or "",
+        "config": cfg,
+        "is_default": bool(int(d.get("is_default") or 0)),
+                }
