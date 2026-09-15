@@ -164,6 +164,9 @@ MEMBER_COLS = ["id", "project_id", "user_id", "role", "added_at",
 MS_CHAT_COLS = ["id", "project_id", "user_id", "author", "kind",
                 "body", "response_json", "created_at"]
 
+COMMENT_COLS = ["id", "defect_id", "user_id", "author", "body",
+                "created_at"]
+
 
 def _ensure_columns(cur, table, wanted):
     cur.execute("PRAGMA table_info(" + table + ")")
@@ -301,6 +304,16 @@ def init_db():
                 created_at TEXT
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS defect_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                defect_id INTEGER NOT NULL,
+                user_id INTEGER,
+                author TEXT,
+                body TEXT,
+                created_at TEXT
+            )
+        """)
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
@@ -354,6 +367,8 @@ def init_db():
             "ON ms_chat_messages(project_id, user_id)",
             "CREATE INDEX IF NOT EXISTS idx_activity_project "
             "ON activity_log(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_comments_defect "
+            "ON defect_comments(defect_id)",
         ]:
             try:
                 cur.execute(idx)
@@ -620,6 +635,13 @@ def delete_project(project_id):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
+        try:
+            cur.execute("""
+                DELETE FROM defect_comments WHERE defect_id IN
+                (SELECT id FROM defects WHERE project_id=?)
+            """, (project_id,))
+        except Exception:
+            pass
         cur.execute("DELETE FROM method_statements WHERE project_id=?",
                     (project_id,))
         cur.execute("DELETE FROM defects WHERE project_id=?", (project_id,))
@@ -893,6 +915,11 @@ def delete_defect(defect_id):
         c = _conn()
         cur = c.cursor()
         cur.execute("DELETE FROM defects WHERE id=?", (defect_id,))
+        try:
+            cur.execute("DELETE FROM defect_comments WHERE defect_id=?",
+                        (defect_id,))
+        except Exception:
+            pass
         c.commit()
         _sync(c)
 
@@ -1353,6 +1380,8 @@ def ms_chat_clear(project_id, user_id):
             (project_id, int(user_id)))
         c.commit()
         _sync(c)
+
+
 def get_ms_full_text(project_id, max_chars=150000):
     """Concatenate the FULL text of every MS uploaded to this project.
     Falls back to reconstructing from clauses for old uploads."""
@@ -1390,6 +1419,8 @@ def get_ms_full_text(project_id, max_chars=150000):
         if total >= max_chars:
             break
     return "\n\n".join(parts)
+
+
 def is_admin(user_id):
     """Return True if the user has the is_admin flag set."""
     if not user_id:
@@ -1518,6 +1549,8 @@ def ms_chat_delete(msg_id, user_id):
         c.commit()
         _sync(c)
     return True
+
+
 # =====================================================================
 # INVITE TOKENS (shareable links)
 # =====================================================================
@@ -1629,6 +1662,8 @@ def invite_revoke(token_id):
         c.commit()
         _sync(c)
     return True
+
+
 # =====================================================================
 # PERMISSIONS
 # =====================================================================
@@ -1698,3 +1733,87 @@ def activity_list(project_id, limit=200):
         ORDER BY id DESC LIMIT ?
     """, (project_id, int(limit)))
     return _to_dicts(cur.fetchall(), ACTIVITY_COLS)
+
+
+# =====================================================================
+# DEFECT COMMENTS — per-notice discussion thread
+# =====================================================================
+def comment_add(defect_id, user_id, author, body):
+    """Add a comment to a defect. Returns the new comment id or None."""
+    if not defect_id:
+        return None
+    text = str(body or "").strip()
+    if not text:
+        return None
+    text = text[:2000]
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            INSERT INTO defect_comments
+                (defect_id, user_id, author, body, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (int(defect_id), user_id, author or "", text, _now()))
+        cid = cur.lastrowid
+        c.commit()
+        _sync(c)
+        return cid
+
+
+def comment_list(defect_id, limit=200):
+    if not defect_id:
+        return []
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, defect_id, user_id, author, body, created_at
+        FROM defect_comments
+        WHERE defect_id=?
+        ORDER BY id ASC LIMIT ?
+    """, (int(defect_id), int(limit)))
+    return _to_dicts(cur.fetchall(), COMMENT_COLS)
+
+
+def comment_count(defect_id):
+    if not defect_id:
+        return 0
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM defect_comments WHERE defect_id=?",
+                    (int(defect_id),))
+        row = cur.fetchone()
+        if not row:
+            return 0
+        v = row[0] if not isinstance(row, dict) else list(row.values())[0]
+        return int(v or 0)
+    except Exception:
+        return 0
+
+
+def comment_delete(comment_id, user_id=None, is_admin_user=False):
+    """Delete a comment. Author or admin only."""
+    if not comment_id:
+        return False, "not_found"
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("SELECT user_id FROM defect_comments WHERE id=?",
+                (int(comment_id),))
+    row = cur.fetchone()
+    if not row:
+        return False, "not_found"
+    owner = row[0] if not isinstance(row, dict) else row.get("user_id")
+    if not is_admin_user:
+        try:
+            if owner is None or int(owner) != int(user_id):
+                return False, "not_owner"
+        except Exception:
+            return False, "not_owner"
+    with _LOCK:
+        c2 = _conn()
+        cur2 = c2.cursor()
+        cur2.execute("DELETE FROM defect_comments WHERE id=?",
+                     (int(comment_id),))
+        c2.commit()
+        _sync(c2)
+    return True, None
