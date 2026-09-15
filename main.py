@@ -12,6 +12,7 @@ from services import auth_service as auth
 from services import billing_db as bdb
 from services import payment_service as pay
 from services import defect_db as db
+import services.defect_service
 from ui.auth_page import login_page, signup_page
 from ui.landing_page import landing_page
 from ui.pricing_page import pricing_page
