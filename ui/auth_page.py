@@ -59,16 +59,36 @@ STYLE = """
     font-family: 'JetBrains Mono',monospace !important;
     font-size: 12px !important;
   }
+  .auth-banner {
+    background: #1f1912; border: 1px solid #78350f;
+    border-left: 3px solid #fbbf24; border-radius: 3px;
+    padding: 10px 12px; margin-bottom: 16px;
+  }
+  .auth-banner .b-title {
+    color: #fbbf24; font-weight: 700; font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .auth-banner .b-text {
+    color: #d4d4d4; font-size: 11px; line-height: 1.5;
+  }
 </style>
 """
 
 
-def login_page():
+def login_page(expired=False):
     inject_pwa()
     ui.add_head_html(STYLE)
 
     with ui.column().classes("w-full min-h-screen items-center justify-center"):
         with ui.element('div').classes("auth-card"):
+            if expired:
+                with ui.element('div').classes("auth-banner"):
+                    ui.label("Session expired").classes("b-title")
+                    ui.label(
+                        "You were signed out after a period of inactivity. "
+                        "Please sign in again."
+                    ).classes("b-text")
+
             ui.label("Defect Notices").classes("auth-title")
             ui.label("Sign in to your workspace").classes("auth-sub")
 
@@ -186,7 +206,6 @@ def signup_page():
                 token = auth.make_session(uid)
                 app.storage.user["session"] = token
 
-                # If they arrived via an invite link, join them now
                 pending = app.storage.user.pop("pending_invite", None)
                 if pending:
                     try:
