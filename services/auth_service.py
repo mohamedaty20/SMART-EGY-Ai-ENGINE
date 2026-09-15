@@ -11,6 +11,13 @@ import secrets
 
 SECRET = os.environ.get("SESSION_SECRET", "change-me-in-render-env").encode()
 
+# Idle timeout: auto-logout after this many seconds of inactivity.
+# Override with env var SESSION_IDLE_SECONDS. Default: 30 minutes.
+try:
+    IDLE_SECONDS = int(os.environ.get("SESSION_IDLE_SECONDS", "1800"))
+except Exception:
+    IDLE_SECONDS = 1800
+
 
 def hash_password(password, salt=None):
     if salt is None:
