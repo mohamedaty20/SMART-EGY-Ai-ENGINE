@@ -1206,7 +1206,7 @@ def build_defect_ui(user_id):
     state = {
         "user_id": user_id, "user": user,
         "project_id": app.storage.user.get("project_id"),
-        "project": None, "tab": {"value": "new"},
+        "project": None, "tab": {"value": "chat"},
         "sub_filter": None, "role": None,
     }
 
@@ -1286,8 +1286,9 @@ def build_defect_ui(user_id):
         nav_holder.clear()
         with nav_holder:
             tabs = [
+                ("chat", _t("chat")),
                 ("new", _t("new_defect")), ("logs", _t("logs")),
-                ("subs", _t("subs")), ("chat", _t("chat")),
+                ("subs", _t("subs")),
                 ("mschat", _t("ms_chat")),
                 ("dashboard", _t("dashboard")),
             ]
@@ -2060,6 +2061,33 @@ def _open_invite_member_dialog(state, refresh_fn):
     ):
         ui.label(_t("team_invite_title")).classes("h1").style(
             "margin-bottom:14px;")
+
+        try:
+            from services import billing_db as _billing
+            _own = state.get("user_id")
+            if _own:
+                _s = _billing.billing_seats_summary(_own)
+                _lim = _s.get("limit")
+                _lim_s = "unlimited" if _lim is None else str(_lim)
+                _col = "#4ade80"
+                if _lim is not None:
+                    if _s["used"] >= _lim:
+                        _col = "#f87171"
+                    elif _s["used"] >= _lim - 1:
+                        _col = "#fbbf24"
+                ui.html(
+                    '<div style="font-size:10px;color:#b8b8b8;'
+                    'background:#101010;border:1px solid #1e1e1e;'
+                    'border-radius:3px;padding:6px 10px;'
+                    'margin-bottom:12px;">SEATS '
+                    '<b style="color:' + _col + ';">' +
+                    str(_s["used"]) + ' / ' + _lim_s +
+                    '</b> on <b style="color:#e8e8e8;">' +
+                    _html_mod.escape(str(_s.get("label") or "")) +
+                    '</b></div>'
+                )
+        except Exception:
+            pass
 
         with ui.tabs().style("width:100%;margin-bottom:14px;") as tabs:
             tab_email = ui.tab("Add by email")
@@ -5112,12 +5140,15 @@ def _build_admin(state):
     with ui.tabs().style("width:100%;margin-bottom:12px;") as atabs:
         a_audit = ui.tab("Audit Trail")
         a_users = ui.tab("Users")
+        a_billing = ui.tab("Billing")
 
     with ui.tab_panels(atabs, value=a_audit).style("width:100%;"):
         with ui.tab_panel(a_audit):
             _build_admin_audit(state)
         with ui.tab_panel(a_users):
             _build_admin_users(state)
+        with ui.tab_panel(a_billing):
+            _build_admin_billing(state)
 
 
 def _build_admin_audit(state):
@@ -5341,4 +5372,97 @@ def _build_admin_users(state):
                                     "min-height:28px;")
 
     search_in.on("update:model-value", lambda e: render())
+    render()
+
+
+def _build_admin_billing(state):
+    from services import billing_db as billing
+
+    holder = ui.element('div').style("width:100%;")
+
+    def render():
+        holder.clear()
+        try:
+            owners = billing.billing_list_owners() or []
+        except Exception as e:
+            with holder:
+                ui.label("Failed to load owners: " + str(e)).style(
+                    "color:#f87171;font-size:11px;")
+            return
+
+        with holder:
+            if not owners:
+                ui.label("No owner accounts yet.").classes("mono-sm").style(
+                    "text-align:center;padding:26px 0;color:#5a5a5a;")
+                return
+
+            ui.label(str(len(owners)) + " owner account(s)").classes(
+                "mono-sm").style("margin-bottom:10px;")
+
+            plan_opts = {"free": "Starter — 3 seats",
+                         "pro":  "Pro — 15 seats",
+                         "business": "Business — unlimited",
+                         "trial": "Trial — 3 seats"}
+
+            for o in owners:
+                with ui.element('div').style(
+                    "background:#101010;border:1px solid #1e1e1e;"
+                    "border-radius:3px;padding:10px 12px;margin-bottom:6px;"
+                ):
+                    with ui.element('div').style(
+                        "display:flex;justify-content:space-between;"
+                        "align-items:flex-start;gap:10px;"
+                    ):
+                        with ui.element('div').style("flex:1;min-width:0;"):
+                            ui.label(o.get("name") or "—").style(
+                                "font-size:12px;font-weight:600;"
+                                "color:#e8e8e8;overflow:hidden;"
+                                "text-overflow:ellipsis;")
+                            if o.get("email"):
+                                ui.label(o["email"]).classes("mono-sm").style(
+                                    "font-size:10px;")
+                            lim = o.get("limit")
+                            lim_s = "unlimited" if lim is None else str(lim)
+                            col = "#4ade80"
+                            if o.get("over"):
+                                col = "#f87171"
+                            elif lim is not None and o["used"] >= lim:
+                                col = "#fbbf24"
+                            ui.html(
+                                '<div style="font-size:10px;color:#b8b8b8;'
+                                'margin-top:4px;">Plan '
+                                '<b style="color:#e8e8e8;">' +
+                                _html_mod.escape(str(
+                                    o.get("plan_label") or
+                                    o.get("plan") or "Starter")) +
+                                '</b> · Seats '
+                                '<b style="color:' + col + ';">' +
+                                str(o.get("used") or 0) + ' / ' + lim_s +
+                                '</b></div>'
+                            )
+
+                        with ui.element('div').style(
+                            "display:flex;flex-direction:column;gap:4px;"
+                            "min-width:160px;"
+                        ):
+                            sel = ui.select(
+                                plan_opts,
+                                value=o.get("plan") or "free",
+                                label="Plan").style("width:100%;").props(
+                                "dense")
+
+                            def _save(owner_id=o.get("owner_id"), s=sel):
+                                ok, msg = billing.billing_set_plan(
+                                    owner_id, s.value)
+                                if ok:
+                                    ui.notify("Plan updated",
+                                              type="positive")
+                                    render()
+                                else:
+                                    ui.notify("Failed: " + str(msg),
+                                              type="negative")
+                            ui.button("Save plan", on_click=_save).classes(
+                                BTN_SOFT).style(
+                                "width:100%;font-size:10px;min-height:28px;")
+
     render()
