@@ -1488,7 +1488,14 @@ def _inject_theme():
     margin: 30px 0 14px 0; padding: 0 0 8px 0;
     border-bottom: 1px solid rgba(94,234,212,0.28);
     letter-spacing: -0.01em; line-height: 1.3;
-    scroll-margin-top: 130px;
+    scroll-margin-top: 160px;
+  }
+  .reader-chapter-item {
+    text-decoration: none;
+  }
+  .reader-readall {
+    text-decoration: none;
+    display: inline-block;
   }
   .reader-body .reader-h1:first-child { margin-top: 4px; }
   .reader-body .reader-h2 {
@@ -3521,18 +3528,11 @@ def _render_menu_ms_item(m, rstate, state, q):
     chapters = (ms or {}).get("chapters") or []
 
     with ui.element('div').classes("reader-chapters"):
-        all_active = not active_chapter
-        itm = ui.element('div').classes(
-            "reader-chapter-item" + (" active" if all_active else ""))
-        with itm:
-            ui.label("● Read all").style("font-size:10.5px;")
-
-        def _pick_all():
-            rstate["active_chapter"] = None
-            rstate["menu_open"] = False
-            rstate["scroll_top"] = True
-            state["render_main"]()
-        itm.on("click", _pick_all)
+        ui.html(
+            '<a class="reader-chapter-item" '
+            'href="#reader-top">● Read all</a>',
+            sanitize=False
+        )
 
         if not chapters:
             ui.label("No chapters extracted yet.").style(
@@ -3546,20 +3546,18 @@ def _render_menu_ms_item(m, rstate, state, q):
                     continue
                 if q and q not in (cid + " " + title).lower():
                     continue
-                active = active_chapter == cid
-                citm = ui.element('div').classes(
-                    "reader-chapter-item" +
-                    (" active" if active else ""))
-                with citm:
-                    label = (("S" + cid + "  ") if cid else "") + title
-                    ui.label(label)
-
-                def _pick(c=cid):
-                    rstate["active_chapter"] = c
-                    rstate["menu_open"] = False
-                    rstate["scroll_top"] = True
-                    state["render_main"]()
-                citm.on("click", _pick)
+                anchor = "ch-" + re.sub(r'[^0-9A-Za-z]+', '_',
+                                         cid or "x")
+                label = (("S" + cid + "  ") if cid else "") + title
+                # Raw HTML <a> — browser handles the scroll natively.
+                # No JS, no timers, no NiceGUI events.
+                ui.html(
+                    '<a class="reader-chapter-item" '
+                    'href="#' + _html_mod.escape(anchor) + '" '
+                    'data-chapter="' + _html_mod.escape(cid) + '">' +
+                    _html_mod.escape(label) + '</a>',
+                    sanitize=False
+                )
 
 
 def _render_reader_main(state, rstate, pid):
@@ -3595,7 +3593,6 @@ def _render_reader_main(state, rstate, pid):
 
     full_text = str(ms.get("full_text") or "")
     chapters = ms.get("chapters") or []
-    active = rstate.get("active_chapter")
 
     # ----- Topbar -----
     with ui.element('div').classes("reader-topbar"):
@@ -3608,22 +3605,12 @@ def _render_reader_main(state, rstate, pid):
 
         title_str = (str(ms.get("ms_number") or "") + "  " +
                      str(ms.get("title") or ""))
-        if active:
-            chap_title = ""
-            for c in chapters:
-                if str(c.get("id") or "").strip() == active:
-                    chap_title = str(c.get("title") or "")
-                    break
-            title_str = ("S" + active + "  " + chap_title
-                         if chap_title else ("S" + active))
         ui.label(title_str).classes("reader-title")
 
-        def _read_all():
-            rstate["active_chapter"] = None
-            state["render_main"]()
-        with ui.element('button').classes("reader-readall") as ra:
-            ui.label("Read all")
-        ra.on("click", _read_all)
+        ui.html(
+            '<a class="reader-readall" href="#reader-top">Read all</a>',
+            sanitize=False
+        )
 
     # ----- AI action buttons -----
     with ui.element('div').style(
@@ -3641,9 +3628,8 @@ def _render_reader_main(state, rstate, pid):
                   on_click=_rate_ms).classes(BTN_SOFT).style(
             "width:100%;font-size:10px;")
 
-    # ----- Search row (NiceGUI components only) -----
+    # ----- Search row -----
     hits_holder = {"label": None}
-
     with ui.element('div').classes("reader-search"):
         with ui.element('div').style(
             "display:flex;align-items:center;gap:8px;"
@@ -3657,9 +3643,7 @@ def _render_reader_main(state, rstate, pid):
                 "min-width:56px;text-align:right;white-space:nowrap;")
             hits_holder["label"] = h_lbl
 
-    # ----- Body slot (server-side rebuild) -----
     body_slot = ui.element('div').style("width:100%;")
-    body_slot.classes("reader-body-outer")
 
     def _set_hits(n):
         try:
@@ -3698,25 +3682,21 @@ def _render_reader_main(state, rstate, pid):
             except Exception:
                 val = ""
         rstate["search_q"] = str(val or "")
-        print("[reader] search_q=" + repr(rstate["search_q"]))
         render_body()
 
     _bound = False
     try:
         s_in.on_value_change(_on_search_change)
         _bound = True
-        print("[reader] search bound: on_value_change")
-    except Exception as e1:
-        print("[reader] on_value_change err: " + repr(e1))
+    except Exception:
+        pass
     if not _bound:
         try:
             s_in.on("update:model-value", _on_search_change)
-            print("[reader] search bound: update:model-value")
-        except Exception as e2:
-            print("[reader] update:model-value err: " + repr(e2))
+        except Exception:
+            pass
 
     render_body()
-
     # ----- After chapter/MS change, scroll the reading pane to the top -----
     if rstate.pop("scroll_top", False):
         js = (
@@ -3749,7 +3729,7 @@ def _render_reader_main(state, rstate, pid):
 
 
 def _render_reader_body(full_text, chapters, rstate):
-    """Render reader body. Returns number of search hits."""
+    """Render the entire MS. Returns number of search hits."""
     if not (full_text or "").strip():
         ui.html(
             '<div class="reader-body" style="color:#808080;'
@@ -3758,7 +3738,6 @@ def _render_reader_body(full_text, chapters, rstate):
         return 0
 
     q = (rstate.get("search_q") or "").strip()
-    active = rstate.get("active_chapter")
     lines = full_text.split("\n")
 
     valid_chapters = [c for c in chapters
@@ -3766,16 +3745,6 @@ def _render_reader_body(full_text, chapters, rstate):
                        and c.get("line", -1) >= 0]
     valid_chapters.sort(key=lambda c: c["line"])
     chapter_at_line = {c["line"]: c for c in valid_chapters}
-
-    start_line = 0
-    end_line = len(lines)
-    if active:
-        for i, c in enumerate(valid_chapters):
-            if str(c.get("id") or "").strip() == str(active).strip():
-                start_line = c["line"]
-                if i + 1 < len(valid_chapters):
-                    end_line = valid_chapters[i + 1]["line"]
-                break
 
     hits = 0
 
@@ -3798,10 +3767,8 @@ def _render_reader_body(full_text, chapters, rstate):
         out.append(_html_mod.escape(text[last:]))
         return "".join(out)
 
-    parts = []
+    parts = ['<span id="reader-top"></span>']
     for i, raw in enumerate(lines):
-        if i < start_line or i >= end_line:
-            continue
         s = raw.rstrip()
         if i in chapter_at_line:
             ch = chapter_at_line[i]
