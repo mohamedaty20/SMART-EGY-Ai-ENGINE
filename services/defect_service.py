@@ -268,12 +268,11 @@ def _split_script_runs(s):
 
 
 def _fix(text):
+    # No-op kept for backward compat — shaping now happens ONCE in _para().
+    # Calling _shape_run_arabic here caused double-shaping (fix F).
     if text is None:
         return ""
-    s = str(text)
-    if not s or not _has_arabic(s):
-        return s
-    return _shape_run_arabic(s)
+    return str(text)
 
 
 def _font_for(text, bold=False):
@@ -292,44 +291,44 @@ def _font_for(text, bold=False):
 
 
 def _wrap_runs(s, bold=False):
-    if not s:
-        return ""
-    runs = _split_script_runs(s)
-    if not runs:
-        return ""
-    out = []
-    for is_ar, chunk in runs:
-        if is_ar:
-            shaped = _shape_run_arabic(chunk)
-            fname = _font_for("ar", bold=bold)
-            out.append('<font name="' + fname + '">' +
-                       _esc_xml(shaped) + '</font>')
-        else:
-            fname = _font_for(chunk, bold=bold)
-            out.append('<font name="' + fname + '">' +
-                       _esc_xml(chunk) + '</font>')
-    return "".join(out)
+    # Kept for backward compat. No longer called by _para().
+    return _esc_xml(str(s or ""))
 
 
 def _para(text, base_style, bold=False):
+    """
+    Shape ONCE at the whole-string level and use a single font that covers
+    both Arabic presentation forms and Latin. Do NOT split into <font> tags
+    per script run — that breaks bidi reordering across word boundaries.
+    """
     from reportlab.platypus import Paragraph
     from reportlab.lib.enums import TA_RIGHT
+    from copy import copy
     raw = str(text or "")
     if not raw:
         return Paragraph("", base_style)
-    wrapped = _wrap_runs(raw, bold=bold)
+
+    style = copy(base_style)
+    reg = _registered()
+
     if _has_arabic(raw):
-        arabic_chars = sum(1 for c in raw if _is_arabic_char(c))
-        latin_chars = sum(1 for c in raw if c.isascii() and c.isalnum())
-        if arabic_chars > 0 and arabic_chars >= latin_chars:
-            try:
-                from copy import copy
-                style = copy(base_style)
-                style.alignment = TA_RIGHT
-                return Paragraph(wrapped, style)
-            except Exception:
-                pass
-    return Paragraph(wrapped, base_style)
+        shaped = _shape_run_arabic(raw)
+        style.alignment = TA_RIGHT
+        if "ArReg" in reg:
+            style.fontName = ("ArBold" if (bold and "ArBold" in reg)
+                              else "ArReg")
+        # If ArReg is missing we keep base_style.fontName — the log line
+        # "[defect] WARNING: no Arabic-capable font available." will say so.
+        return Paragraph(_esc_xml(shaped), style)
+
+    # Pure Latin path — keep the mono look.
+    if bold and "MonoBold" in reg:
+        style.fontName = "MonoBold"
+    elif "MonoReg" in reg:
+        style.fontName = "MonoReg"
+    else:
+        style.fontName = "Courier-Bold" if bold else "Courier"
+    return Paragraph(_esc_xml(raw), style)
 
 
 # =====================================================================
@@ -1566,3 +1565,11 @@ def build_register_xlsx(project, rows, logo_bytes=None):
     wb.save(out)
     out.seek(0)
     return out.read()
+# =====================================================================
+# EAGER FONT INIT — makes the "fonts ready" line appear in the deploy
+# log so we can confirm what Render actually has at boot.
+# =====================================================================
+try:
+    _ensure_fonts()
+except Exception as _e:
+    print("[defect] eager font init failed: " + repr(_e))
