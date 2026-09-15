@@ -3683,130 +3683,175 @@ def _render_reader_main(state, rstate, pid):
                   on_click=_rate_ms).classes(BTN_SOFT).style(
             "width:100%;font-size:10px;")
 
-    # ----- Search row with hit counter -----
-    search_in_holder = {}
-    hits_lbl_holder = {}
+    # ----- Search row -----
+    ui_refs = {"input": None, "hits": None}
 
     with ui.element('div').classes("reader-search"):
         with ui.element('div').style(
-            "display:flex;align-items:center;gap:8px;"
+            "display:flex;align-items:center;gap:6px;"
         ):
             s_in = ui.input(
                 placeholder="Search inside this MS...",
                 value=rstate.get("search_q", ""),
             ).style("flex:1;").props("dense clearable")
-            search_in_holder["el"] = s_in
-            hits_lbl = ui.label("").style(
+            ui_refs["input"] = s_in
+
+            def _go():
+                _do_search()
+            ui.button("🔍", on_click=_go).props("dense flat").style(
+                "min-height:30px;min-width:30px;color:#5eead4;")
+
+            h_lbl = ui.label("").style(
                 "font-size:10px;color:#5eead4;font-weight:700;"
                 "white-space:nowrap;min-width:56px;text-align:right;")
-            hits_lbl_holder["el"] = hits_lbl
+            ui_refs["hits"] = h_lbl
 
-    # ----- Body slot (manual clear + rebuild) -----
+    # ----- Body slot -----
     body_slot = ui.element('div').style("width:100%;")
     body_slot.classes("reader-body-outer")
 
     def _set_hits(hits):
         try:
-            if hits is None:
-                hits_lbl_holder["el"].set_text("")
-            elif hits == 0:
-                hits_lbl_holder["el"].set_text("")
+            if not hits:
+                ui_refs["hits"].set_text("")
             else:
-                hits_lbl_holder["el"].set_text(
+                ui_refs["hits"].set_text(
                     str(hits) + (" hit" if hits == 1 else " hits"))
         except Exception:
             pass
 
     def render_body():
         body_slot.clear()
+        hits = 0
         with body_slot:
             try:
                 hits = _render_reader_body(full_text, chapters, rstate)
             except Exception as e:
-                print("[reader] body render error: " + repr(e))
-                hits = 0
+                import traceback
+                traceback.print_exc()
+                print("[reader] body render err: " + repr(e))
         _set_hits(hits)
 
-    def _on_q(event_or_value=None):
-        val = None
-        # on_value_change passes the raw value.
-        # .on("update:model-value") passes an event object with .args.
-        try:
-            if isinstance(event_or_value, str):
-                val = event_or_value
-            elif hasattr(event_or_value, "value"):
-                val = event_or_value.value
-            elif hasattr(event_or_value, "args"):
-                args = event_or_value.args
-                if isinstance(args, (list, tuple)) and args:
-                    val = args[0]
-                else:
-                    val = args
-        except Exception:
-            val = None
+    def _do_search(explicit_val=None):
+        val = explicit_val
         if val is None:
             try:
-                val = search_in_holder["el"].value
+                val = ui_refs["input"].value
             except Exception:
                 val = ""
         rstate["search_q"] = str(val or "")
         try:
-            print("[reader] search_q=" + repr(rstate["search_q"]))
+            print("[reader] search=" + repr(rstate["search_q"]))
         except Exception:
             pass
         render_body()
 
-    # Attach with fallback chain
-    _attached = False
+    def _on_value_change_handler(ev=None):
+        try:
+            if isinstance(ev, str):
+                _do_search(ev)
+            elif hasattr(ev, "value"):
+                _do_search(ev.value)
+            elif hasattr(ev, "args"):
+                args = ev.args
+                if isinstance(args, (list, tuple)) and args:
+                    _do_search(args[0])
+                else:
+                    _do_search(args)
+            else:
+                _do_search()
+        except Exception as e:
+            print("[reader] ev handler err: " + repr(e))
+            _do_search()
+
+    _bound = False
     try:
-        s_in.on_value_change(_on_q)
-        _attached = True
-    except Exception as e1:
-        print("[reader] on_value_change failed: " + repr(e1))
-    if not _attached:
+        ui_refs["input"].on_value_change(_on_value_change_handler)
+        _bound = True
+        print("[reader] search bound: on_value_change")
+    except Exception as e:
+        print("[reader] on_value_change err: " + repr(e))
+    if not _bound:
         try:
-            s_in.on("update:model-value", _on_q)
-            _attached = True
-        except Exception as e2:
-            print("[reader] update:model-value failed: " + repr(e2))
-    if not _attached:
-        try:
-            s_in.on("input", _on_q)
-        except Exception as e3:
-            print("[reader] input event failed: " + repr(e3))
+            ui_refs["input"].on("update:model-value",
+                                 _on_value_change_handler)
+            _bound = True
+            print("[reader] search bound: update:model-value")
+        except Exception as e:
+            print("[reader] update:model-value err: " + repr(e))
+    try:
+        ui_refs["input"].on("keydown.enter", lambda _: _do_search())
+    except Exception:
+        pass
 
     render_body()
 
-    # ----- Scroll to chapter (retry loop, survives slow DOM paint) -----
+    # ----- Scroll to chapter -----
+    # NOTE: ui.timer's default immediate=True fires the callback at t=0,
+    # which is BEFORE the just-rendered DOM has reached the browser.
+    # immediate=False forces the 0.35s wait we actually want.
     scroll_target = rstate.get("scroll_to")
     rstate["scroll_to"] = None
     if scroll_target:
-        anchor = _reader_safe_anchor(scroll_target)
-        js = (
-            "(function(){"
-            "var tries=0;"
-            "var t=setInterval(function(){"
-            "  var el=document.getElementById(" + json.dumps(anchor) + ");"
-            "  if(!el){"
-            "    tries++;"
-            "    if(tries>25){clearInterval(t);}"
-            "    return;"
-            "  }"
-            "  clearInterval(t);"
-            "  try{"
-            "    var rect=el.getBoundingClientRect();"
-            "    var top=(window.pageYOffset||"
-            "              document.documentElement.scrollTop||0);"
-            "    var y=top+rect.top-140;"
-            "    if(y<0)y=0;"
-            "    window.scrollTo({top:y,behavior:'smooth'});"
-            "  }catch(e1){"
-            "    try{el.scrollIntoView();}catch(e2){}"
-            "  }"
-            "},80);"
-            "})();"
+        # Find position of this chapter among the sorted valid chapters
+        valid = sorted(
+            [c for c in chapters
+             if isinstance(c.get("line"), int) and c.get("line", -1) >= 0],
+            key=lambda c: c["line"],
         )
-        ui.timer(0.3, lambda j=js: ui.run_javascript(j), once=True)
+        pos = None
+        title_for_match = ""
+        for i, c in enumerate(valid):
+            if str(c.get("id") or "").strip() == str(scroll_target).strip():
+                pos = i
+                title_for_match = str(c.get("title") or "")
+                break
+        if pos is not None:
+            pos_str = str(pos)
+            title_json = json.dumps(title_for_match)
+            js = (
+                "(function(){"
+                "var pos=" + pos_str + ";"
+                "var title=" + title_json + ";"
+                "var tries=0;"
+                "var t=setInterval(function(){"
+                "  var els=document.querySelectorAll('.reader-h1');"
+                "  if(els.length<=pos){"
+                "    tries++;"
+                "    if(tries>40){clearInterval(t);"
+                "      console.log('[reader] gave up, found '+els.length"
+                "        +' h1s, wanted index '+pos);"
+                "    }"
+                "    return;"
+                "  }"
+                "  clearInterval(t);"
+                "  var el=els[pos];"
+                "  if(title && (el.textContent||'').indexOf(title)<0){"
+                "    for(var i=0;i<els.length;i++){"
+                "      if((els[i].textContent||'').indexOf(title)>=0){"
+                "        el=els[i];break;"
+                "      }"
+                "    }"
+                "  }"
+                "  try{"
+                "    var r=el.getBoundingClientRect();"
+                "    var top=window.pageYOffset||"
+                "              document.documentElement.scrollTop||0;"
+                "    var y=top+r.top-140;"
+                "    if(y<0)y=0;"
+                "    window.scrollTo({top:y,behavior:'smooth'});"
+                "  }catch(e1){"
+                "    try{el.scrollIntoView();}catch(e2){}"
+                "  }"
+                "},80);"
+                "})();"
+            )
+            print("[reader] scroll scheduled, pos=" + pos_str)
+            ui.timer(0.35, lambda j=js: ui.run_javascript(j),
+                     once=True, immediate=False)
+        else:
+            print("[reader] scroll target not found in chapters: " +
+                  repr(scroll_target))
 
 
 def _open_ms_weak_points_dialog(ms):
