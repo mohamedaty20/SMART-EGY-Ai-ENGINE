@@ -3344,6 +3344,14 @@ def _reader_highlight(text, q):
     return "".join(out)
 
 
+def _reader_safe_anchor(cid):
+    """DOM-safe anchor id for a chapter number."""
+    s = re.sub(r'[^0-9A-Za-z]+', '_', str(cid or "").strip())
+    if not s:
+        s = "x"
+    return "ch-" + s
+
+
 def _render_reader_body(full_text, chapters, rstate):
     if not (full_text or "").strip():
         ui.html(
@@ -3367,11 +3375,11 @@ def _render_reader_body(full_text, chapters, rstate):
         if i in chapter_at_line:
             ch = chapter_at_line[i]
             cid = str(ch.get("id") or "").strip()
-            safe_id = "ch-" + cid.replace(" ", "_")
-            esc = _reader_highlight(s if s.strip()
-                                    else (ch.get("title") or ""), q)
+            anchor = _reader_safe_anchor(cid)
+            esc = _reader_highlight(
+                s if s.strip() else (ch.get("title") or ""), q)
             parts.append(
-                '<h2 id="' + _html_mod.escape(safe_id) +
+                '<h2 id="' + _html_mod.escape(anchor) +
                 '" class="reader-h1">' + esc + '</h2>')
             continue
         if not s.strip():
@@ -3419,7 +3427,6 @@ def _build_ms_reader(state):
     with wrap:
         with ui.element('aside').classes("reader-menu"):
             _render_reader_menu(state, rstate, ms_list, pid)
-
         with ui.element('main').classes("reader-main"):
             _render_reader_main(state, rstate, pid)
 
@@ -3444,45 +3451,54 @@ def _render_reader_menu(state, rstate, ms_list, pid):
         value=rstate.get("menu_q", ""),
     ).style("width:100%;margin-bottom:10px;").props("dense clearable")
 
-    holder = ui.element('div').style("width:100%;")
-
-    def render_list():
-        holder.clear()
+    @ui.refreshable
+    def render_menu_list():
         q = (rstate.get("menu_q") or "").strip().lower()
-        with holder:
-            if not ms_list:
-                ui.label(
-                    "No Method Statements uploaded yet."
-                ).style("color:#808080;font-size:11px;padding:20px 0;"
-                        "text-align:center;")
-                return
-            shown = 0
-            for m in ms_list:
-                mid = m.get("id")
-                title_txt = (
-                    str(m.get("title") or "") + " " +
-                    str(m.get("ms_number") or "")
-                ).lower()
-                is_selected = rstate.get("ms_id") == mid
-                if q and q not in title_txt and not is_selected:
-                    continue
-                shown += 1
-                _render_reader_menu_ms_item(m, rstate, state, q, render_list)
-            if q and shown == 0:
-                ui.label("No matches.").style(
-                    "color:#808080;font-size:11px;padding:20px 0;"
+        if not ms_list:
+            ui.label(
+                "No Method Statements uploaded yet."
+            ).style("color:#808080;font-size:11px;padding:20px 0;"
                     "text-align:center;")
+            return
+        shown = 0
+        for m in ms_list:
+            mid = m.get("id")
+            title_txt = (
+                str(m.get("title") or "") + " " +
+                str(m.get("ms_number") or "")
+            ).lower()
+            is_selected = rstate.get("ms_id") == mid
+            if q and q not in title_txt and not is_selected:
+                continue
+            shown += 1
+            _render_reader_menu_ms_item(m, rstate, state, q)
+        if q and shown == 0:
+            ui.label("No matches.").style(
+                "color:#808080;font-size:11px;padding:20px 0;"
+                "text-align:center;")
 
-    def _on_menu_q(e):
-        rstate["menu_q"] = e.value or ""
-        render_list()
-    menu_search.on("update:model-value", _on_menu_q)
+    def _on_menu_q(e=None):
+        try:
+            rstate["menu_q"] = menu_search.value or ""
+        except Exception:
+            rstate["menu_q"] = ""
+        try:
+            render_menu_list.refresh()
+        except Exception:
+            pass
 
-    rstate["_reader_menu_refresh"] = render_list
-    render_list()
+    try:
+        menu_search.on_value_change(_on_menu_q)
+    except Exception:
+        try:
+            menu_search.on("update:model-value", _on_menu_q)
+        except Exception:
+            pass
+
+    render_menu_list()
 
 
-def _render_reader_menu_ms_item(m, rstate, state, q, refresh_list):
+def _render_reader_menu_ms_item(m, rstate, state, q):
     mid = m.get("id")
     is_selected = rstate.get("ms_id") == mid
     active_chapter = rstate.get("active_chapter")
@@ -3599,6 +3615,7 @@ def _render_reader_main(state, rstate, pid):
     chapters = ms.get("chapters") or []
     active = rstate.get("active_chapter")
 
+    # ----- Topbar -----
     with ui.element('div').classes("reader-topbar"):
         def _toggle_menu():
             rstate["menu_open"] = not rstate.get("menu_open")
@@ -3627,24 +3644,7 @@ def _render_reader_main(state, rstate, pid):
             ui.label("Read all")
         ra.on("click", _read_all)
 
-    body_holder = ui.element('div').style("width:100%;")
-
-    def render_body():
-        body_holder.clear()
-        with body_holder:
-            _render_reader_body(full_text, chapters, rstate)
-
-    with ui.element('div').classes("reader-search"):
-        s_in = ui.input(
-            placeholder="Search inside this MS...",
-            value=rstate.get("search_q", ""),
-        ).style("width:100%;").props("dense clearable")
-
-        def _on_q(e):
-            rstate["search_q"] = e.value or ""
-            render_body()
-        s_in.on("update:model-value", _on_q)
-
+    # ----- AI action buttons -----
     with ui.element('div').style(
         "padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;"
         "gap:6px;border-bottom:1px solid var(--border);"
@@ -3660,19 +3660,60 @@ def _render_reader_main(state, rstate, pid):
                   on_click=_rate_ms).classes(BTN_SOFT).style(
             "width:100%;font-size:10px;")
 
+    # ----- In-MS search (renders BEFORE body) -----
+    with ui.element('div').classes("reader-search"):
+        search_in = ui.input(
+            placeholder="Search inside this MS...",
+            value=rstate.get("search_q", ""),
+        ).style("width:100%;").props("dense clearable")
+
+    # ----- Body (renders AFTER search) -----
+    @ui.refreshable
+    def render_body():
+        _render_reader_body(full_text, chapters, rstate)
+
+    def _on_q(e=None):
+        try:
+            rstate["search_q"] = search_in.value or ""
+        except Exception:
+            rstate["search_q"] = ""
+        try:
+            render_body.refresh()
+        except Exception:
+            pass
+
+    try:
+        search_in.on_value_change(_on_q)
+    except Exception:
+        try:
+            search_in.on("update:model-value", _on_q)
+        except Exception:
+            pass
+
     render_body()
 
+    # ----- Scroll to chapter (after re-render) -----
     scroll_target = rstate.get("scroll_to")
     rstate["scroll_to"] = None
     if scroll_target:
-        anchor = "ch-" + str(scroll_target).replace(" ", "_")
+        anchor = _reader_safe_anchor(scroll_target)
         js = (
-            "(function(){var el=document.getElementById(" +
-            json.dumps(anchor) +
-            ");if(el){el.scrollIntoView({behavior:'smooth',"
-            "block:'start'});}})();"
+            "(function(){"
+            "var el=document.getElementById(" + json.dumps(anchor) + ");"
+            "if(!el) return;"
+            "try { el.scrollIntoView({behavior:'smooth',block:'start'}); }"
+            "catch(e){ try{ el.scrollIntoView(); }catch(e2){} }"
+            "try {"
+            "  var rect = el.getBoundingClientRect();"
+            "  var top = (window.pageYOffset || "
+            "             document.documentElement.scrollTop || 0);"
+            "  var y = top + rect.top - 140;"
+            "  if (y < 0) y = 0;"
+            "  window.scrollTo({top: y, behavior:'smooth'});"
+            "} catch(e3){}"
+            "})();"
         )
-        ui.timer(0.25, lambda j=js: ui.run_javascript(j), once=True)
+        ui.timer(0.4, lambda j=js: ui.run_javascript(j), once=True)
 
 
 def _open_ms_weak_points_dialog(ms):
