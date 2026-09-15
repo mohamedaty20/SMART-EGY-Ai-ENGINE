@@ -1480,7 +1480,9 @@ def _inject_theme():
     color: #d8d8d8;
     word-break: break-word;
     max-width: 900px; margin: 0 auto;
+    scroll-margin-top: 150px;
   }
+  .reader-body-outer { scroll-margin-top: 150px; }
   .reader-body .reader-h1 {
     font-size: 17px; font-weight: 700; color: var(--accent);
     margin: 30px 0 14px 0; padding: 0 0 8px 0;
@@ -3505,6 +3507,7 @@ def _render_menu_ms_item(m, rstate, state, q):
             rstate["active_chapter"] = None
             rstate["search_q"] = ""
         rstate["menu_open"] = False
+        rstate["scroll_top"] = True
         state["render_main"]()
     item.on("click", _click_ms)
 
@@ -3527,6 +3530,7 @@ def _render_menu_ms_item(m, rstate, state, q):
         def _pick_all():
             rstate["active_chapter"] = None
             rstate["menu_open"] = False
+            rstate["scroll_top"] = True
             state["render_main"]()
         itm.on("click", _pick_all)
 
@@ -3553,6 +3557,7 @@ def _render_menu_ms_item(m, rstate, state, q):
                 def _pick(c=cid):
                     rstate["active_chapter"] = c
                     rstate["menu_open"] = False
+                    rstate["scroll_top"] = True
                     state["render_main"]()
                 citm.on("click", _pick)
 
@@ -3711,6 +3716,36 @@ def _render_reader_main(state, rstate, pid):
             print("[reader] update:model-value err: " + repr(e2))
 
     render_body()
+
+    # ----- After chapter/MS change, scroll the reading pane to the top -----
+    if rstate.pop("scroll_top", False):
+        js = (
+            "(function(){"
+            "var tries=0;"
+            "var t=setInterval(function(){"
+            "  var el=document.querySelector('.reader-body-outer')"
+            "       || document.querySelector('.reader-body');"
+            "  if(!el){tries++; if(tries>30){clearInterval(t);} return;}"
+            "  clearInterval(t);"
+            "  try{ el.scrollIntoView({behavior:'smooth',block:'start'}); }"
+            "  catch(e1){"
+            "    try{"
+            "      var r=el.getBoundingClientRect();"
+            "      var y=(window.pageYOffset"
+            "            ||document.documentElement.scrollTop||0)"
+            "            + r.top - 150;"
+            "      if(y<0)y=0;"
+            "      window.scrollTo(0,y);"
+            "    }catch(e2){}"
+            "  }"
+            "},60);"
+            "})();"
+        )
+        try:
+            ui.run_javascript(js)
+            print("[reader] scroll scheduled")
+        except Exception as e:
+            print("[reader] scroll js err: " + repr(e))
 
 
 def _render_reader_body(full_text, chapters, rstate):
