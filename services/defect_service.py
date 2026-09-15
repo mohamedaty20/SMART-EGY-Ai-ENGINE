@@ -1,6 +1,8 @@
 """
 services/defect_service.py — Full file.
 Adds build_sub_pdf() + photo strip in notice PDF.
+Arabic PDF rendering hardened: multi-mirror font download, system-font
+fallback, mixed Arabic/Latin run wrapping, right-aligned Arabic blocks.
 """
 import io
 import os
@@ -16,25 +18,42 @@ import asyncio
 # FONTS
 # =====================================================================
 _FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
+_FONT_FALLBACK_DIR = "/tmp/defect_fonts"
 _FONT_REG_PATH = os.path.join(_FONT_DIR, "Amiri-Regular.ttf")
 _FONT_BOLD_PATH = os.path.join(_FONT_DIR, "Amiri-Bold.ttf")
 _FONT_REG_URLS = [
     "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf",
     "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf",
 ]
 _FONT_BOLD_URLS = [
     "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Bold.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Bold.ttf",
     "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf",
 ]
 _MONO_REG_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Regular.ttf")
 _MONO_BOLD_PATH = os.path.join(_FONT_DIR, "JetBrainsMono-Bold.ttf")
 _MONO_REG_URLS = [
     "https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/ttf/JetBrainsMono-Regular.ttf",
+    "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/ttf/JetBrainsMono-Regular.ttf",
     "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Regular.ttf",
 ]
 _MONO_BOLD_URLS = [
     "https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/ttf/JetBrainsMono-Bold.ttf",
+    "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/ttf/JetBrainsMono-Bold.ttf",
     "https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Bold.ttf",
+]
+
+# System font candidates for Arabic if the download fails.
+_SYSTEM_ARABIC_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",                     # macOS
+    "C:\\Windows\\Fonts\\tahoma.ttf",                        # Windows
+    "C:\\Windows\\Fonts\\segoeui.ttf",                       # Windows
 ]
 
 _FONT_NAME = "Helvetica"
@@ -42,16 +61,49 @@ _FONT_BOLD = "Helvetica-Bold"
 _MONO_NAME = "Courier"
 _MONO_BOLD = "Courier-Bold"
 
+# Detect whether the shaping libraries are available once at import.
+_SHAPING_OK = False
+_SHAPING_ERR = ""
+try:
+    import arabic_reshaper as _ar  # noqa: F401
+    from bidi.algorithm import get_display as _get_display  # noqa: F401
+    _SHAPING_OK = True
+except Exception as _e:
+    _SHAPING_ERR = repr(_e)
+    print("[defect] WARNING: Arabic shaping libs missing: " + _SHAPING_ERR)
+    print("[defect]   -> add 'arabic-reshaper' and 'python-bidi' to requirements")
+
+
+def _writable_dir():
+    """Prefer assets/, fall back to /tmp if assets is read-only."""
+    try:
+        os.makedirs(_FONT_DIR, exist_ok=True)
+        probe = os.path.join(_FONT_DIR, ".w")
+        with open(probe, "w") as f:
+            f.write("x")
+        try:
+            os.remove(probe)
+        except Exception:
+            pass
+        return _FONT_DIR
+    except Exception:
+        try:
+            os.makedirs(_FONT_FALLBACK_DIR, exist_ok=True)
+        except Exception:
+            pass
+        return _FONT_FALLBACK_DIR
+
 
 def _download_font(url, dest):
     import urllib.request
     try:
-        os.makedirs(_FONT_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
     except Exception:
         pass
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as r:
+        req = urllib.request.Request(url,
+                                      headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
             data = r.read()
         if not data or len(data) < 5000:
             return False
@@ -62,7 +114,7 @@ def _download_font(url, dest):
         print("[defect] saved " + str(len(data) // 1024) + " KB -> " + dest)
         return True
     except Exception as e:
-        print("[defect] fetch fail: " + repr(e))
+        print("[defect] fetch fail " + url + " : " + repr(e))
         return False
 
 
@@ -74,84 +126,115 @@ def _registered():
         return set()
 
 
-def _ensure_fonts():
-    global _FONT_NAME, _FONT_BOLD, _MONO_NAME, _MONO_BOLD
+def _try_register(name, path):
     try:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
+        pdfmetrics.registerFont(TTFont(name, path))
+        return True
+    except Exception as e:
+        print("[defect] register " + name + " failed: " + repr(e))
+        return False
+
+
+def _resolve_path(preferred, urls, fallback_names=None):
+    """
+    Return a font path that exists. Try preferred (assets), then /tmp,
+    download from urls, finally look at system candidates.
+    """
+    if os.path.exists(preferred):
+        return preferred
+    alt = os.path.join(_FONT_FALLBACK_DIR, os.path.basename(preferred))
+    if os.path.exists(alt):
+        return alt
+    for u in urls:
+        if _download_font(u, preferred):
+            return preferred
+        if _download_font(u, alt):
+            return alt
+    if fallback_names:
+        for cand in fallback_names:
+            if os.path.exists(cand):
+                print("[defect] using system font fallback: " + cand)
+                return cand
+    return None
+
+
+def _ensure_fonts():
+    global _FONT_NAME, _FONT_BOLD, _MONO_NAME, _MONO_BOLD
+    try:
+        from reportlab.pdfbase import pdfmetrics  # noqa: F401
+        from reportlab.pdfbase.ttfonts import TTFont  # noqa: F401
     except Exception as e:
         print("[defect] reportlab missing: " + repr(e))
         return
+
     have = _registered()
 
+    # -------- Mono --------
+    if "MonoReg" not in have:
+        mono_reg = _resolve_path(_MONO_REG_PATH, _MONO_REG_URLS)
+        mono_bold = _resolve_path(_MONO_BOLD_PATH, _MONO_BOLD_URLS)
+        if mono_reg:
+            _try_register("MonoReg", mono_reg)
+        if mono_bold:
+            _try_register("MonoBold", mono_bold)
+
+    have = _registered()
     if "MonoReg" in have:
         _MONO_NAME = "MonoReg"
         _MONO_BOLD = "MonoBold" if "MonoBold" in have else "MonoReg"
     else:
-        if not os.path.exists(_MONO_REG_PATH):
-            for u in _MONO_REG_URLS:
-                if _download_font(u, _MONO_REG_PATH):
-                    break
-        if not os.path.exists(_MONO_BOLD_PATH):
-            for u in _MONO_BOLD_URLS:
-                if _download_font(u, _MONO_BOLD_PATH):
-                    break
-        try:
-            if os.path.exists(_MONO_REG_PATH):
-                pdfmetrics.registerFont(TTFont("MonoReg", _MONO_REG_PATH))
-                _MONO_NAME = "MonoReg"
-            if os.path.exists(_MONO_BOLD_PATH):
-                pdfmetrics.registerFont(TTFont("MonoBold", _MONO_BOLD_PATH))
-                _MONO_BOLD = "MonoBold"
-            else:
-                _MONO_BOLD = _MONO_NAME
-            if _MONO_NAME == "MonoReg":
-                try:
-                    pdfmetrics.registerFontFamily(
-                        "MonoReg", normal="MonoReg", bold=_MONO_BOLD,
-                        italic="MonoReg", boldItalic=_MONO_BOLD)
-                except Exception:
-                    pass
-        except Exception as e:
-            print("[defect] Mono register failed: " + repr(e))
+        _MONO_NAME = "Courier"
+        _MONO_BOLD = "Courier-Bold"
 
+    # -------- Arabic --------
+    if "ArReg" not in have:
+        ar_reg = _resolve_path(_FONT_REG_PATH, _FONT_REG_URLS,
+                                fallback_names=_SYSTEM_ARABIC_CANDIDATES)
+        ar_bold = _resolve_path(_FONT_BOLD_PATH, _FONT_BOLD_URLS,
+                                 fallback_names=_SYSTEM_ARABIC_CANDIDATES)
+        if ar_reg:
+            _try_register("ArReg", ar_reg)
+        if ar_bold:
+            _try_register("ArBold", ar_bold)
+
+    have = _registered()
     if "ArReg" in have:
         _FONT_NAME = "ArReg"
         _FONT_BOLD = "ArBold" if "ArBold" in have else "ArReg"
     else:
-        if not os.path.exists(_FONT_REG_PATH):
-            for u in _FONT_REG_URLS:
-                if _download_font(u, _FONT_REG_PATH):
-                    break
-        if not os.path.exists(_FONT_BOLD_PATH):
-            for u in _FONT_BOLD_URLS:
-                if _download_font(u, _FONT_BOLD_PATH):
-                    break
-        try:
-            if os.path.exists(_FONT_REG_PATH):
-                pdfmetrics.registerFont(TTFont("ArReg", _FONT_REG_PATH))
-                _FONT_NAME = "ArReg"
-            if os.path.exists(_FONT_BOLD_PATH):
-                pdfmetrics.registerFont(TTFont("ArBold", _FONT_BOLD_PATH))
-                _FONT_BOLD = "ArBold"
-            else:
-                _FONT_BOLD = _FONT_NAME
-            if _FONT_NAME == "ArReg":
-                try:
-                    pdfmetrics.registerFontFamily(
-                        "ArReg", normal="ArReg", bold=_FONT_BOLD,
-                        italic="ArReg", boldItalic=_FONT_BOLD)
-                except Exception:
-                    pass
-        except Exception as e:
-            print("[defect] Amiri register failed: " + repr(e))
+        # Absolute worst case — keep going with Helvetica so nothing crashes.
+        _FONT_NAME = "Helvetica"
+        _FONT_BOLD = "Helvetica-Bold"
+        print("[defect] WARNING: no Arabic-capable font available.")
+
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        if _MONO_NAME == "MonoReg" and _MONO_BOLD == "MonoBold":
+            pdfmetrics.registerFontFamily(
+                "MonoReg", normal="MonoReg", bold="MonoBold",
+                italic="MonoReg", boldItalic="MonoBold")
+        if _FONT_NAME == "ArReg" and _FONT_BOLD == "ArBold":
+            pdfmetrics.registerFontFamily(
+                "ArReg", normal="ArReg", bold="ArBold",
+                italic="ArReg", boldItalic="ArBold")
+    except Exception:
+        pass
 
     print("[defect] fonts ready: mono=" + _MONO_NAME +
-          " arabic=" + _FONT_NAME)
+          " arabic=" + _FONT_NAME +
+          " shaping=" + ("on" if _SHAPING_OK else "OFF"))
 
 
 def _has_arabic(text):
     return any('\u0600' <= ch <= '\u06FF' for ch in str(text or ""))
+
+
+def _is_arabic_char(ch):
+    return '\u0600' <= ch <= '\u06FF' or '\u0750' <= ch <= '\u077F' \
+        or '\u08A0' <= ch <= '\u08FF' or '\uFB50' <= ch <= '\uFDFF' \
+        or '\uFE70' <= ch <= '\uFEFF'
 
 
 def _esc_xml(s):
@@ -159,24 +242,59 @@ def _esc_xml(s):
             .replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def _fix(text):
-    if text is None:
-        return ""
-    s = str(text)
+def _shape_run_arabic(s):
+    """Shape + bidi a pure Arabic run. Returns raw string on failure."""
     if not s:
         return s
+    if not _SHAPING_OK:
+        return s
     try:
-        if not _has_arabic(s):
-            return s
         import arabic_reshaper
         from bidi.algorithm import get_display
         return get_display(arabic_reshaper.reshape(s))
     except Exception as e:
-        print("[defect] arabic shaping failed: " + repr(e))
+        print("[defect] shaping failed: " + repr(e))
         return s
 
 
+def _split_script_runs(s):
+    """
+    Split s into consecutive runs of (is_arabic, text).
+    Used so mixed Arabic+Latin gets each part rendered with the right font.
+    """
+    runs = []
+    if not s:
+        return runs
+    buf = []
+    cur_is_ar = _is_arabic_char(s[0])
+    for ch in s:
+        is_ar = _is_arabic_char(ch)
+        if is_ar == cur_is_ar:
+            buf.append(ch)
+        else:
+            runs.append((cur_is_ar, "".join(buf)))
+            buf = [ch]
+            cur_is_ar = is_ar
+    if buf:
+        runs.append((cur_is_ar, "".join(buf)))
+    return runs
+
+
+def _fix(text):
+    """
+    Backward-compat: shape the whole string if it contains Arabic.
+    Used by callers that only need a plain string (e.g. filenames).
+    """
+    if text is None:
+        return ""
+    s = str(text)
+    if not s or not _has_arabic(s):
+        return s
+    return _shape_run_arabic(s)
+
+
 def _font_for(text, bold=False):
+    """Pick the right font name for a run of text."""
     reg = _registered()
     if _has_arabic(text):
         if bold and "ArBold" in reg:
@@ -191,13 +309,55 @@ def _font_for(text, bold=False):
     return "Courier"
 
 
+def _wrap_runs(s, bold=False):
+    """
+    Wrap a raw string in <font> tags so each script uses its own font.
+    Arabic runs are shaped + reordered, then escaped.
+    Latin runs are escaped as-is.
+    """
+    if not s:
+        return ""
+    runs = _split_script_runs(s)
+    if not runs:
+        return ""
+    out = []
+    for is_ar, chunk in runs:
+        if is_ar:
+            shaped = _shape_run_arabic(chunk)
+            fname = _font_for("ar", bold=bold)
+            out.append('<font name="' + fname + '">' +
+                       _esc_xml(shaped) + '</font>')
+        else:
+            fname = _font_for(chunk, bold=bold)
+            out.append('<font name="' + fname + '">' +
+                       _esc_xml(chunk) + '</font>')
+    return "".join(out)
+
+
 def _para(text, base_style, bold=False):
+    """
+    Return a Paragraph. Arabic-only content is right-aligned.
+    Mixed content keeps the paragraph's natural alignment.
+    """
     from reportlab.platypus import Paragraph
+    from reportlab.lib.enums import TA_RIGHT
     raw = str(text or "")
-    shaped = _fix(raw)
-    escaped = _esc_xml(shaped)
-    font = _font_for(raw, bold=bold)
-    wrapped = '<font name="' + font + '">' + escaped + '</font>'
+    if not raw:
+        return Paragraph("", base_style)
+    wrapped = _wrap_runs(raw, bold=bold)
+
+    # If the text is predominantly Arabic, use right alignment.
+    if _has_arabic(raw):
+        arabic_chars = sum(1 for c in raw if _is_arabic_char(c))
+        latin_chars = sum(1 for c in raw if c.isascii() and c.isalnum())
+        if arabic_chars > 0 and arabic_chars >= latin_chars:
+            try:
+                from copy import copy
+                style = copy(base_style)
+                style.alignment = TA_RIGHT
+                return Paragraph(wrapped, style)
+            except Exception:
+                pass
     return Paragraph(wrapped, base_style)
 
 
@@ -1185,7 +1345,6 @@ def build_sub_pdf(project, sub_name, score, defects,
     GREY = colors.HexColor("#525252")
     GREEN = colors.HexColor("#16a34a")
     AMBER = colors.HexColor("#d97706")
-    RED = colors.HexColor("#dc2626")
 
     title_style = ParagraphStyle("Title", fontName=_MONO_BOLD,
                                   fontSize=14, textColor=NAVY,
