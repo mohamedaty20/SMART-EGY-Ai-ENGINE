@@ -347,6 +347,7 @@ def init_db():
         ])
         _ensure_columns(cur, "method_statements", [
             ("full_text", "TEXT"),
+            ("chapters_json", "TEXT"),
         ])
         _ensure_columns(cur, "defects", [
             ("raise_type", "TEXT"), ("closed_at", "TEXT"),
@@ -710,18 +711,23 @@ def get_project(project_id):
 # MS
 # =====================================================================
 def save_ms(project_id, ms_number, title, element_type, discipline,
-            pdf_bytes, clauses, full_text=None):
+            pdf_bytes, clauses, full_text=None, chapters=None):
     with _LOCK:
         c = _conn()
         cur = c.cursor()
+        try:
+            chapters_payload = json.dumps(chapters or [])
+        except Exception:
+            chapters_payload = "[]"
         cur.execute("""
             INSERT INTO method_statements
                 (project_id, ms_number, title, element_type, discipline,
-                 pdf_bytes, clauses_json, full_text, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 pdf_bytes, clauses_json, full_text, chapters_json,
+                 created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (project_id, ms_number, title, element_type, discipline,
               pdf_bytes, json.dumps(clauses),
-              (full_text or "")[:200000], _now()))
+              (full_text or "")[:200000], chapters_payload, _now()))
         c.commit()
         _sync(c)
 
@@ -761,6 +767,59 @@ def get_clauses_for_element(project_id, element_type=None):
         except Exception:
             pass
     return clauses
+
+
+_MS_FULL_COLS = ["id", "project_id", "ms_number", "title", "element_type",
+                 "discipline", "clauses_json", "full_text", "chapters_json",
+                 "created_at"]
+
+
+def get_ms_by_id(ms_id):
+    """Return a single MS row with clauses + chapters parsed."""
+    if not ms_id:
+        return None
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, ms_number, title, element_type, discipline,
+               clauses_json, full_text, chapters_json, created_at
+        FROM method_statements WHERE id=?
+    """, (int(ms_id),))
+    d = _to_dict(cur.fetchone(), _MS_FULL_COLS)
+    if not d:
+        return None
+    try:
+        d["clauses"] = json.loads(d.get("clauses_json") or "[]")
+    except Exception:
+        d["clauses"] = []
+    try:
+        d["chapters"] = json.loads(d.get("chapters_json") or "[]")
+    except Exception:
+        d["chapters"] = []
+    return d
+
+
+def update_ms_chapters(ms_id, chapters):
+    """Persist chapters for an MS (used for lazy backfill)."""
+    if not ms_id:
+        return False
+    try:
+        payload = json.dumps(chapters or [])
+    except Exception:
+        payload = "[]"
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            cur.execute(
+                "UPDATE method_statements SET chapters_json=? WHERE id=?",
+                (payload, int(ms_id)))
+            c.commit()
+            _sync(c)
+        except Exception as e:
+            print("[db] update_ms_chapters failed: " + repr(e))
+            return False
+    return True
 
 
 # =====================================================================
