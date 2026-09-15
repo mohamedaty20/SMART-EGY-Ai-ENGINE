@@ -3,15 +3,13 @@ ui/defect_page.py — Full file.
 - Team multi-user: invite by email, all see same project.
 - MS Chat: Q&A over uploaded Method Statements + document compliance check.
 - OCR for handwritten notes in the "no photo" dialog.
-- Free-text zone input.
-- Real-time chat (2s poll, smart scroll).
-- 60-second delete window on chat messages.
-- Role-colored chat authors.
-- Defect-type filter in logs.
-- Engineer name + place under every log title.
+- Real-time chat with 60s delete window, role colors, mentions.
+- Defect-type filter, engineer name + place under every log title.
 - Interactive ECharts dashboard.
 - Feature 5: per-defect comment thread.
 - Feature 6: per-defect watchlist.
+- Feature 7: bulk actions in Defect Logs.
+- Feature 10: custom report templates.
 """
 import io
 import re
@@ -618,7 +616,7 @@ def _chat_author_color(title):
 
 
 # =====================================================================
-# OCR — handwriting / document text extraction
+# OCR
 # =====================================================================
 _OCR_PROMPT = (
     "You are a precise OCR engine for handwritten and printed documents. "
@@ -1097,6 +1095,15 @@ def _inject_theme():
   .comment-body { font-size: 11px; color: var(--text); margin-top: 4px;
                   line-height: 1.5; white-space: pre-wrap;
                   word-break: break-word; }
+  .bulk-bar {
+    position: sticky; bottom: 0; z-index: 600;
+    background: rgba(11,11,11,0.96);
+    border-top: 1px solid var(--accent);
+    padding: 10px 12px; margin-top: 12px;
+    display: flex; flex-wrap: wrap; gap: 6px;
+    border-radius: 4px;
+  }
+  .bulk-bar .q-btn { min-height: 30px !important; font-size: 10px !important; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -1115,7 +1122,7 @@ def _initial(name):
 
 
 _DASH_CACHE = {}
-_DASH_TTL = 60  # seconds
+_DASH_TTL = 60
 _current_uid_holder = {"uid": None}
 
 
@@ -1461,8 +1468,7 @@ def _build_dashboard(state):
                         'symbol': 'circle', 'symbolSize': 6,
                         'lineStyle': {'width': 2, 'color': '#5eead4'},
                         'itemStyle': {'color': '#5eead4'},
-                        'areaStyle': {'color':
-                            'rgba(94,234,212,0.12)'},
+                        'areaStyle': {'color': 'rgba(94,234,212,0.12)'},
                         'data': raised,
                     },
                     {
@@ -1487,8 +1493,7 @@ def _build_dashboard(state):
                 "margin-bottom:6px;display:block;")
             ui.echart({
                 'backgroundColor': 'transparent',
-                'tooltip': {'trigger': 'item',
-                             'formatter': 'UID: {c}'},
+                'tooltip': {'trigger': 'item', 'formatter': 'UID: {c}'},
                 'legend': {
                     'data': [_t("kpi_open"), _t("kpi_closed")],
                     'textStyle': {'color': '#808080', 'fontSize': 10},
@@ -3481,19 +3486,267 @@ def _open_add_dialog(stage, refresh_fn):
 
 
 # =====================================================================
-# LOGS
+# REPORT TEMPLATES DIALOG (Feature #10)
+# =====================================================================
+def _open_templates_dialog(state, refresh_logs_fn):
+    pid = state.get("project_id")
+    if not pid:
+        ui.notify(_t("setup_first"), type="warning")
+        return
+
+    try:
+        db.report_template_ensure_presets(pid)
+    except Exception as e:
+        print("[tpl] ensure presets failed: " + repr(e))
+
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:340px;max-width:96vw;width:620px;"
+        "max-height:92vh;overflow-y:auto;"
+    ):
+        ui.label("Report templates").classes("h1").style(
+            "margin-bottom:4px;")
+        ui.label("Presets control what appears on exported PDFs: logo, "
+                  "signature block, summary table, photos.").classes(
+            "mono-sm").style("margin-bottom:14px;display:block;"
+                              "line-height:1.5;")
+
+        holder = ui.element('div').style("width:100%;")
+
+        def render_list():
+            holder.clear()
+            try:
+                items = db.report_template_list(pid) or []
+            except Exception:
+                items = []
+            with holder:
+                if not items:
+                    ui.label("No templates yet.").classes("mono-sm").style(
+                        "color:#5a5a5a;padding:12px 0;")
+                    return
+                for t in items:
+                    with ui.element('div').classes("item-box"):
+                        with ui.element('div').style(
+                            "display:flex;justify-content:space-between;"
+                            "align-items:center;gap:8px;margin-bottom:6px;"
+                        ):
+                            with ui.element('div').style(
+                                "display:flex;align-items:center;gap:6px;"
+                            ):
+                                ui.label(str(t.get("name") or "")).style(
+                                    "font-size:12px;font-weight:600;"
+                                    "color:#e8e8e8;")
+                                if t.get("is_default"):
+                                    ui.html(
+                                        '<span class="badge-watch" '
+                                        'style="font-size:9px;">DEFAULT</span>'
+                                    )
+                            with ui.element('div').style(
+                                "display:flex;align-items:center;gap:4px;"
+                            ):
+                                def _make_default(tid=t.get("id")):
+                                    db.report_template_update(
+                                        tid, is_default=True)
+                                    ui.notify("Default set", type="positive")
+                                    render_list()
+                                    refresh_logs_fn()
+                                if not t.get("is_default"):
+                                    ui.button("Set default",
+                                              on_click=_make_default
+                                    ).props("flat dense no-caps size=sm"
+                                    ).style("color:#5eead4;font-size:10px;")
+
+                                def _edit(tid=t.get("id")):
+                                    _open_template_editor(
+                                        state, tid, on_done=render_list,
+                                        refresh_logs_fn=refresh_logs_fn)
+                                ui.button("Edit", on_click=_edit).props(
+                                    "flat dense no-caps size=sm").style(
+                                    "color:#60a5fa;font-size:10px;")
+
+                                def _del(tid=t.get("id"),
+                                          nm=t.get("name")):
+                                    db.report_template_delete(tid)
+                                    ui.notify("Deleted " + str(nm),
+                                              type="positive")
+                                    render_list()
+                                    refresh_logs_fn()
+                                ui.button(icon="close", on_click=_del).props(
+                                    "flat round dense size=xs").style(
+                                    "color:#f87171;")
+
+                        cfg = t.get("config") or {}
+                        bits = []
+                        for key, label in (
+                            ("include_logo", "logo"),
+                            ("include_signatures", "signatures"),
+                            ("include_summary", "summary"),
+                            ("include_photos", "photos"),
+                        ):
+                            if cfg.get(key):
+                                bits.append("✓ " + label)
+                            else:
+                                bits.append("·  " + label)
+                        ui.label("  ".join(bits)).classes("mono-sm").style(
+                            "font-size:10px;color:#b8b8b8;")
+
+        render_list()
+
+        ui.element('div').style(
+            "border-top:1px solid #1e1e1e;margin:14px 0 10px;")
+
+        def _new_tpl():
+            _open_template_editor(state, None, on_done=render_list,
+                                    refresh_logs_fn=refresh_logs_fn)
+        ui.button("+ New template", on_click=_new_tpl).classes(
+            BTN_PRIMARY).style("width:100%;")
+
+        with ui.element('div').style("margin-top:12px;"):
+            ui.button(_t("close"), on_click=dlg.close).classes(
+                BTN_SOFT).style("width:100%;")
+    dlg.open()
+
+
+def _open_template_editor(state, template_id=None, on_done=None,
+                            refresh_logs_fn=None):
+    pid = state.get("project_id")
+    if not pid:
+        return
+    existing = None
+    if template_id:
+        try:
+            existing = db.report_template_get(template_id)
+        except Exception:
+            existing = None
+
+    default_cfg = {
+        "include_logo": True,
+        "include_signatures": True,
+        "include_summary": True,
+        "include_photos": True,
+    }
+    cfg = dict(default_cfg)
+    if existing and isinstance(existing.get("config"), dict):
+        cfg.update(existing["config"])
+
+    title = "Edit template" if existing else "New template"
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:320px;max-width:95vw;width:460px;"
+    ):
+        ui.label(title).classes("h1").style("margin-bottom:14px;")
+
+        name_in = ui.input("Template name",
+                            value=(existing or {}).get("name") or "").style(
+            "width:100%;")
+
+        ui.element('div').style("height:6px;")
+        logo_cb = ui.checkbox("Include project logo",
+                                value=bool(cfg.get("include_logo"))).style(
+            "font-size:11px;")
+        sig_cb = ui.checkbox("Include signature blocks",
+                               value=bool(cfg.get("include_signatures"))
+                               ).style("font-size:11px;")
+        sum_cb = ui.checkbox("Include summary table",
+                               value=bool(cfg.get("include_summary"))
+                               ).style("font-size:11px;")
+        photo_cb = ui.checkbox("Include photos on notices",
+                                 value=bool(cfg.get("include_photos"))
+                                 ).style("font-size:11px;")
+        default_cb = ui.checkbox("Make this the default",
+                                   value=bool((existing or {}).get(
+                                       "is_default"))).style(
+            "font-size:11px;margin-top:6px;")
+
+        def _save():
+            nm = (name_in.value or "").strip()
+            if not nm:
+                ui.notify("Template name required.", type="warning")
+                return
+            new_cfg = {
+                "include_logo": bool(logo_cb.value),
+                "include_signatures": bool(sig_cb.value),
+                "include_summary": bool(sum_cb.value),
+                "include_photos": bool(photo_cb.value),
+            }
+            try:
+                if existing:
+                    db.report_template_update(
+                        existing["id"], name=nm, config=new_cfg,
+                        is_default=bool(default_cb.value))
+                else:
+                    db.report_template_add(
+                        pid, nm, new_cfg,
+                        is_default=bool(default_cb.value))
+            except Exception as ex:
+                ui.notify("Save failed: " + str(ex), type="negative")
+                return
+            ui.notify("Template saved.", type="positive")
+            dlg.close()
+            if on_done:
+                try: on_done()
+                except Exception: pass
+            if refresh_logs_fn:
+                try: refresh_logs_fn()
+                except Exception: pass
+
+        with ui.element('div').style(
+            "display:flex;gap:8px;margin-top:16px;"
+        ):
+            ui.button(_t("save"), on_click=_save).classes(
+                BTN_PRIMARY).style("flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
+                BTN_SOFT).style("flex:1;")
+    dlg.open()
+
+
+# =====================================================================
+# LOGS — with Bulk actions (#7) + Templates (#10)
 # =====================================================================
 def _build_logs(state):
     if not state.get("project_id"):
         _render_no_project(state, state["render_main"])
         return
+
+    # Feature #7 — selection state
+    sel_state = {"on": False, "picked": set()}
+
+    # Feature #10 — templates are seeded on first access
+    try:
+        db.report_template_ensure_presets(state["project_id"])
+    except Exception as e:
+        print("[tpl] preset ensure failed: " + repr(e))
+
     with ui.element('div').classes("section-head"):
         ui.label(_t("logs_title")).classes("h1")
 
-        def _refresh():
-            state["render_main"]()
-        ui.button(icon="refresh", on_click=_refresh).props(
-            "flat round dense size=sm").style("color:#808080;")
+        def _toggle_sel():
+            sel_state["on"] = not sel_state["on"]
+            sel_state["picked"].clear()
+            log_list.refresh()
+            _render_sel_btn()
+
+        sel_btn_holder = ui.element('span')
+
+        def _render_sel_btn():
+            sel_btn_holder.clear()
+            with sel_btn_holder:
+                if sel_state["on"]:
+                    ui.button("Cancel select", icon="close",
+                              on_click=_toggle_sel).classes(BTN_SOFT).style(
+                        "font-size:10px;min-height:28px;")
+                else:
+                    ui.button("Select", icon="checklist",
+                              on_click=_toggle_sel).classes(BTN_SOFT).style(
+                        "font-size:10px;min-height:28px;")
+
+        with ui.element('div').style(
+            "display:flex;align-items:center;gap:6px;"
+        ):
+            _render_sel_btn()
+
+            def _refresh():
+                state["render_main"]()
+            ui.button(icon="refresh", on_click=_refresh).props(
+                "flat round dense size=sm").style("color:#808080;")
 
     ui.label(_t("logs_sub")).classes("muted").style("margin-bottom:8px;")
 
@@ -3522,7 +3775,27 @@ def _build_logs(state):
                 "min-height:26px;")
 
     fstate = {"filter": "all", "query": "", "defect_type": "all",
-              "watch_only": False}
+              "watch_only": False, "template_id": None}
+
+    # Template picker — preselected to the project default if available
+    try:
+        default_tpl = db.report_template_get_default(state["project_id"])
+        if default_tpl:
+            fstate["template_id"] = default_tpl["id"]
+    except Exception:
+        default_tpl = None
+
+    def _current_template_config():
+        tid = fstate.get("template_id")
+        if not tid:
+            return None
+        try:
+            t = db.report_template_get(tid)
+            if t and isinstance(t.get("config"), dict):
+                return t["config"]
+        except Exception:
+            pass
+        return None
 
     @ui.refreshable
     def log_list():
@@ -3537,7 +3810,6 @@ def _build_logs(state):
             rows = [r for r in rows
                     if (r.get("defect_type") or "General")
                     == fstate["defect_type"]]
-        # Feature 6 — watch-only filter
         if fstate.get("watch_only"):
             try:
                 watched = db.watch_list_for_user(state.get("user_id"))
@@ -3567,6 +3839,38 @@ def _build_logs(state):
                 " · " + _t("closed") + " " + str(len(rows) - open_count)
             ).classes("mono-sm").style("margin-bottom:10px;")
 
+        # Feature #10 — template picker + manage + export buttons
+        with ui.element('div').style(
+            "display:flex;gap:6px;align-items:center;margin-bottom:8px;"
+        ):
+            try:
+                tpls = db.report_template_list(state["project_id"]) or []
+            except Exception:
+                tpls = []
+            if tpls:
+                tpl_opts = {}
+                for t in tpls:
+                    lbl = t.get("name") or ("Template " + str(t.get("id")))
+                    if t.get("is_default"):
+                        lbl = "★ " + lbl
+                    tpl_opts[t.get("id")] = lbl
+                tpl_sel = ui.select(
+                    tpl_opts,
+                    value=fstate.get("template_id") or
+                    list(tpl_opts.keys())[0],
+                    label="Template",
+                ).style("flex:1;").props("dense")
+
+                def _on_tpl(e):
+                    fstate["template_id"] = e.value
+                tpl_sel.on("update:model-value", _on_tpl)
+
+            def _manage():
+                _open_templates_dialog(state, log_list.refresh)
+            ui.button("Manage", icon="tune",
+                      on_click=_manage).classes(BTN_SOFT).style(
+                "font-size:10px;min-height:30px;")
+
         with ui.element('div').style(
             "display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;"
             "margin-bottom:12px;"
@@ -3577,7 +3881,8 @@ def _build_logs(state):
                     return
                 pdf = svc.build_register_pdf(
                     state["project"], rows,
-                    logo_bytes=state["project"].get("logo_bytes"))
+                    logo_bytes=state["project"].get("logo_bytes"),
+                    template_config=_current_template_config())
                 ui.download(pdf, filename="defect_register.pdf")
 
             def export_closure():
@@ -3586,7 +3891,8 @@ def _build_logs(state):
                     return
                 pdf = svc.build_closure_pdf(
                     state["project"], rows,
-                    logo_bytes=state["project"].get("logo_bytes"))
+                    logo_bytes=state["project"].get("logo_bytes"),
+                    template_config=_current_template_config())
                 ui.download(pdf, filename="closure_report.pdf")
 
             def export_excel():
@@ -3615,8 +3921,107 @@ def _build_logs(state):
             ui.label(msg).classes("mono-sm").style(
                 "text-align:center;padding:32px 0;")
             return
+
+        # Feature #7 — action bar holder
+        bulk_holder = ui.element('div').style("width:100%;")
+
+        def _clear_picks():
+            sel_state["picked"].clear()
+            log_list.refresh()
+
+        def _bulk_close():
+            ids = list(sel_state["picked"])
+            if not ids:
+                return
+            n = 0
+            for did in ids:
+                try:
+                    db.close_defect(did)
+                    try:
+                        d = db.get_defect(did) or {}
+                        db.activity_add(
+                            d.get("project_id"), state["user_id"],
+                            "closed_defect", target_type="defect",
+                            target_id=d.get("uid") or "",
+                            details="bulk close",
+                            user_name=(state.get("user") or {}).get(
+                                "name", ""))
+                    except Exception:
+                        pass
+                    n += 1
+                except Exception as e:
+                    print("[bulk] close " + str(did) + " failed: " + repr(e))
+            ui.notify(str(n) + " closed.", type="positive")
+            _clear_picks()
+
+        def _bulk_delete():
+            ids = list(sel_state["picked"])
+            if not ids:
+                return
+            _open_bulk_delete_dialog(state, ids, after=_clear_picks)
+
+        def _bulk_reassign():
+            ids = list(sel_state["picked"])
+            if not ids:
+                return
+            _open_bulk_reassign_dialog(state, ids, after=_clear_picks)
+
+        def _bulk_watch():
+            ids = list(sel_state["picked"])
+            if not ids:
+                return
+            n = 0
+            for did in ids:
+                try:
+                    ok, _ = db.watch_add(did, state["user_id"])
+                    if ok:
+                        n += 1
+                except Exception:
+                    pass
+            ui.notify(str(n) + " watched.", type="positive")
+            _clear_picks()
+
+        def _render_bulk_bar():
+            bulk_holder.clear()
+            if not sel_state["on"]:
+                return
+            n = len(sel_state["picked"])
+            with bulk_holder:
+                if n == 0:
+                    ui.label("Select notices below to bulk-act.").classes(
+                        "mono-sm").style(
+                        "font-size:10px;color:#5a5a5a;"
+                        "padding:6px 2px;display:block;")
+                    return
+                with ui.element('div').classes("bulk-bar"):
+                    ui.label(str(n) + " selected").style(
+                        "font-size:11px;font-weight:700;color:#5eead4;"
+                        "align-self:center;margin-right:6px;")
+
+                    if _can(state, "close"):
+                        ui.button("Close all", icon="check",
+                                  on_click=_bulk_close).classes(
+                            BTN_PRIMARY).style("flex:1;")
+                    if _can(state, "edit"):
+                        ui.button("Reassign sub", icon="engineering",
+                                  on_click=_bulk_reassign).classes(
+                            BTN_SOFT).style("flex:1;")
+                    if _can(state, "delete_open"):
+                        ui.button("Delete all", icon="delete",
+                                  on_click=_bulk_delete).classes(
+                            BTN_DANGER).style("flex:1;")
+                    ui.button("Watch all", icon="star",
+                              on_click=_bulk_watch).classes(
+                        BTN_SOFT).style("flex:1;")
+                    ui.button("Clear", icon="clear_all",
+                              on_click=_clear_picks).classes(
+                        BTN_OUTLINE).style("flex:1;")
+
+        _render_bulk_bar()
+
         for r in rows:
-            _render_log_card(r, log_list.refresh, state)
+            _render_log_card(r, log_list.refresh, state,
+                              sel_state, _render_bulk_bar)
 
     def _on_filter(e):
         fstate["filter"] = (e.value if e and e.value else "all")
@@ -3655,7 +4060,6 @@ def _build_logs(state):
         on_change=_on_dtype,
     ).style("width:100%;margin-bottom:8px;").props("dense")
 
-    # Feature 6 — watch-only toggle
     ui.checkbox("⭐ Watching only", value=False,
                  on_change=_on_watch).style(
         "font-size:11px;color:#e8e8e8;margin-bottom:8px;")
@@ -3667,7 +4071,95 @@ def _build_logs(state):
     log_list()
 
 
-def _render_log_card(row, refresh_fn, state=None):
+def _open_bulk_delete_dialog(state, defect_ids, after=None):
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:300px;max-width:95vw;width:420px;"
+    ):
+        ui.label("Delete " + str(len(defect_ids)) + " notices?").classes(
+            "h3").style("margin-bottom:6px;")
+        ui.label("This cannot be undone.").classes("muted").style(
+            "margin-bottom:14px;")
+
+        def _yes():
+            n = 0
+            for did in defect_ids:
+                try:
+                    d = db.get_defect(did) or {}
+                    db.delete_defect(did)
+                    try:
+                        db.activity_add(
+                            d.get("project_id"), state["user_id"],
+                            "deleted_defect", target_type="defect",
+                            target_id=d.get("uid") or "",
+                            details="bulk delete",
+                            user_name=(state.get("user") or {}).get(
+                                "name", ""))
+                    except Exception:
+                        pass
+                    n += 1
+                except Exception as e:
+                    print("[bulk] delete " + str(did) + " failed: " + repr(e))
+            ui.notify(str(n) + " deleted.", type="positive")
+            dlg.close()
+            if after:
+                try: after()
+                except Exception: pass
+
+        with ui.element('div').style("display:flex;gap:8px;"):
+            ui.button("Delete all", on_click=_yes).classes(BTN_DANGER).style(
+                "flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(BTN_SOFT)
+    dlg.open()
+
+
+def _open_bulk_reassign_dialog(state, defect_ids, after=None):
+    pid = state.get("project_id")
+    subs = []
+    try:
+        subs = db.list_subcontractors(pid) or []
+    except Exception:
+        subs = []
+    opts = {"": "— choose —"}
+    for s in subs:
+        nm = s.get("name")
+        if nm and nm not in opts:
+            opts[nm] = nm
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:320px;max-width:95vw;width:440px;"
+    ):
+        ui.label("Reassign " + str(len(defect_ids)) + " notices").classes(
+            "h3").style("margin-bottom:10px;")
+        ui.label("New subcontractor:").classes("label").style(
+            "display:block;margin-bottom:4px;")
+        sel = ui.select(opts, value="").style("width:100%;").props("dense")
+        new_in = ui.input(placeholder="or type a new name").style(
+            "width:100%;margin-top:8px;")
+
+        def _apply():
+            nm = (new_in.value or "").strip() or (sel.value or "").strip()
+            if not nm:
+                ui.notify("Pick or type a subcontractor.", type="warning")
+                return
+            n = db.bulk_update_subcontractor(defect_ids, nm)
+            ui.notify(str(n) + " reassigned to " + nm + ".",
+                       type="positive")
+            dlg.close()
+            if after:
+                try: after()
+                except Exception: pass
+
+        with ui.element('div').style(
+            "display:flex;gap:8px;margin-top:16px;"
+        ):
+            ui.button("Apply", on_click=_apply).classes(
+                BTN_PRIMARY).style("flex:1;")
+            ui.button(_t("cancel_btn"), on_click=dlg.close).classes(
+                BTN_SOFT).style("flex:1;")
+    dlg.open()
+
+
+def _render_log_card(row, refresh_fn, state=None, sel_state=None,
+                      on_pick_change=None):
     status = row.get("status", "open")
     is_open = status == "open"
 
@@ -3714,14 +4206,20 @@ def _render_log_card(row, refresh_fn, state=None):
     except Exception:
         n_comments = 0
 
-    # Feature 6 — is user watching this defect?
     try:
         _uid = state.get("user_id") if state else None
-        is_watching_card = bool(_uid and db.watch_is_watching(row.get("id"), _uid))
+        is_watching_card = bool(_uid and db.watch_is_watching(
+            row.get("id"), _uid))
     except Exception:
         is_watching_card = False
 
+    selection_on = bool(sel_state and sel_state.get("on"))
+    is_picked = bool(sel_state and row.get("id") in sel_state.get("picked", set()))
+
     with ui.element('div').classes("log-row") as card:
+        if selection_on:
+            card.style("border-color:#5eead4;" if is_picked else "")
+
         with ui.element('div').style(
             "display:flex;justify-content:space-between;"
             "align-items:flex-start;gap:10px;"
@@ -3729,6 +4227,24 @@ def _render_log_card(row, refresh_fn, state=None):
             with ui.element('div').style(
                 "flex:1;min-width:0;display:flex;gap:8px;"
             ):
+                if selection_on:
+                    def _toggle_pick(e):
+                        try:
+                            did = row.get("id")
+                            if e.value:
+                                sel_state["picked"].add(did)
+                            else:
+                                sel_state["picked"].discard(did)
+                        except Exception:
+                            pass
+                        if on_pick_change:
+                            try: on_pick_change()
+                            except Exception: pass
+
+                    ui.checkbox(value=is_picked,
+                                 on_change=_toggle_pick).props(
+                        "dense size=sm").style("align-self:flex-start;")
+
                 ui.html('<div class="status-bar ' + bar + '"></div>')
                 with ui.element('div').style("flex:1;min-width:0;"):
                     ui.label(str(title) + extra).classes("mono-lg").style(
@@ -3767,7 +4283,6 @@ def _render_log_card(row, refresh_fn, state=None):
                             '💬 ' + str(n_comments) + '</span>'
                         )
 
-                    # Feature 6 — watch badge
                     if is_watching_card:
                         ui.html(
                             '<span class="badge-watch" style="margin-top:4px;'
@@ -3806,11 +4321,12 @@ def _render_log_card(row, refresh_fn, state=None):
                 else:
                     ui.html('<span class="badge-closed">CLOSED</span>')
 
-        def _click():
-            uid = state.get("user_id") if state else None
-            _show_defect_dialog(row.get("id"), refresh_fn, user_id=uid,
-                                  state=state)
-        card.on("click", _click)
+        if not selection_on:
+            def _click():
+                uid = state.get("user_id") if state else None
+                _show_defect_dialog(row.get("id"), refresh_fn, user_id=uid,
+                                      state=state)
+            card.on("click", _click)
 
 
 # =====================================================================
@@ -3877,7 +4393,6 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
                     "color:#fbbf24;font-size:11px;font-weight:600;"
                     "margin-top:6px;")
 
-            # -------- Feature 6 — WATCH TOGGLE --------
             if user_id:
                 watch_holder = ui.element('div').style(
                     "width:100%;margin-top:8px;")
@@ -3922,7 +4437,6 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
                                     "font-size:9px;color:#5a5a5a;")
 
                 render_watch()
-            # -------- /Feature 6 --------
 
         with ui.element('div').style(
             "padding:16px;max-height:60vh;overflow-y:auto;"
@@ -4569,7 +5083,7 @@ def _open_change_password_dialog(state):
 
 
 # =====================================================================
-# TEAM CHAT — real-time, 60s delete, role colors
+# TEAM CHAT
 # =====================================================================
 def _chat_render_body(body):
     safe = _html_mod.escape(str(body or ""))
@@ -4917,7 +5431,7 @@ def _build_chat(state):
 
 
 # =====================================================================
-# MS CHAT — Q&A + document check
+# MS CHAT
 # =====================================================================
 def _build_ms_chat(state):
     if not state.get("project_id"):
@@ -5304,7 +5818,7 @@ def _open_member_profile(user_id):
 
 
 # =====================================================================
-# ADMIN PANEL — audit trail + user management (admin only)
+# ADMIN PANEL
 # =====================================================================
 def _build_admin(state):
     if not state.get("project_id"):
