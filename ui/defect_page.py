@@ -10,6 +10,7 @@ ui/defect_page.py — Full file.
 - Defect-type filter in logs.
 - Engineer name + place under every log title.
 - Interactive ECharts dashboard.
+- Feature 5: per-defect comment thread.
 """
 import io
 import re
@@ -603,6 +604,8 @@ async def _get_browser_location():
     except Exception as e:
         print("[geo] parse failed: " + repr(e))
     return None
+
+
 def _chat_author_color(title):
     t = (title or "").lower()
     if "consultant" in t or "استشاري" in t:
@@ -654,13 +657,11 @@ def _preprocess_for_ocr(file_bytes, mime_type):
     try:
         import io as _io
         img = Image.open(_io.BytesIO(file_bytes))
-        # 1) Fix rotation from EXIF (phone portrait shots come in rotated)
         img = ImageOps.exif_transpose(img)
         if img.mode not in ("L", "RGB"):
             img = img.convert("RGB")
         w, h = img.size
         longest = max(w, h)
-        # 2) Upscale tiny handwriting, cap huge images for the model
         if longest < 1400:
             scale = 1400.0 / float(longest)
             img = img.resize((int(w * scale), int(h * scale)),
@@ -669,7 +670,6 @@ def _preprocess_for_ocr(file_bytes, mime_type):
             scale = 2400.0 / float(longest)
             img = img.resize((int(w * scale), int(h * scale)),
                               Image.LANCZOS)
-        # 3) Sharpen — improves word boundaries, critical for Arabic
         img = img.filter(ImageFilter.UnsharpMask(radius=1.4,
                                                   percent=140,
                                                   threshold=3))
@@ -688,10 +688,7 @@ async def _ocr_handwriting(file_bytes, mime_type):
         from google.genai import types
     except Exception as e:
         return None, "google-genai not available: " + repr(e)
-
-    # Preprocess: rotate / upscale / sharpen
     payload, mime = _preprocess_for_ocr(file_bytes, mime_type)
-
     try:
         part = types.Part.from_bytes(data=payload, mime_type=mime)
     except Exception as e:
@@ -701,15 +698,11 @@ async def _ocr_handwriting(file_bytes, mime_type):
                                        temperature=0.0, timeout=45)
     except Exception as e:
         return None, "AI call failed: " + str(e)
-
     text = (raw or "").strip()
-    # Strip wrapping quotes / backticks the model sometimes adds
     if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'", "`"):
         text = text[1:-1].strip()
-    # Collapse 3+ blank lines down to 2
     while "\n\n\n" in text:
         text = text.replace("\n\n\n", "\n\n")
-
     if not text:
         return "", _t("ocr_empty")
     return text, None
@@ -880,6 +873,8 @@ def _inject_theme():
   .badge-ok { color: var(--success); border: 1px solid rgba(74,222,128,0.35); }
   .badge-warn { color: var(--warn); border: 1px solid rgba(251,191,36,0.35); }
   .badge-fail { color: var(--danger); border: 1px solid rgba(248,113,113,0.35); }
+  .badge-comment { color: var(--accent);
+                   border: 1px solid rgba(94,234,212,0.3); }
   .q-notification { border-radius: 3px !important; font-weight: 500 !important;
                     font-family: 'JetBrains Mono', monospace !important;
                     font-size: 11px !important;
@@ -1022,7 +1017,6 @@ def _inject_theme():
   .avatar-big img { width: 100%; height: 100%; object-fit: cover; }
   .chart-card { background: var(--surface); border: 1px solid var(--border);
                 border-radius: 4px; padding: 12px; margin-bottom: 12px; }
-                /* Defect status bar (item 2/3) */
   .status-bar {
     display: inline-block; width: 6px; height: 22px;
     border-radius: 2px; vertical-align: middle; margin-right: 8px;
@@ -1047,7 +1041,6 @@ def _inject_theme():
     font-variant-numeric: tabular-nums;
   }
   .log-dates b { color: #e8e8e8; }
-  /* Floating chat tools */
   .chat-tools {
     position: fixed; top: 110px; right: 14px; z-index: 500;
     display: flex; flex-direction: column; gap: 6px;
@@ -1058,10 +1051,8 @@ def _inject_theme():
     border: 1px solid #262626 !important;
     box-shadow: 0 4px 10px rgba(0,0,0,0.4) !important;
   }
-  
   .ocr-box { background: var(--surface-2); border: 1px dashed var(--border-2);
              border-radius: 4px; padding: 10px; margin-top: 6px; }
-  /* MS chat */
   .ms-msg { background: var(--surface); border: 1px solid var(--border);
             border-radius: 4px; padding: 12px 14px; margin-bottom: 10px; }
   .ms-msg.kind-question { border-left: 3px solid #60a5fa; }
@@ -1099,6 +1090,17 @@ def _inject_theme():
                  color: var(--accent); font-weight: 700; font-size: 11px;
                  border: 1px solid var(--border-2); overflow: hidden; }
   .team-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  /* Feature 5 — comments */
+  .comment-row { background: #101010; border: 1px solid #1e1e1e;
+                 border-radius: 3px; padding: 8px 10px;
+                 margin-bottom: 4px; }
+  .comment-author { font-size: 10px; color: var(--accent);
+                    font-weight: 600; }
+  .comment-time { font-size: 9px; color: var(--muted-2);
+                  font-variant-numeric: tabular-nums; }
+  .comment-body { font-size: 11px; color: var(--text); margin-top: 4px;
+                  line-height: 1.5; white-space: pre-wrap;
+                  word-break: break-word; }
 </style>
 """.replace("__DIR__", rtl)
     ui.add_head_html(html)
@@ -1153,6 +1155,8 @@ def _is_admin_ui(user_id):
         return db.is_admin(user_id)
     except Exception:
         return False
+
+
 def _can(state, action):
     """Check permission for the current user on the current project."""
     try:
@@ -1178,7 +1182,6 @@ def build_defect_ui(user_id):
     inject_pwa()
     user = db.get_user(user_id)
 
-    # Block suspended users before anything else renders
     if user and db.is_suspended(user_id):
         with ui.element('div').classes("card").style(
             "max-width:420px;margin:80px auto;text-align:center;"
@@ -2094,7 +2097,6 @@ def _open_invite_member_dialog(state, refresh_fn):
             tab_link = ui.tab("Share invite link")
 
         with ui.tab_panels(tabs, value=tab_email).style("width:100%;"):
-            # ---------- EMAIL PANEL ----------
             with ui.tab_panel(tab_email):
                 ui.label(_t("team_invite_hint")).classes("mono-sm").style(
                     "margin-bottom:10px;display:block;line-height:1.5;")
@@ -2160,7 +2162,6 @@ def _open_invite_member_dialog(state, refresh_fn):
 
                 ui.button(_t("team_add"), on_click=_save_email).classes(
                     BTN_PRIMARY).style("width:100%;margin-top:14px;")
-            # ---------- LINK PANEL ----------
             with ui.tab_panel(tab_link):
                 ui.label("Generate a link. Anyone with this link can "
                           "join the project with the role below. "
@@ -2208,7 +2209,6 @@ def _open_invite_member_dialog(state, refresh_fn):
                         except Exception:
                             pass
 
-                        # QR code
                         try:
                             from services.pdf_service import generate_qr_code
                             qr_buf = generate_qr_code(url)
@@ -2257,7 +2257,6 @@ def _open_invite_member_dialog(state, refresh_fn):
 
                 result_holder
 
-                # Existing active links
                 existing = db.invite_list_for_project(state["project_id"])
                 if existing:
                     ui.element('div').style(
@@ -2301,6 +2300,7 @@ def _open_invite_member_dialog(state, refresh_fn):
                 BTN_SOFT).style("flex:1;")
 
     dlg.open()
+
 
 # =====================================================================
 # DRAWER
@@ -2475,7 +2475,6 @@ def _build_drawer(state, drawer):
                                 _t("clauses_count")
                             ).classes("mono-sm").style("font-size:9px;")
 
-                # 👇 NEW — ACTIVITY SECTION — paste here 👇
                 ui.element('div').style(
                     "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
 
@@ -2514,7 +2513,6 @@ def _build_drawer(state, drawer):
                                     "mono-sm").style("font-size:9px;")
                             ui.label(str(a.get("created_at") or "")[:16]).classes(
                                 "mono-sm").style("font-size:9px;color:#5a5a5a;")
-                # 👆 END of new block 👆
 
             ui.element('div').style(
                 "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
@@ -2862,7 +2860,6 @@ def _build_new_defect(state):
         ui.label(_t("photo_title")).classes("h1").style("margin-bottom:3px;")
         ui.label(_t("photo_sub")).classes("muted").style("margin-bottom:10px;")
 
-        # -------- SECURITY MESSAGE --------
         ui.html(
             '<div style="background:#101010;border:1px solid #1e1e1e;'
             'border-left:3px solid #fbbf24;border-radius:3px;'
@@ -2875,7 +2872,6 @@ def _build_new_defect(state):
             '</div>'
         )
 
-        # -------- LOCATION STATUS --------
         loc_bar = ui.element('div').style(
             "background:#101010;border:1px solid #1e1e1e;border-radius:3px;"
             "padding:8px 10px;margin-bottom:12px;font-size:11px;"
@@ -2937,7 +2933,6 @@ def _build_new_defect(state):
                 ui.notify(_t("empty_file"), type="warning")
                 return
 
-            # Refresh GPS at the moment of upload
             pos = await _get_browser_location()
             if not pos:
                 ui.notify(
@@ -3021,7 +3016,6 @@ def _build_new_defect(state):
             _render_body_contents(state, stage, rebuild_body)
 
     rebuild_body()
-
 
 
 def _open_no_photo_dialog(state, stage, refresh_fn):
@@ -3706,6 +3700,12 @@ def _render_log_card(row, refresh_fn, state=None):
     lat = row.get("lat")
     lng = row.get("lng")
 
+    # Feature 5 — comment count
+    try:
+        n_comments = db.comment_count(row.get("id"))
+    except Exception:
+        n_comments = 0
+
     with ui.element('div').classes("log-row") as card:
         with ui.element('div').style(
             "display:flex;justify-content:space-between;"
@@ -3744,6 +3744,14 @@ def _render_log_card(row, refresh_fn, state=None):
                         ui.html('<span class="badge-seen" style="margin-top:4px;'
                                 'display:inline-block;">' +
                                 _html_mod.escape(str(dt)) + '</span>')
+
+                    # Feature 5 — comment badge
+                    if n_comments > 0:
+                        ui.html(
+                            '<span class="badge-comment" style="margin-top:4px;'
+                            'margin-left:4px;display:inline-block;">'
+                            '💬 ' + str(n_comments) + '</span>'
+                        )
 
                     if lat is not None and lng is not None:
                         gmaps = ("https://www.google.com/maps/search/"
@@ -3793,6 +3801,20 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
         return
     is_consultant = (d.get("raise_type") or "qc_internal") == "consultant"
 
+    def _current_author_name():
+        if state:
+            u = state.get("user") or {}
+            nm = (u.get("name") or u.get("email") or "")
+            if nm:
+                return nm
+        try:
+            if user_id:
+                u = db.get_user(user_id) or {}
+                return (u.get("name") or u.get("email") or "user")
+        except Exception:
+            pass
+        return "user"
+
     with ui.dialog() as dialog, ui.card().style(
         "padding:0;max-width:560px;width:95vw;overflow:hidden;"
     ):
@@ -3804,7 +3826,6 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
                 "ZONE " + str(d["zone"]) + "  " + str(d["subcontractor"])
             ).classes("mono-sm").style("margin-top:4px;")
 
-            # 👇 NEW — insert this block right here 👇
             if d.get("lat") is not None and d.get("lng") is not None:
                 gmaps = ("https://www.google.com/maps/search/?api=1&query=" +
                          str(d["lat"]) + "," + str(d["lng"]))
@@ -3816,7 +3837,6 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
                     "{:.5f}, {:.5f}".format(float(d["lat"]),
                                               float(d["lng"])) + '</a>'
                 )
-            # 👆 END of new block 👆
 
             bits = []
             if d.get("engineer_name"):
@@ -3884,6 +3904,114 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
                     if s.get("repair_action"):
                         ui.label(">" + str(s["repair_action"])).classes(
                             "mono-sm").style("margin-top:3px;")
+
+            # -------- Feature 5 — COMMENTS SECTION --------
+            ui.element('div').style(
+                "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
+            with ui.element('div').style(
+                "display:flex;justify-content:space-between;"
+                "align-items:center;margin-bottom:8px;"
+            ):
+                ui.label("COMMENTS").classes("label")
+                try:
+                    cc0 = db.comment_count(d["id"])
+                except Exception:
+                    cc0 = 0
+                if cc0 > 0:
+                    ui.html('<span style="font-size:10px;'
+                            'color:#5eead4;font-weight:600;">'
+                            + str(cc0) + '</span>')
+
+            comments_holder = ui.element('div').style("width:100%;")
+
+            def render_comments():
+                comments_holder.clear()
+                try:
+                    items = db.comment_list(d["id"]) or []
+                except Exception:
+                    items = []
+                with comments_holder:
+                    if not items:
+                        ui.label("No comments yet. Start the discussion."
+                                ).classes("mono-sm").style(
+                            "font-size:10px;color:#5a5a5a;"
+                            "padding:6px 0;")
+                    for c in items:
+                        cid = c.get("id")
+                        author = c.get("author") or "user"
+                        body_text = c.get("body") or ""
+                        when = str(c.get("created_at") or "")[:16]
+                        is_mine = (user_id and
+                                    c.get("user_id") == user_id)
+                        is_admin_user = False
+                        try:
+                            is_admin_user = bool(
+                                user_id and db.is_admin(user_id))
+                        except Exception:
+                            is_admin_user = False
+                        can_del = bool(is_mine or is_admin_user)
+                        with ui.element('div').classes("comment-row"):
+                            with ui.element('div').style(
+                                "display:flex;justify-content:space-between;"
+                                "align-items:center;gap:8px;"
+                            ):
+                                ui.label(str(author)).classes(
+                                    "comment-author")
+                                with ui.element('div').style(
+                                    "display:flex;align-items:center;gap:6px;"
+                                ):
+                                    ui.label(when).classes(
+                                        "comment-time")
+                                    if can_del:
+                                        def _del_comment(cx=cid):
+                                            ok, _reason = db.comment_delete(
+                                                cx, user_id=user_id,
+                                                is_admin_user=is_admin_user)
+                                            if ok:
+                                                render_comments()
+                                            else:
+                                                ui.notify(
+                                                    "Could not delete "
+                                                    "comment.",
+                                                    type="warning")
+                                        ui.button(icon="close",
+                                                  on_click=_del_comment
+                                        ).props(
+                                            "flat round dense size=xs"
+                                        ).style("color:#5a5a5a;")
+                            ui.label(str(body_text)).classes("comment-body")
+
+            render_comments()
+
+            new_comment_in = ui.textarea(
+                placeholder="Add a comment..."
+            ).style("width:100%;margin-top:6px;").props("dense autogrow")
+
+            def _post_comment():
+                txt = (new_comment_in.value or "").strip()
+                if not txt:
+                    return
+                if not user_id:
+                    ui.notify("Sign in to comment.", type="warning")
+                    return
+                try:
+                    db.comment_add(d["id"], user_id,
+                                    _current_author_name(), txt)
+                except Exception as ex:
+                    ui.notify("Comment failed: " + str(ex),
+                                type="negative")
+                    return
+                new_comment_in.value = ""
+                render_comments()
+                try:
+                    on_close_cb()
+                except Exception:
+                    pass
+
+            ui.button("Post comment", icon="send",
+                      on_click=_post_comment).classes(BTN_SOFT).style(
+                "width:100%;margin-top:6px;")
+            # -------- /Feature 5 --------
 
         with ui.element('div').style(
             "padding:12px 16px 16px;border-top:1px solid #1e1e1e;"
@@ -4603,7 +4731,6 @@ def _build_chat(state):
                                     pass
                             ui.timer(remaining, _hide, once=True)
 
-    # Floating search button (fixed on right)
     with ui.element('div').classes("chat-tools"):
         def _toggle_search():
             search_box.set_visibility(not search_box.visible)
@@ -4684,7 +4811,6 @@ def _build_chat(state):
         body_in.on('keydown.enter', lambda _: _send())
 
     state.setdefault("_chat_last_id", db.chat_max_id(pid))
-    # jump to bottom on open (two attempts — one for after layout)
     ui.run_javascript(
         "window.scrollTo({top: document.body.scrollHeight,"
         " behavior:'auto'});")
@@ -4736,7 +4862,6 @@ def _build_ms_chat(state):
     user = state.get("user") or {}
     my_name = (user.get("name") or user.get("email") or "me")
 
-    # Floating tool buttons (top-right, always visible)
     with ui.element('div').classes("chat-tools"):
         def _clear_hist():
             try:
@@ -4792,7 +4917,6 @@ def _build_ms_chat(state):
 
     ms_list()
 
-    # Composer
     with ui.element('div').classes("chat-composer"):
         ui.label(_t("ms_chat_ask")).classes("label").style(
             "display:block;margin-bottom:4px;")
@@ -4923,7 +5047,6 @@ def _build_ms_chat(state):
             _t("ms_chat_check_btn") + "'")
         doc_status
 
-    # scroll to bottom on open
     ui.run_javascript(
         "window.scrollTo({top: document.body.scrollHeight,"
         " behavior:'auto'});")
@@ -5111,6 +5234,8 @@ def _open_member_profile(user_id):
             "width:100%;"
         )
     dlg.open()
+
+
 # =====================================================================
 # ADMIN PANEL — audit trail + user management (admin only)
 # =====================================================================
