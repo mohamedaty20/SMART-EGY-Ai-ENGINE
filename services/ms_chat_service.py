@@ -97,6 +97,107 @@ def _format_clauses_for_prompt(clauses, limit=60):
     return "\n".join(lines)
 
 
+_CHAPTERS_PROMPT = """You are reading a construction Method Statement (MS).
+Extract the CHAPTER / SECTION structure (headings only).
+
+Return ONE JSON object with this exact shape:
+{
+  "chapters": [
+    {"id": "1", "title": "Scope"},
+    {"id": "2", "title": "Materials"},
+    {"id": "2.1", "title": "Concrete"},
+    {"id": "2.2", "title": "Reinforcement"},
+    {"id": "3", "title": "Execution"}
+  ]
+}
+
+RULES:
+- "id" is the section number as a string ("1", "2.1", "3.4.2"), or "" if
+  the heading has no number.
+- "title" is the heading text, max 120 chars.
+- Include ALL headings you can find: numbered sections, sub-sections,
+  appendix, revision history, references, tables of contents.
+- Do NOT invent headings. Only headings that actually appear in the text.
+- Max 200 items.
+- Order as they appear in the document.
+- Output ONLY the JSON object. No prose. No markdown.
+
+MS TEXT STARTS BELOW
+--------
+__MS_TEXT__
+--------
+"""
+
+
+def _find_chapter_line(lines, cid, title, used):
+    """Find the 0-based line index where a chapter heading appears.
+    Prefers a line that starts with the chapter number; falls back to a
+    substring match against the title."""
+    cid_pat = None
+    if cid:
+        try:
+            cid_pat = re.compile(r"^\s*" + re.escape(str(cid)) +
+                                  r"[\s\.\)\-:]")
+        except Exception:
+            cid_pat = None
+    if cid_pat:
+        for i, ln in enumerate(lines):
+            if i in used:
+                continue
+            s = ln.strip()
+            if not s or len(s) > 200:
+                continue
+            if cid_pat.match(s):
+                used.add(i)
+                return i
+    title_low = (title or "").strip().lower()
+    if title_low:
+        for i, ln in enumerate(lines):
+            if i in used:
+                continue
+            s = ln.strip().lower()
+            if not s or len(s) > 200:
+                continue
+            if title_low in s:
+                used.add(i)
+                return i
+    return -1
+
+
+async def extract_chapters_from_full_text(full_text, call_gemini_json_fn):
+    """Return [{id, title, line}] where line is 0-based line index in
+    full_text. Returns [] on any failure."""
+    text = (full_text or "").strip()
+    if len(text) < 200:
+        return []
+    prompt = _CHAPTERS_PROMPT.replace("__MS_TEXT__", text[:40000])
+    try:
+        raw = await call_gemini_json_fn(prompt, temperature=0.0,
+                                          timeout=45, max_tokens=2048)
+    except Exception as e:
+        print("[ms] chapters AI failed: " + repr(e))
+        return []
+    data = _parse_json_object(raw)
+    if not data:
+        return []
+    items = []
+    for c in (data.get("chapters") or [])[:200]:
+        cid = str(c.get("id") or "").strip()
+        title = str(c.get("title") or "").strip()[:120]
+        if not cid and not title:
+            continue
+        items.append({"id": cid, "title": title})
+    lines = text.split("\n")
+    used = set()
+    out = []
+    for c in items:
+        ln = _find_chapter_line(lines, c["id"], c["title"], used)
+        if ln >= 0:
+            out.append({"id": c["id"], "title": c["title"], "line": ln})
+    out.sort(key=lambda x: x["line"])
+    return out
+
+
 def _strip_fences(txt):
     t = (txt or "").strip()
     t = re.sub(r'^```json\s*', '', t)
