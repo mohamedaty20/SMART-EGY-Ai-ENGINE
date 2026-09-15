@@ -26,7 +26,12 @@ RULES:
   from the full text and explain briefly. Do NOT invent clause IDs.
 - Only say "Not found in the uploaded MS." if there is genuinely
   nothing relevant to the question anywhere in the text.
-- 2 to 4 sentences maximum.
+- Be as thorough as the question requires. Short lookups: 1–3 sentences.
+  Procedural / "how" / "why" / "list" / multi-part questions: give a
+  full answer — cover every relevant clause, cite each one with [S<id>],
+  and quote exact numbers/limits/tolerances from the MS. Up to ~12
+  sentences is fine for a procedural question.
+- Do NOT pad, do NOT repeat yourself, do NOT invent clause IDs.
 
 MS CLAUSE INDEX (available IDs — cite only these):
 __CLAUSE_INDEX__
@@ -146,13 +151,15 @@ async def ask_ms_question(project_id, question, call_gemini_json_fn):
               .replace("__FULL_TEXT__", ft)
               .replace("__QUESTION__", q))
     try:
-        raw = await call_gemini_json_fn(prompt, temperature=0.1, timeout=60)
+        raw = await call_gemini_json_fn(prompt, temperature=0.1,
+                                          timeout=90, max_tokens=3072)
     except Exception as e:
         return {"answer": "", "error": "AI call failed: " + str(e)}
     text = (raw or "").strip()
     if not text:
         return {"answer": "", "error": "Empty response from AI."}
     return {"answer": text, "error": None}
+
 
 async def check_document_against_ms(file_bytes, mime_type, project_id,
                                      ocr_fn, call_gemini_json_fn):
