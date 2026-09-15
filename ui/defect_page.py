@@ -5471,6 +5471,165 @@ def _build_chat(state):
                     if (m.get("created_at") or "")[:10] <= fstate["to"]]
 
         if not msgs:
+            with ui.element('div').classes("gem-wrap"):
+                with ui.element('div').classes("gem-empty"):
+                    ui.label(_t("chat_title")).classes("gem-empty-title")
+                    ui.label(_t("chat_sub")).classes("gem-empty-sub")
+            return
+
+        by_id = {m["id"]: m for m in msgs}
+
+        with ui.element('div').classes("gem-wrap"):
+            for m in msgs:
+                mid = m.get("id")
+                author = m.get("author") or ""
+                body = m.get("body") or ""
+                created_raw = m.get("created_at") or ""
+                created = str(created_raw)[:16]
+                reply_to = m.get("reply_to_id")
+                is_mine = (str(author) == str(my_name))
+                prof = _get_profile(m.get("user_id"))
+                title = prof.get("title") or ""
+                a_color = _chat_author_color(title)
+
+                if is_mine:
+                    # ---- Right-aligned pill (Gemini user style) ----
+                    with ui.element('div').classes("gem-row user"):
+                        with ui.element('div').style(
+                            "display:flex;flex-direction:column;"
+                            "align-items:flex-end;max-width:82%;"
+                        ):
+                            if reply_to and reply_to in by_id:
+                                parent = by_id[reply_to]
+                                ui.html(
+                                    '<div class="chat-reply-quote" '
+                                    'style="margin-bottom:6px;">' +
+                                    '<b>' + _html_mod.escape(
+                                        str(parent.get("author", ""))) +
+                                    '</b>: ' +
+                                    _html_mod.escape(
+                                        str(parent.get("body", ""))[:80]) +
+                                    '</div>'
+                                )
+                            with ui.element('div').classes("gem-user"):
+                                ui.html(_chat_render_body(body))
+                            with ui.element('div').classes("gem-msg-meta"):
+                                ui.label(created)
+                                def _reply_mine(rid=mid):
+                                    fstate["reply_to"] = rid
+                                    render_reply_indicator()
+                                ui.label(_t("chat_reply")).classes(
+                                    "gem-del").style(
+                                    "cursor:pointer;color:#5a5a5a;"
+                                ).on("click", _reply_mine)
+
+                                cd = _parse_dt(created_raw)
+                                remaining = 0
+                                if cd:
+                                    try:
+                                        age = (datetime.datetime.utcnow() -
+                                               cd).total_seconds()
+                                        remaining = max(0, 60 - age)
+                                    except Exception:
+                                        remaining = 0
+                                if remaining > 0:
+                                    del_holder = ui.element('span')
+                                    with del_holder:
+                                        def _del(did=mid):
+                                            ok, reason = \
+                                                db.chat_delete_secure(
+                                                    did, my_uid,
+                                                    within_seconds=60)
+                                            if ok:
+                                                ui.notify(
+                                                    _t("chat_deleted"),
+                                                    type="positive")
+                                                chat_list.refresh()
+                                            elif reason == "too_late":
+                                                ui.notify(
+                                                    _t("delete_too_late"),
+                                                    type="warning")
+                                                chat_list.refresh()
+                                            elif reason == "not_owner":
+                                                ui.notify(
+                                                    _t("delete_not_owner"),
+                                                    type="warning")
+                                            else:
+                                                ui.notify(
+                                                    _t("delete_failed"),
+                                                    type="negative")
+                                        ui.label(_t("chat_delete")).classes(
+                                            "gem-del"
+                                        ).style(
+                                            "cursor:pointer;color:#5a5a5a;"
+                                        ).on("click", _del)
+                                    def _hide(h=del_holder):
+                                        try:
+                                            h.clear()
+                                        except Exception:
+                                            pass
+                                    ui.timer(remaining, _hide, once=True)
+
+                else:
+                    # ---- Left-aligned author header + body ----
+                    with ui.element('div').classes("gem-row ai"):
+                        with ui.element('div').style(
+                            "width:100%;min-width:0;"
+                        ):
+                            with ui.element('div').style(
+                                "display:flex;align-items:center;gap:6px;"
+                                "margin-bottom:4px;"
+                            ):
+                                def _open_prof(uid=m.get("user_id")):
+                                    if uid:
+                                        _open_member_profile(uid)
+                                name_lbl = ui.label(author).style(
+                                    "font-size:11px;font-weight:700;"
+                                    "color:" + a_color + ";cursor:pointer;"
+                                )
+                                name_lbl.on("click", _open_prof)
+                                if title:
+                                    ui.label("· " + title).style(
+                                        "font-size:10px;color:#808080;")
+                                ui.label(created).classes("chat-time")
+
+                            if reply_to and reply_to in by_id:
+                                parent = by_id[reply_to]
+                                ui.html(
+                                    '<div class="chat-reply-quote">' +
+                                    '<b>' + _html_mod.escape(
+                                        str(parent.get("author", ""))) +
+                                    '</b>: ' +
+                                    _html_mod.escape(
+                                        str(parent.get("body", ""))[:80]) +
+                                    '</div>'
+                                )
+
+                            ui.html('<div class="gem-ai">' +
+                                    _chat_render_body(body) + '</div>')
+
+                            def _reply_other(rid=mid):
+                                fstate["reply_to"] = rid
+                                render_reply_indicator()
+                            ui.label(_t("chat_reply")).classes(
+                                "gem-del").style(
+                                "cursor:pointer;color:#5a5a5a;"
+                            ).on("click", _reply_other)
+        if fstate["query"]:
+            q = fstate["query"]
+
+            def _m(m):
+                return (q in (m.get("body") or "").lower() or
+                        q in (m.get("author") or "").lower())
+            msgs = [m for m in msgs if _m(m)]
+        if fstate["from"]:
+            msgs = [m for m in msgs
+                    if (m.get("created_at") or "")[:10] >= fstate["from"]]
+        if fstate["to"]:
+            msgs = [m for m in msgs
+                    if (m.get("created_at") or "")[:10] <= fstate["to"]]
+
+        if not msgs:
             ui.label(_t("chat_empty")).classes("mono-sm").style(
                 "text-align:center;padding:32px 0;color:#5a5a5a;")
             return
@@ -5584,15 +5743,61 @@ def _build_chat(state):
 
     chat_list()
 
-    with ui.element('div').classes("chat-composer"):
-        with ui.element('div').style("position:relative;width:100%;"):
-            body_in = ui.textarea(
-                placeholder=_t("chat_placeholder")
-            ).style("width:100%;").props("dense autogrow")
-
+    with ui.element('div').classes("gem-composer"):
+        with ui.element('div').classes("gem-composer-inner"):
             mention_holder = ui.element('div').style(
-                "position:absolute;bottom:100%;left:0;right:0;display:none;"
+                "position:absolute;bottom:100%;left:0;right:0;"
+                "display:none;"
             )
+
+            with ui.element('div').classes("gem-pill"):
+                body_in = ui.textarea(
+                    placeholder=_t("chat_placeholder")
+                ).style("width:100%;").props("dense autogrow borderless")
+
+                send_btn = ui.button(icon="arrow_upward").classes(
+                    "gem-icon-btn send").props("flat round dense")
+
+                def _send():
+                    txt = (body_in.value or "").strip()
+                    if not txt:
+                        return
+                    mentions = re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
+                    mentions = [m for m in mentions if m and m != my_name]
+                    try:
+                        db.chat_add(pid, state["user_id"], my_name, txt,
+                                     reply_to_id=fstate.get("reply_to"),
+                                     mentions=mentions)
+                    except Exception as ex:
+                        ui.notify("Send failed: " + str(ex), type="negative")
+                        return
+                    body_in.value = ""
+                    try:
+                        send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                    fstate["reply_to"] = None
+                    render_reply_indicator()
+                    mention_holder.style("display:none;")
+                    chat_list.refresh()
+                    ui.run_javascript(
+                        "window.scrollTo({top: document.body.scrollHeight,"
+                        " behavior:'smooth'});")
+
+                send_btn.on("click", _send)
+
+                def _on_input(e):
+                    txt = (body_in.value or "").strip()
+                    try:
+                        if txt:
+                            send_btn.classes(add="active")
+                        else:
+                            send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                    _update_mentions()
+                body_in.on("update:model-value", _on_input)
+                body_in.on('keydown.enter', lambda _: _send())
 
             def _update_mentions():
                 txt = body_in.value or ""
@@ -5617,39 +5822,14 @@ def _build_chat(state):
                                         parts.append("@" + nm)
                                     body_in.value = " ".join(parts) + " "
                                     mention_holder.style("display:none;")
+                                    try:
+                                        send_btn.classes(add="active")
+                                    except Exception:
+                                        pass
                                 ui.label(a).classes("mention-item").on(
                                     "click", _pick)
                 else:
                     mention_holder.style("display:none;")
-
-            body_in.on("update:model-value",
-                        lambda e: _update_mentions())
-
-        def _send():
-            txt = (body_in.value or "").strip()
-            if not txt:
-                return
-            mentions = re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
-            mentions = [m for m in mentions if m and m != my_name]
-            try:
-                db.chat_add(pid, state["user_id"], my_name, txt,
-                             reply_to_id=fstate.get("reply_to"),
-                             mentions=mentions)
-            except Exception as ex:
-                ui.notify("Send failed: " + str(ex), type="negative")
-                return
-            body_in.value = ""
-            fstate["reply_to"] = None
-            render_reply_indicator()
-            mention_holder.style("display:none;")
-            chat_list.refresh()
-            ui.run_javascript(
-                "window.scrollTo({top: document.body.scrollHeight,"
-                " behavior:'smooth'});")
-
-        ui.button(_t("chat_send"), icon="send", on_click=_send).classes(
-            BTN_PRIMARY).style("width:100%;margin-top:6px;")
-        body_in.on('keydown.enter', lambda _: _send())
 
     state.setdefault("_chat_last_id", db.chat_max_id(pid))
     ui.run_javascript(
