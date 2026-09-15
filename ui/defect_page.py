@@ -11,6 +11,7 @@ ui/defect_page.py — Full file.
 - Engineer name + place under every log title.
 - Interactive ECharts dashboard.
 - Feature 5: per-defect comment thread.
+- Feature 6: per-defect watchlist.
 """
 import io
 import re
@@ -239,7 +240,6 @@ T = {
         "profile_saved": "Profile saved.",
         "profile_email": "Email", "profile_open": "Profile",
         "new_messages": "NEW MESSAGES",
-        # Team
         "team_section": "TEAM",
         "team_members": "Members",
         "team_owner": "Owner",
@@ -260,7 +260,6 @@ T = {
         "team_remove_confirm": "Remove this member from the project?",
         "team_you": "(you)",
         "team_no_members": "No members yet.",
-        # MS Chat
         "ms_chat_title": "MS CHAT",
         "ms_chat_sub": "Your private chat with the MS. Ask questions or "
                "scan documents. No one else on the team sees this.",
@@ -563,7 +562,6 @@ def _guess_element(place_text):
     return "column"
 
 async def _get_browser_location():
-    """Ask the browser for the current GPS. Returns dict or None."""
     try:
         raw = await ui.run_javascript("""
             (async () => {
@@ -644,8 +642,6 @@ _OCR_PROMPT = (
 
 
 def _preprocess_for_ocr(file_bytes, mime_type):
-    """EXIF-rotate, upscale small images, sharpen for OCR.
-    Returns (bytes, mime) — falls back to original on any failure."""
     mime = (mime_type or "image/jpeg").lower()
     if mime == "application/pdf" or not mime.startswith("image/"):
         return file_bytes, mime
@@ -875,6 +871,8 @@ def _inject_theme():
   .badge-fail { color: var(--danger); border: 1px solid rgba(248,113,113,0.35); }
   .badge-comment { color: var(--accent);
                    border: 1px solid rgba(94,234,212,0.3); }
+  .badge-watch { color: var(--warn);
+                 border: 1px solid rgba(251,191,36,0.35); }
   .q-notification { border-radius: 3px !important; font-weight: 500 !important;
                     font-family: 'JetBrains Mono', monospace !important;
                     font-size: 11px !important;
@@ -966,7 +964,6 @@ def _inject_theme():
                   padding: 14px; font-size: 12px; line-height: 1.7;
                   color: var(--text-soft); margin-bottom: 12px; }
   .summary-card b { color: var(--accent); }
-  /* Chat */
   .chat-msg { background: var(--surface); border: 1px solid var(--border);
               border-radius: 4px; padding: 10px 12px; margin-bottom: 8px; }
   .chat-msg.mine { border-color: rgba(94,234,212,0.4); }
@@ -1090,7 +1087,6 @@ def _inject_theme():
                  color: var(--accent); font-weight: 700; font-size: 11px;
                  border: 1px solid var(--border-2); overflow: hidden; }
   .team-avatar img { width: 100%; height: 100%; object-fit: cover; }
-  /* Feature 5 — comments */
   .comment-row { background: #101010; border: 1px solid #1e1e1e;
                  border-radius: 3px; padding: 8px 10px;
                  margin-bottom: 4px; }
@@ -1124,7 +1120,6 @@ _current_uid_holder = {"uid": None}
 
 
 def _dash_data(project_id):
-    """Compute dashboard data with a 60s cache. Cleared on writes."""
     import time as _t
     now = _t.time()
     ent = _DASH_CACHE.get(project_id)
@@ -1158,7 +1153,6 @@ def _is_admin_ui(user_id):
 
 
 def _can(state, action):
-    """Check permission for the current user on the current project."""
     try:
         uid = state.get("user_id")
         pid = state.get("project_id")
@@ -2370,7 +2364,6 @@ def _build_drawer(state, drawer):
                 ui.element('div').style(
                     "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
 
-                # ---------- TEAM ----------
                 with ui.element('div').style(
                     "display:flex;justify-content:space-between;"
                     "align-items:center;margin-bottom:8px;"
@@ -2447,7 +2440,6 @@ def _build_drawer(state, drawer):
                 ui.element('div').style(
                     "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
 
-                # ---------- MS ----------
                 with ui.element('div').style(
                     "display:flex;justify-content:space-between;"
                     "align-items:center;margin-bottom:8px;"
@@ -3529,7 +3521,8 @@ def _build_logs(state):
                 "color:#5eead4;font-weight:600;font-size:10px;"
                 "min-height:26px;")
 
-    fstate = {"filter": "all", "query": "", "defect_type": "all"}
+    fstate = {"filter": "all", "query": "", "defect_type": "all",
+              "watch_only": False}
 
     @ui.refreshable
     def log_list():
@@ -3544,6 +3537,13 @@ def _build_logs(state):
             rows = [r for r in rows
                     if (r.get("defect_type") or "General")
                     == fstate["defect_type"]]
+        # Feature 6 — watch-only filter
+        if fstate.get("watch_only"):
+            try:
+                watched = db.watch_list_for_user(state.get("user_id"))
+            except Exception:
+                watched = set()
+            rows = [r for r in rows if r.get("id") in watched]
         if fstate["query"]:
             q = fstate["query"]
 
@@ -3630,6 +3630,10 @@ def _build_logs(state):
         fstate["defect_type"] = (e.value if e and e.value else "all")
         log_list.refresh()
 
+    def _on_watch(e):
+        fstate["watch_only"] = bool(e.value)
+        log_list.refresh()
+
     ui.select(
         {"all": _t("filter_all"),
          "qc_internal": _t("filter_qc"),
@@ -3650,6 +3654,11 @@ def _build_logs(state):
         label=_t("filter_type"),
         on_change=_on_dtype,
     ).style("width:100%;margin-bottom:8px;").props("dense")
+
+    # Feature 6 — watch-only toggle
+    ui.checkbox("⭐ Watching only", value=False,
+                 on_change=_on_watch).style(
+        "font-size:11px;color:#e8e8e8;margin-bottom:8px;")
 
     ui.input(placeholder=_t("search_placeholder"),
              on_change=_on_search).style(
@@ -3700,11 +3709,17 @@ def _render_log_card(row, refresh_fn, state=None):
     lat = row.get("lat")
     lng = row.get("lng")
 
-    # Feature 5 — comment count
     try:
         n_comments = db.comment_count(row.get("id"))
     except Exception:
         n_comments = 0
+
+    # Feature 6 — is user watching this defect?
+    try:
+        _uid = state.get("user_id") if state else None
+        is_watching_card = bool(_uid and db.watch_is_watching(row.get("id"), _uid))
+    except Exception:
+        is_watching_card = False
 
     with ui.element('div').classes("log-row") as card:
         with ui.element('div').style(
@@ -3745,12 +3760,19 @@ def _render_log_card(row, refresh_fn, state=None):
                                 'display:inline-block;">' +
                                 _html_mod.escape(str(dt)) + '</span>')
 
-                    # Feature 5 — comment badge
                     if n_comments > 0:
                         ui.html(
                             '<span class="badge-comment" style="margin-top:4px;'
                             'margin-left:4px;display:inline-block;">'
                             '💬 ' + str(n_comments) + '</span>'
+                        )
+
+                    # Feature 6 — watch badge
+                    if is_watching_card:
+                        ui.html(
+                            '<span class="badge-watch" style="margin-top:4px;'
+                            'margin-left:4px;display:inline-block;">'
+                            '⭐ WATCHING</span>'
                         )
 
                     if lat is not None and lng is not None:
@@ -3855,6 +3877,53 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
                     "color:#fbbf24;font-size:11px;font-weight:600;"
                     "margin-top:6px;")
 
+            # -------- Feature 6 — WATCH TOGGLE --------
+            if user_id:
+                watch_holder = ui.element('div').style(
+                    "width:100%;margin-top:8px;")
+
+                def render_watch():
+                    watch_holder.clear()
+                    try:
+                        w = db.watch_is_watching(d["id"], user_id)
+                        wc = db.watch_count(d["id"])
+                    except Exception:
+                        w = False
+                        wc = 0
+                    with watch_holder:
+                        with ui.element('div').style(
+                            "display:flex;align-items:center;gap:8px;"
+                        ):
+                            def _toggle():
+                                try:
+                                    if w:
+                                        db.watch_remove(d["id"], user_id)
+                                    else:
+                                        db.watch_add(d["id"], user_id)
+                                except Exception as ex:
+                                    ui.notify("Watch failed: " + str(ex),
+                                                type="negative")
+                                    return
+                                render_watch()
+                                try:
+                                    on_close_cb()
+                                except Exception:
+                                    pass
+
+                            ui.button(
+                                "⭐  Watching" if w else "☆  Watch this defect",
+                                on_click=_toggle,
+                            ).classes(BTN_SOFT if w else BTN_OUTLINE).style(
+                                "font-size:11px;min-height:30px;")
+                            if wc:
+                                ui.label(str(wc) + " watcher" +
+                                          ("s" if wc != 1 else "")
+                                          ).classes("mono-sm").style(
+                                    "font-size:9px;color:#5a5a5a;")
+
+                render_watch()
+            # -------- /Feature 6 --------
+
         with ui.element('div').style(
             "padding:16px;max-height:60vh;overflow-y:auto;"
         ):
@@ -3905,7 +3974,6 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
                         ui.label(">" + str(s["repair_action"])).classes(
                             "mono-sm").style("margin-top:3px;")
 
-            # -------- Feature 5 — COMMENTS SECTION --------
             ui.element('div').style(
                 "border-top:1px solid #1e1e1e;margin:14px 0 12px;")
             with ui.element('div').style(
@@ -4011,7 +4079,6 @@ def _show_defect_dialog(defect_id, on_close_cb, user_id=None, state=None):
             ui.button("Post comment", icon="send",
                       on_click=_post_comment).classes(BTN_SOFT).style(
                 "width:100%;margin-top:6px;")
-            # -------- /Feature 5 --------
 
         with ui.element('div').style(
             "padding:12px 16px 16px;border-top:1px solid #1e1e1e;"
