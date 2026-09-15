@@ -1135,7 +1135,7 @@ def _inject_theme():
   .gem-wrap {
     display: flex; flex-direction: column;
     width: 100%;
-    padding: 4px 0 120px 0;
+    padding: 4px 0 280px 0;
     box-sizing: border-box;
     gap: 18px;
   }
@@ -1172,7 +1172,7 @@ def _inject_theme():
     margin-bottom: 8px;
   }
   .gem-msg-meta {
-    font-size: 9px; color: #5a5a5a;
+    font-size: 10px; color: #808080;
     margin-top: 4px;
     display: flex; align-items: center; gap: 8px;
   }
@@ -5492,13 +5492,33 @@ def _build_chat(state):
                 title = prof.get("title") or ""
                 a_color = _chat_author_color(title)
 
-                if is_mine:
-                    # ---- Right-aligned pill (Gemini user style) ----
-                    with ui.element('div').classes("gem-row user"):
+                # ---- both sides: author + time always visible ----
+                with ui.element('div').classes(
+                    "gem-row user" if is_mine else "gem-row ai"
+                ):
+                    if is_mine:
                         with ui.element('div').style(
                             "display:flex;flex-direction:column;"
                             "align-items:flex-end;max-width:82%;"
                         ):
+                            # author line (small, above the bubble)
+                            with ui.element('div').style(
+                                "display:flex;align-items:center;gap:6px;"
+                                "margin-bottom:4px;"
+                            ):
+                                def _open_prof_me(uid=m.get("user_id")):
+                                    if uid:
+                                        _open_member_profile(uid)
+                                name_lbl = ui.label(author).style(
+                                    "font-size:11px;font-weight:700;"
+                                    "color:" + a_color + ";cursor:pointer;"
+                                )
+                                name_lbl.on("click", _open_prof_me)
+                                if title:
+                                    ui.label("· " + title).style(
+                                        "font-size:10px;color:#808080;")
+                                ui.label(created).classes("chat-time")
+
                             if reply_to and reply_to in by_id:
                                 parent = by_id[reply_to]
                                 ui.html(
@@ -5514,7 +5534,6 @@ def _build_chat(state):
                             with ui.element('div').classes("gem-user"):
                                 ui.html(_chat_render_body(body))
                             with ui.element('div').classes("gem-msg-meta"):
-                                ui.label(created)
                                 def _reply_mine(rid=mid):
                                     fstate["reply_to"] = rid
                                     render_reply_indicator()
@@ -5570,9 +5589,7 @@ def _build_chat(state):
                                             pass
                                     ui.timer(remaining, _hide, once=True)
 
-                else:
-                    # ---- Left-aligned author header + body ----
-                    with ui.element('div').classes("gem-row ai"):
+                    else:
                         with ui.element('div').style(
                             "width:100%;min-width:0;"
                         ):
@@ -5615,121 +5632,6 @@ def _build_chat(state):
                                 "gem-del").style(
                                 "cursor:pointer;color:#5a5a5a;"
                             ).on("click", _reply_other)
-        if fstate["query"]:
-            q = fstate["query"]
-
-            def _m(m):
-                return (q in (m.get("body") or "").lower() or
-                        q in (m.get("author") or "").lower())
-            msgs = [m for m in msgs if _m(m)]
-        if fstate["from"]:
-            msgs = [m for m in msgs
-                    if (m.get("created_at") or "")[:10] >= fstate["from"]]
-        if fstate["to"]:
-            msgs = [m for m in msgs
-                    if (m.get("created_at") or "")[:10] <= fstate["to"]]
-
-        if not msgs:
-            ui.label(_t("chat_empty")).classes("mono-sm").style(
-                "text-align:center;padding:32px 0;color:#5a5a5a;")
-            return
-
-        by_id = {m["id"]: m for m in msgs}
-
-        for m in msgs:
-            mid = m.get("id")
-            author = m.get("author") or ""
-            body = m.get("body") or ""
-            created_raw = m.get("created_at") or ""
-            created = str(created_raw)[:16]
-            reply_to = m.get("reply_to_id")
-            is_mine = (str(author) == str(my_name))
-            cls = "chat-msg mine" if is_mine else "chat-msg"
-            prof = _get_profile(m.get("user_id"))
-            title = prof.get("title") or ""
-            a_color = _chat_author_color(title)
-
-            with ui.element('div').classes(cls):
-                with ui.element('div').classes("chat-head"):
-                    with ui.element('div').style(
-                        "display:flex;align-items:center;gap:4px;"
-                    ):
-                        def _open_prof(uid=m.get("user_id")):
-                            if uid:
-                                _open_member_profile(uid)
-                        name_lbl = ui.label(author).classes("chat-author")
-                        name_lbl.style("color:" + a_color + ";")
-                        name_lbl.on("click", _open_prof)
-                        if title:
-                            ui.label("· " + title).classes("chat-title-tag")
-                        if is_mine:
-                            ui.html('<span class="badge-you">' +
-                                    _t("chat_you") + '</span>')
-                    ui.label(created).classes("chat-time")
-
-                if reply_to and reply_to in by_id:
-                    parent = by_id[reply_to]
-                    ui.html(
-                        '<div class="chat-reply-quote">' +
-                        '<b>' + _html_mod.escape(
-                            str(parent.get("author", ""))) +
-                        '</b>: ' +
-                        _html_mod.escape(
-                            str(parent.get("body", ""))[:80]) +
-                        '</div>'
-                    )
-
-                ui.html('<div class="chat-body">' +
-                        _chat_render_body(body) + '</div>')
-
-                with ui.element('div').classes("chat-actions"):
-                    def _reply(rid=mid):
-                        fstate["reply_to"] = rid
-                        render_reply_indicator()
-                    ui.label(_t("chat_reply")).classes("chat-act").style(
-                        "cursor:pointer;"
-                    ).on("click", _reply)
-
-                    if is_mine:
-                        cd = _parse_dt(created_raw)
-                        remaining = 0
-                        if cd:
-                            try:
-                                age = (datetime.datetime.utcnow() - cd
-                                       ).total_seconds()
-                                remaining = max(0, 60 - age)
-                            except Exception:
-                                remaining = 0
-                        if remaining > 0:
-                            del_holder = ui.element('span')
-                            with del_holder:
-                                def _del(did=mid):
-                                    ok, reason = db.chat_delete_secure(
-                                        did, my_uid, within_seconds=60)
-                                    if ok:
-                                        ui.notify(_t("chat_deleted"),
-                                                   type="positive")
-                                        chat_list.refresh()
-                                    elif reason == "too_late":
-                                        ui.notify(_t("delete_too_late"),
-                                                   type="warning")
-                                        chat_list.refresh()
-                                    elif reason == "not_owner":
-                                        ui.notify(_t("delete_not_owner"),
-                                                   type="warning")
-                                    else:
-                                        ui.notify(_t("delete_failed"),
-                                                   type="negative")
-                                ui.label(_t("chat_delete")).classes(
-                                    "chat-act danger"
-                                ).style("cursor:pointer;").on("click", _del)
-
-                            def _hide(h=del_holder):
-                                try:
-                                    h.clear()
-                                except Exception:
-                                    pass
-                            ui.timer(remaining, _hide, once=True)
 
     with ui.element('div').classes("chat-tools"):
         def _toggle_search():
@@ -5786,6 +5688,39 @@ def _build_chat(state):
 
                 send_btn.on("click", _send)
 
+                def _update_mentions():
+                    txt = body_in.value or ""
+                    last = txt.split()[-1] if txt.split() else ""
+                    if last.startswith("@") and len(last) >= 1:
+                        query = last[1:].lower()
+                        matches = [a for a in authors
+                                   if query in (a or "").lower()][:6]
+                        mention_holder.clear()
+                        mention_holder.style("display:block;")
+                        with mention_holder:
+                            with ui.element('div').classes("mention-drop"):
+                                if not matches:
+                                    ui.label("No matches").classes(
+                                        "mention-item").style(
+                                        "color:#5a5a5a;")
+                                for a in matches:
+                                    def _pick(nm=a):
+                                        parts = (body_in.value or "").split()
+                                        if parts and parts[-1].startswith("@"):
+                                            parts[-1] = "@" + nm
+                                        else:
+                                            parts.append("@" + nm)
+                                        body_in.value = " ".join(parts) + " "
+                                        mention_holder.style("display:none;")
+                                        try:
+                                            send_btn.classes(add="active")
+                                        except Exception:
+                                            pass
+                                    ui.label(a).classes("mention-item").on(
+                                        "click", _pick)
+                    else:
+                        mention_holder.style("display:none;")
+
                 def _on_input(e):
                     txt = (body_in.value or "").strip()
                     try:
@@ -5796,40 +5731,9 @@ def _build_chat(state):
                     except Exception:
                         pass
                     _update_mentions()
+
                 body_in.on("update:model-value", _on_input)
                 body_in.on('keydown.enter', lambda _: _send())
-
-            def _update_mentions():
-                txt = body_in.value or ""
-                last = txt.split()[-1] if txt.split() else ""
-                if last.startswith("@") and len(last) >= 1:
-                    query = last[1:].lower()
-                    matches = [a for a in authors
-                               if query in (a or "").lower()][:6]
-                    mention_holder.clear()
-                    mention_holder.style("display:block;")
-                    with mention_holder:
-                        with ui.element('div').classes("mention-drop"):
-                            if not matches:
-                                ui.label("No matches").classes(
-                                    "mention-item").style("color:#5a5a5a;")
-                            for a in matches:
-                                def _pick(nm=a):
-                                    parts = (body_in.value or "").split()
-                                    if parts and parts[-1].startswith("@"):
-                                        parts[-1] = "@" + nm
-                                    else:
-                                        parts.append("@" + nm)
-                                    body_in.value = " ".join(parts) + " "
-                                    mention_holder.style("display:none;")
-                                    try:
-                                        send_btn.classes(add="active")
-                                    except Exception:
-                                        pass
-                                ui.label(a).classes("mention-item").on(
-                                    "click", _pick)
-                else:
-                    mention_holder.style("display:none;")
 
     state.setdefault("_chat_last_id", db.chat_max_id(pid))
     ui.run_javascript(
