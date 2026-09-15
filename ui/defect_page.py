@@ -7364,11 +7364,120 @@ def _build_tds_tools(state):
     itp = result.get("inspection_test_plan") or {}
     crit = result.get("critical_parameters") or []
 
-    # Download buttons
+    # Download buttons (TXT row above, PDF row below)
     with ui.element('div').style(
         "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
         "margin-bottom:12px;"
     ):
+        def _mos_txt():
+            try:
+                lines = []
+                lines.append(mos.get("title") or "METHOD STATEMENT")
+                lines.append("=" * 60)
+                p_bits = []
+                if product.get("name"):
+                    p_bits.append("Product: " + str(product["name"]))
+                if product.get("manufacturer"):
+                    p_bits.append("Manufacturer: " +
+                                  str(product["manufacturer"]))
+                if product.get("tds_reference"):
+                    p_bits.append("TDS ref: " +
+                                  str(product["tds_reference"]))
+                if product.get("category"):
+                    p_bits.append("Category: " +
+                                  str(product["category"]))
+                lines.extend(p_bits)
+                lines.append("Date: " +
+                             datetime.date.today().strftime("%Y-%m-%d"))
+                lines.append("")
+                if product.get("description"):
+                    lines.append(str(product["description"]))
+                    lines.append("")
+                if crit:
+                    lines.append("KEY PARAMETERS FROM TDS")
+                    lines.append("-" * 60)
+                    for cp in crit:
+                        lines.append(
+                            str(cp.get("parameter") or "") + " : " +
+                            str(cp.get("value") or "")
+                            + ("  (" + str(cp["source_note"]) + ")"
+                               if cp.get("source_note") else "")
+                        )
+                    lines.append("")
+                for sec in (mos.get("sections") or []):
+                    num = str(sec.get("number") or "").strip()
+                    head = str(sec.get("heading") or "").strip()
+                    head_line = (num + ". " + head) if num else head
+                    if not head_line:
+                        continue
+                    lines.append(head_line)
+                    lines.append("-" * len(head_line))
+                    body = str(sec.get("body") or "").strip()
+                    if body:
+                        lines.append(body)
+                    lines.append("")
+                lines.append("")
+                lines.append("PREPARED BY (QC): ____________________")
+                lines.append("APPROVED BY (CONSULTANT): ____________________")
+                lines.append("")
+                txt = "\n".join(lines).encode("utf-8")
+                ui.download(txt, filename="method_statement.txt")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("TXT failed: " + str(ex), type="negative")
+
+        def _itp_txt():
+            try:
+                lines = []
+                lines.append(itp.get("title") or
+                             "INSPECTION & TEST PLAN")
+                lines.append("=" * 100)
+                p_bits = []
+                if product.get("name"):
+                    p_bits.append("Product: " + str(product["name"]))
+                if product.get("manufacturer"):
+                    p_bits.append("Manufacturer: " +
+                                  str(product["manufacturer"]))
+                lines.extend(p_bits)
+                lines.append("Date: " +
+                             datetime.date.today().strftime("%Y-%m-%d"))
+                lines.append("")
+                headers = ["#", "Activity", "Reference", "Checkpoint",
+                           "Acceptance criteria", "Method",
+                           "Frequency", "Responsible"]
+                widths = [3, 22, 16, 26, 34, 20, 12, 14]
+                def _row(cells):
+                    out = []
+                    for i, c in enumerate(cells):
+                        c = str(c or "").replace("\n", " ")
+                        w = widths[i]
+                        if i == 0:
+                            out.append(c.rjust(w))
+                        else:
+                            out.append(c[:w].ljust(w))
+                    return " | ".join(out)
+                lines.append(_row(headers))
+                lines.append("-+-".join("-" * w for w in widths))
+                for i, r in enumerate(itp.get("rows") or [], start=1):
+                    lines.append(_row([
+                        str(i),
+                        r.get("activity") or "",
+                        r.get("reference") or "",
+                        r.get("checkpoint") or "",
+                        r.get("acceptance_criteria") or "",
+                        r.get("method") or "",
+                        r.get("frequency") or "",
+                        r.get("responsible") or "",
+                    ]))
+                lines.append("")
+                txt = "\n".join(lines).encode("utf-8")
+                ui.download(txt, filename="inspection_test_plan.txt")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("TXT failed: " + str(ex), type="negative")
+
         def _dl_mos():
             try:
                 pdf = tds.build_mos_pdf(product, mos, crit)
@@ -7387,10 +7496,16 @@ def _build_tds_tools(state):
                 traceback.print_exc()
                 ui.notify("PDF failed: " + str(ex), type="negative")
 
-        ui.button("Download Method Statement PDF", icon="picture_as_pdf",
+        ui.button("Method Statement — TXT", icon="description",
+                  on_click=_mos_txt).classes(BTN_SOFT).style(
+            "width:100%;font-size:10px;")
+        ui.button("ITP — TXT", icon="description",
+                  on_click=_itp_txt).classes(BTN_SOFT).style(
+            "width:100%;font-size:10px;")
+        ui.button("Method Statement — PDF", icon="picture_as_pdf",
                   on_click=_dl_mos).classes(BTN_PRIMARY).style(
             "width:100%;font-size:10px;")
-        ui.button("Download ITP PDF", icon="picture_as_pdf",
+        ui.button("ITP — PDF", icon="picture_as_pdf",
                   on_click=_dl_itp).classes(BTN_PRIMARY).style(
             "width:100%;font-size:10px;")
 
