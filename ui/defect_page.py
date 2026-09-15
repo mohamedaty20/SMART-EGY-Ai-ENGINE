@@ -11,6 +11,8 @@ ui/defect_page.py — Full file.
 - Feature 7: bulk actions in Defect Logs.
 - Feature 10: custom report templates.
 - Gemini-style MS Chat UI.
+- Fixed: app-topbar sticky (header + tabs together).
+- Fixed: ms_list no longer duplicates on refresh.
 """
 import io
 import re
@@ -801,12 +803,26 @@ def _inject_theme():
            text-transform: uppercase; letter-spacing: 0.14em; }
   .q-drawer { background: var(--bg) !important;
               border-right: 1px solid var(--border) !important; }
-  .app-header {
-    position: sticky; top: 0; z-index: 900; width: 100%;
+
+  /* ---------- Sticky top bar (header + tabs together) ---------- */
+  .app-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    width: 100%;
     background: rgba(11,11,11,0.94);
-    border-bottom: 1px solid var(--border); padding: 8px 14px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-sizing: border-box;
+  }
+  .app-header {
+    position: static;
+    background: transparent;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
     display: flex; align-items: center; justify-content: space-between;
     box-sizing: border-box;
+    width: 100%;
   }
   .app-header .brand { font-weight: 700; font-size: 12px;
                        color: var(--text); }
@@ -815,10 +831,10 @@ def _inject_theme():
     vertical-align: middle; margin-right: 4px;
   }
   .top-tabs {
+    position: static;
     display: flex; align-items: center; gap: 4px; padding: 8px 14px;
-    background: rgba(11,11,11,0.94);
+    background: transparent;
     border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; z-index: 890;
     overflow-x: auto; overflow-y: hidden;
     width: 100%; box-sizing: border-box;
   }
@@ -1042,7 +1058,7 @@ def _inject_theme():
   }
   .log-dates b { color: #e8e8e8; }
   .chat-tools {
-    position: fixed; top: 110px; right: 14px; z-index: 500;
+    position: fixed; top: 118px; right: 14px; z-index: 500;
     display: flex; flex-direction: column; gap: 6px;
   }
   .chat-tools .q-btn {
@@ -1118,7 +1134,7 @@ def _inject_theme():
   .gem-wrap {
     display: flex; flex-direction: column;
     width: 100%;
-    padding: 4px 14px 140px 14px;
+    padding: 4px 0 120px 0;
     box-sizing: border-box;
     gap: 18px;
   }
@@ -1181,8 +1197,6 @@ def _inject_theme():
     0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
     40% { opacity: 1; transform: translateY(-3px); }
   }
-
-  /* Gemini-style composer */
   .gem-composer {
     position: fixed;
     left: 0; right: 0; bottom: 0;
@@ -1301,8 +1315,6 @@ def _inject_theme():
     transition: background 0.12s;
   }
   .gem-chip:hover { background: #2a2b2d; }
-
-  /* Document check card */
   .gem-check-card {
     background: #161718;
     border: 1px solid #232426;
@@ -1487,29 +1499,33 @@ def build_defect_ui(user_id):
     ) as drawer:
         _build_drawer(state, drawer)
 
-    with ui.element('div').classes("app-header"):
-        with ui.element('div').style(
-            "display:flex;align-items:center;gap:10px;"
-        ):
-            ui.button(icon="menu", on_click=drawer.toggle).props(
-                "flat round dense size=sm").style("color:#e8e8e8;")
-            ui.label(_t("app_title")).classes("brand")
-        with ui.element('div').style(
-            "display:flex;align-items:center;gap:6px;"
-        ):
-            def _open_my_prof():
-                _open_my_profile(state)
-            ui.button(_initial(user.get("name") if user else "?"),
-                      on_click=_open_my_prof).props("flat round dense").style(
-                "color:#0b0b0b;background:#5eead4;font-weight:700;"
-                "min-height:28px;min-width:28px;font-size:11px;")
-            ui.button(_t("lang_button"), on_click=_toggle_lang).props(
-                "flat dense no-caps size=sm").style(
-                "color:#e8e8e8;font-weight:600;font-size:10px;"
-                "border:1px solid #262626;border-radius:2px;"
-                "padding:0 8px;min-height:26px;")
+    # ---- Sticky topbar (header + tabs) ----
+    with ui.element('div').classes("app-topbar"):
+        with ui.element('div').classes("app-header"):
+            with ui.element('div').style(
+                "display:flex;align-items:center;gap:10px;"
+            ):
+                ui.button(icon="menu", on_click=drawer.toggle).props(
+                    "flat round dense size=sm").style("color:#e8e8e8;")
+                ui.label(_t("app_title")).classes("brand")
+            with ui.element('div').style(
+                "display:flex;align-items:center;gap:6px;"
+            ):
+                def _open_my_prof():
+                    _open_my_profile(state)
+                ui.button(_initial(user.get("name") if user else "?"),
+                          on_click=_open_my_prof).props(
+                    "flat round dense").style(
+                    "color:#0b0b0b;background:#5eead4;font-weight:700;"
+                    "min-height:28px;min-width:28px;font-size:11px;")
+                ui.button(_t("lang_button"), on_click=_toggle_lang).props(
+                    "flat dense no-caps size=sm").style(
+                    "color:#e8e8e8;font-weight:600;font-size:10px;"
+                    "border:1px solid #262626;border-radius:2px;"
+                    "padding:0 8px;min-height:26px;")
 
-    nav_holder = ui.element('div').classes("top-tabs")
+        nav_holder = ui.element('div').classes("top-tabs")
+
     content = ui.element('div').classes("main-content")
 
     def _render_tab():
@@ -5686,7 +5702,7 @@ def _build_ms_chat(state):
     user = state.get("user") or {}
     my_name = (user.get("name") or user.get("email") or "me")
 
-    # ---- Floating tools (top-right) ----
+    # Floating tools (top-right)
     with ui.element('div').classes("chat-tools"):
         def _clear_hist():
             try:
@@ -5705,10 +5721,7 @@ def _build_ms_chat(state):
         ui.button(icon="refresh", on_click=_refresh).props(
             "round dense size=sm").tooltip("Refresh")
 
-    # ---- Slim header ----
-    with ui.element('div').style(
-        "padding:0 4px 8px 4px;"
-    ):
+    with ui.element('div').style("padding:0 4px 8px 4px;"):
         ui.label(_t("ms_chat_title")).style(
             "font-size:18px;font-weight:700;color:#e3e3e3;"
             "letter-spacing:-0.01em;")
@@ -5726,9 +5739,10 @@ def _build_ms_chat(state):
                 "margin-right:auto;display:block;")
         return
 
-    # ---- Message list (Gemini style) ----
-    gem_wrap = ui.element('div').classes("gem-wrap")
+    # Placeholder for the input widget — will be assigned later.
+    q_input_holder = {"el": None}
 
+    # ---------- Refreshable message list (fully self-contained) ----------
     @ui.refreshable
     def ms_list():
         try:
@@ -5736,9 +5750,9 @@ def _build_ms_chat(state):
         except Exception:
             msgs = []
 
-        with gem_wrap:
-            if not msgs:
-                # Gemini-style empty state
+        if not msgs:
+            # Gemini-style empty state
+            with ui.element('div').classes("gem-wrap"):
                 with ui.element('div').classes("gem-empty"):
                     ui.label("Hi " + my_name.split()[0] + " 👋").classes(
                         "gem-empty-title")
@@ -5748,36 +5762,45 @@ def _build_ms_chat(state):
                         "clause."
                     ).classes("gem-empty-sub")
                     with ui.element('div').classes("gem-empty-chips"):
-                        def _suggest(q):
+                        def _make_suggest(question):
                             def _fill():
                                 try:
-                                    q_input.value = q
+                                    el = q_input_holder.get("el")
+                                    if el is not None:
+                                        el.value = question
                                 except Exception:
                                     pass
                             return _fill
-                        ui.label("What is the minimum cover for columns?").classes(
-                            "gem-chip").on("click",
-                            _suggest("What is the minimum cover for "
-                                     "columns exposed to weather?"))
-                        ui.label("Lap length for tension bars?").classes(
-                            "gem-chip").on("click",
-                            _suggest("What is the lap length for tension bars?"))
-                        ui.label("Curing requirements?").classes(
-                            "gem-chip").on("click",
-                            _suggest("What are the curing requirements?"))
-                return
+                        ui.label(
+                            "What is the minimum cover for columns?"
+                        ).classes("gem-chip").on(
+                            "click",
+                            _make_suggest(
+                                "What is the minimum cover for "
+                                "columns exposed to weather?"))
+                        ui.label(
+                            "Lap length for tension bars?"
+                        ).classes("gem-chip").on(
+                            "click",
+                            _make_suggest(
+                                "What is the lap length for tension bars?"))
+                        ui.label(
+                            "Curing requirements?"
+                        ).classes("gem-chip").on(
+                            "click",
+                            _make_suggest(
+                                "What are the curing requirements?"))
+            return
 
+        with ui.element('div').classes("gem-wrap"):
             for m in msgs:
                 _render_ms_message(m, on_delete=ms_list.refresh)
 
     ms_list()
 
-    # ---- Gemini-style composer (fixed bottom) ----
+    # ---------- Gemini-style composer (fixed bottom) ----------
     with ui.element('div').classes("gem-composer"):
         with ui.element('div').classes("gem-composer-inner"):
-
-            # Hidden upload that fires when "+" is tapped
-            upload_state = {"pending": None}
 
             async def _on_doc(e):
                 try:
@@ -5797,13 +5820,7 @@ def _build_ms_chat(state):
                 else:
                     mime = "image/jpeg"
 
-                # Show a temporary "reading" AI message
-                try:
-                    ms_list.refresh()
-                except Exception:
-                    pass
                 ui.notify(_t("ms_chat_reading"), type="info", timeout=2000)
-
                 try:
                     result = await msc.check_document_against_ms(
                         file_bytes=data, mime_type=mime, project_id=pid,
@@ -5834,8 +5851,6 @@ def _build_ms_chat(state):
                     "window.scrollTo({top: document.body.scrollHeight,"
                     " behavior:'smooth'});")
 
-            # Hidden upload widget (Quasar renders it; we hide it visually
-            # and trigger via JS from the "+" button).
             hidden_upload_holder = ui.element('div').style(
                 "position:absolute;left:-9999px;top:-9999px;width:1px;"
                 "height:1px;overflow:hidden;")
@@ -5844,9 +5859,7 @@ def _build_ms_chat(state):
                     "flat bordered accept=image/*,.pdf").style(
                     "width:1px;height:1px;")
 
-            # The pill
             with ui.element('div').classes("gem-pill"):
-                # + button
                 def _open_picker():
                     try:
                         ui.run_javascript("""
@@ -5866,12 +5879,11 @@ def _build_ms_chat(state):
                 ui.button(icon="add", on_click=_open_picker).classes(
                     "gem-icon-btn plus").props("flat round dense")
 
-                # Text input
                 q_input = ui.textarea(
                     placeholder=_t("ms_chat_ask_placeholder")
                 ).style("width:100%;").props("dense autogrow borderless")
+                q_input_holder["el"] = q_input
 
-                # Send button (disabled until text)
                 send_btn = ui.button(icon="arrow_upward").classes(
                     "gem-icon-btn send").props("flat round dense")
 
@@ -5887,14 +5899,6 @@ def _build_ms_chat(state):
                     try:
                         send_btn.classes(remove="active")
                         send_btn.props("loading")
-                    except Exception:
-                        pass
-
-                    # Optimistically render the user message immediately
-                    # (we already saved it to DB after; refresh will
-                    # pick it up but this gives instant feedback).
-                    try:
-                        ms_list.refresh()
                     except Exception:
                         pass
 
@@ -5961,7 +5965,6 @@ def _build_ms_chat(state):
 
                 send_btn.on("click", _on_send)
 
-                # Enable/disable send based on text
                 def _on_input(e):
                     txt = (q_input.value or "").strip()
                     try:
@@ -5972,15 +5975,11 @@ def _build_ms_chat(state):
                     except Exception:
                         pass
                 q_input.on("update:model-value", _on_input)
-
-                # Enter key sends
                 q_input.on("keydown.enter", lambda _: _on_send())
 
-            # Small hint
             ui.label("MS Chat · answers only from the uploaded Method "
                        "Statements").classes("gem-hint")
 
-    # Auto-scroll on open
     ui.run_javascript(
         "window.scrollTo({top: document.body.scrollHeight,"
         " behavior:'auto'});")
@@ -6009,10 +6008,7 @@ def _build_ms_chat(state):
 
 
 def _render_ms_message(m, on_delete=None):
-    """Render a single MS Chat message in Gemini style:
-    - user question = right-aligned rounded pill
-    - AI answer / doc check = left-aligned plain body
-    """
+    """Render a single MS Chat message in Gemini style."""
     kind = (m.get("kind") or "question").lower()
     author = m.get("author") or "?"
     created = str(m.get("created_at") or "")[:16]
@@ -6020,7 +6016,7 @@ def _render_ms_message(m, on_delete=None):
     resp = m.get("response") or {}
     mid = m.get("id")
 
-    # -------- 1) User message --------
+    # User message — right-aligned pill
     with ui.element('div').classes("gem-row user"):
         with ui.element('div').style(
             "display:flex;flex-direction:column;align-items:flex-end;"
@@ -6031,10 +6027,9 @@ def _render_ms_message(m, on_delete=None):
             with ui.element('div').classes("gem-msg-meta"):
                 ui.label(created)
 
-    # -------- 2) AI reply --------
+    # AI reply — plain body, no bubble
     with ui.element('div').classes("gem-row ai"):
         with ui.element('div').style("width:100%;min-width:0;"):
-
             if kind == "question":
                 answer = str(resp.get("answer") or "")
                 if not answer:
@@ -6046,9 +6041,7 @@ def _render_ms_message(m, on_delete=None):
                             "margin-left:6px;")
                 else:
                     ui.label(answer).classes("gem-ai")
-
             else:
-                # Document check — subtle Gemini-style card
                 _render_gem_check_card(resp)
 
             with ui.element('div').classes("gem-msg-meta"):
@@ -6066,7 +6059,7 @@ def _render_ms_message(m, on_delete=None):
 
 
 def _render_gem_check_card(resp):
-    """Doc check shown as a compact Gemini-like info card."""
+    """Doc-check result shown as a Gemini-like info card."""
     with ui.element('div').classes("gem-check-card"):
         ui.label(_t("ms_chat_check_btn")).classes("gem-check-title")
 
