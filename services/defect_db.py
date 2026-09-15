@@ -314,6 +314,15 @@ def init_db():
                 created_at TEXT
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS defect_watchers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                defect_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                added_at TEXT,
+                UNIQUE(defect_id, user_id)
+            )
+        """)
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
@@ -335,7 +344,6 @@ def init_db():
             ("lat", "REAL"), ("lng", "REAL"),
         ])
 
-        # Backfill: every existing project owner becomes a member
         try:
             cur.execute("""
                 INSERT OR IGNORE INTO project_members
@@ -369,6 +377,10 @@ def init_db():
             "ON activity_log(project_id)",
             "CREATE INDEX IF NOT EXISTS idx_comments_defect "
             "ON defect_comments(defect_id)",
+            "CREATE INDEX IF NOT EXISTS idx_watchers_defect "
+            "ON defect_watchers(defect_id)",
+            "CREATE INDEX IF NOT EXISTS idx_watchers_user "
+            "ON defect_watchers(user_id)",
         ]:
             try:
                 cur.execute(idx)
@@ -544,7 +556,6 @@ def add_project_member(project_id, email, role="engineer"):
 
 
 def remove_project_member(project_id, user_id):
-    """Remove a member. Owner can't be removed."""
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -558,7 +569,6 @@ def remove_project_member(project_id, user_id):
 
 
 def list_projects(user_id):
-    """Projects the user is a member of (owner or invited)."""
     c = _conn()
     cur = c.cursor()
     cur.execute("""
@@ -638,6 +648,13 @@ def delete_project(project_id):
         try:
             cur.execute("""
                 DELETE FROM defect_comments WHERE defect_id IN
+                (SELECT id FROM defects WHERE project_id=?)
+            """, (project_id,))
+        except Exception:
+            pass
+        try:
+            cur.execute("""
+                DELETE FROM defect_watchers WHERE defect_id IN
                 (SELECT id FROM defects WHERE project_id=?)
             """, (project_id,))
         except Exception:
@@ -917,6 +934,11 @@ def delete_defect(defect_id):
         cur.execute("DELETE FROM defects WHERE id=?", (defect_id,))
         try:
             cur.execute("DELETE FROM defect_comments WHERE defect_id=?",
+                        (defect_id,))
+        except Exception:
+            pass
+        try:
+            cur.execute("DELETE FROM defect_watchers WHERE defect_id=?",
                         (defect_id,))
         except Exception:
             pass
@@ -1260,7 +1282,6 @@ def chat_authors(project_id):
 
 
 def chat_max_id(project_id):
-    """Highest chat message id for a project (0 if none). Cheap poll."""
     c = _conn()
     cur = c.cursor()
     try:
@@ -1332,7 +1353,6 @@ def ms_chat_add(project_id, user_id, author, kind, body, response_dict):
 
 
 def ms_chat_list(project_id, user_id, limit=200):
-    """Private per user — only this member's MS chat."""
     c = _conn()
     cur = c.cursor()
     cur.execute("""
@@ -1355,7 +1375,6 @@ def ms_chat_list(project_id, user_id, limit=200):
 
 
 def ms_chat_max_id(project_id, user_id):
-    """Highest MS chat id for THIS user only."""
     c = _conn()
     cur = c.cursor()
     try:
@@ -1370,7 +1389,6 @@ def ms_chat_max_id(project_id, user_id):
 
 
 def ms_chat_clear(project_id, user_id):
-    """Clear only THIS user's MS chat history for the project."""
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -1383,8 +1401,6 @@ def ms_chat_clear(project_id, user_id):
 
 
 def get_ms_full_text(project_id, max_chars=150000):
-    """Concatenate the FULL text of every MS uploaded to this project.
-    Falls back to reconstructing from clauses for old uploads."""
     c = _conn()
     cur = c.cursor()
     cur.execute("""
@@ -1422,7 +1438,6 @@ def get_ms_full_text(project_id, max_chars=150000):
 
 
 def is_admin(user_id):
-    """Return True if the user has the is_admin flag set."""
     if not user_id:
         return False
     c = _conn()
@@ -1442,7 +1457,6 @@ def is_admin(user_id):
 
 
 def set_admin(user_id, flag):
-    """Promote / demote a user. Returns (ok, message)."""
     try:
         with _LOCK:
             c = _conn()
@@ -1457,7 +1471,6 @@ def set_admin(user_id, flag):
 
 
 def is_suspended(user_id):
-    """Return True if the user is currently suspended."""
     if not user_id:
         return False
     c = _conn()
@@ -1477,7 +1490,6 @@ def is_suspended(user_id):
 
 
 def set_suspended(user_id, flag):
-    """Suspend / unsuspend a user. Returns (ok, message)."""
     try:
         with _LOCK:
             c = _conn()
@@ -1492,7 +1504,6 @@ def set_suspended(user_id, flag):
 
 
 def admin_list_users():
-    """All users with admin/suspended flags + project count."""
     c = _conn()
     cur = c.cursor()
     try:
@@ -1539,7 +1550,6 @@ def admin_list_users():
 
 
 def ms_chat_delete(msg_id, user_id):
-    """Delete an MS chat message — owner only, no time limit."""
     with _LOCK:
         c = _conn()
         cur = c.cursor()
@@ -1560,7 +1570,6 @@ INVITE_COLS = ["id", "project_id", "token", "role", "created_by",
 
 
 def invite_create(project_id, role, created_by, days=7, max_uses=50):
-    """Create a new invite token. Returns the token string."""
     import secrets
     token = secrets.token_urlsafe(24)
     now = datetime.datetime.utcnow()
@@ -1595,8 +1604,6 @@ def invite_lookup(token):
 
 
 def invite_consume(token, user_id):
-    """Validate + consume. Adds user to project_members.
-    Returns (ok, reason, project_id, role)."""
     if not token:
         return False, "no_token", None, None
     rec = invite_lookup(token)
@@ -1680,7 +1687,6 @@ ROLE_PERMS = {
 
 
 def can_user(user_id, project_id, action):
-    """Return True if this user has this permission on this project."""
     if not user_id or not project_id:
         return False
     role = get_user_role_in_project(user_id, project_id)
@@ -1703,7 +1709,6 @@ ACTIVITY_COLS = ["id", "project_id", "user_id", "user_name", "action",
 
 def activity_add(project_id, user_id, action, target_type=None,
                  target_id=None, details=None, user_name=None):
-    """Record an action. Silent on failure — never breaks the caller."""
     try:
         with _LOCK:
             c = _conn()
@@ -1739,7 +1744,6 @@ def activity_list(project_id, limit=200):
 # DEFECT COMMENTS — per-notice discussion thread
 # =====================================================================
 def comment_add(defect_id, user_id, author, body):
-    """Add a comment to a defect. Returns the new comment id or None."""
     if not defect_id:
         return None
     text = str(body or "").strip()
@@ -1792,7 +1796,6 @@ def comment_count(defect_id):
 
 
 def comment_delete(comment_id, user_id=None, is_admin_user=False):
-    """Delete a comment. Author or admin only."""
     if not comment_id:
         return False, "not_found"
     c = _conn()
@@ -1817,3 +1820,89 @@ def comment_delete(comment_id, user_id=None, is_admin_user=False):
         c2.commit()
         _sync(c2)
     return True, None
+
+
+# =====================================================================
+# DEFECT WATCHERS — follow a defect to keep it visible
+# =====================================================================
+def watch_add(defect_id, user_id):
+    if not defect_id or not user_id:
+        return False, "missing"
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            cur.execute("""
+                INSERT OR IGNORE INTO defect_watchers
+                    (defect_id, user_id, added_at)
+                VALUES (?, ?, ?)
+            """, (int(defect_id), int(user_id), _now()))
+            c.commit()
+            _sync(c)
+        except Exception as e:
+            return False, str(e)
+    return True, "ok"
+
+
+def watch_remove(defect_id, user_id):
+    if not defect_id or not user_id:
+        return False, "missing"
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            DELETE FROM defect_watchers
+            WHERE defect_id=? AND user_id=?
+        """, (int(defect_id), int(user_id)))
+        c.commit()
+        _sync(c)
+    return True, "ok"
+
+
+def watch_is_watching(defect_id, user_id):
+    if not defect_id or not user_id:
+        return False
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("""
+            SELECT 1 FROM defect_watchers
+            WHERE defect_id=? AND user_id=? LIMIT 1
+        """, (int(defect_id), int(user_id)))
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def watch_list_for_user(user_id):
+    """Return the set of defect_ids this user is watching."""
+    if not user_id:
+        return set()
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute("""
+            SELECT defect_id FROM defect_watchers WHERE user_id=?
+        """, (int(user_id),))
+        rows = _to_dicts(cur.fetchall(), ["defect_id"])
+        return set(int(r.get("defect_id")) for r in rows if r.get("defect_id"))
+    except Exception:
+        return set()
+
+
+def watch_count(defect_id):
+    if not defect_id:
+        return 0
+    c = _conn()
+    cur = c.cursor()
+    try:
+        cur.execute(
+            "SELECT COUNT(*) FROM defect_watchers WHERE defect_id=?",
+            (int(defect_id),))
+        row = cur.fetchone()
+        if not row:
+            return 0
+        v = row[0] if not isinstance(row, dict) else list(row.values())[0]
+        return int(v or 0)
+    except Exception:
+        return 0
