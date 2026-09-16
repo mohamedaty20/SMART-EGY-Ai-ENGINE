@@ -336,6 +336,19 @@ def init_db():
                 created_at TEXT
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS inspection_tables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                inspection_date TEXT NOT NULL,
+                source_filename TEXT,
+                table_json TEXT,
+                is_carried INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT,
+                UNIQUE(project_id, inspection_date)
+            )
+        """)
 
         _ensure_columns(cur, "users", [
             ("title", "TEXT"), ("photo_bytes", "BLOB"),
@@ -397,6 +410,10 @@ def init_db():
             "ON defect_watchers(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_templates_project "
             "ON report_templates(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_insp_project "
+            "ON inspection_tables(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_insp_project_date "
+            "ON inspection_tables(project_id, inspection_date)",
         ]:
             try:
                 cur.execute(idx)
@@ -677,6 +694,11 @@ def delete_project(project_id):
             pass
         try:
             cur.execute("DELETE FROM report_templates WHERE project_id=?",
+                        (project_id,))
+        except Exception:
+            pass
+        try:
+            cur.execute("DELETE FROM inspection_tables WHERE project_id=?",
                         (project_id,))
         except Exception:
             pass
@@ -2251,4 +2273,94 @@ def report_template_get_default(project_id):
         "name": d.get("name") or "",
         "config": cfg,
         "is_default": bool(int(d.get("is_default") or 0)),
-                }
+    }
+
+
+# =====================================================================
+# INSPECTION TABLES
+# =====================================================================
+def inspection_table_get(project_id, date_str):
+    if not project_id or not date_str:
+        return None
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, inspection_date, source_filename,
+               table_json, is_carried, created_at, updated_at
+        FROM inspection_tables
+        WHERE project_id=? AND inspection_date=?
+    """, (int(project_id), str(date_str)))
+    row = _to_dict(cur.fetchone(), [
+        "id", "project_id", "inspection_date", "source_filename",
+        "table_json", "is_carried", "created_at", "updated_at"])
+    if not row:
+        return None
+    try:
+        row["table"] = json.loads(row.get("table_json") or "{}")
+    except Exception:
+        row["table"] = {}
+    return row
+
+
+def inspection_table_get_latest_before(project_id, date_str):
+    if not project_id or not date_str:
+        return None
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        SELECT id, project_id, inspection_date, source_filename,
+               table_json, is_carried, created_at, updated_at
+        FROM inspection_tables
+        WHERE project_id=? AND inspection_date < ?
+        ORDER BY inspection_date DESC LIMIT 1
+    """, (int(project_id), str(date_str)))
+    row = _to_dict(cur.fetchone(), [
+        "id", "project_id", "inspection_date", "source_filename",
+        "table_json", "is_carried", "created_at", "updated_at"])
+    if not row:
+        return None
+    try:
+        row["table"] = json.loads(row.get("table_json") or "{}")
+    except Exception:
+        row["table"] = {}
+    return row
+
+
+def inspection_table_upsert(project_id, date_str, source_filename,
+                             table_data, is_carried=False):
+    if not project_id or not date_str:
+        return None
+    try:
+        payload = json.dumps(table_data or {})
+    except Exception:
+        payload = "{}"
+    now = _now()
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        cur.execute("""
+            SELECT id FROM inspection_tables
+            WHERE project_id=? AND inspection_date=?
+        """, (int(project_id), str(date_str)))
+        row = cur.fetchone()
+        if row:
+            tid = row[0] if not isinstance(row, dict) else row.get("id")
+            cur.execute("""
+                UPDATE inspection_tables
+                SET source_filename=?, table_json=?, is_carried=?,
+                    updated_at=?
+                WHERE id=?
+            """, (source_filename or "", payload,
+                  1 if is_carried else 0, now, int(tid)))
+        else:
+            cur.execute("""
+                INSERT INTO inspection_tables
+                    (project_id, inspection_date, source_filename,
+                     table_json, is_carried, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (int(project_id), str(date_str), source_filename or "",
+                  payload, 1 if is_carried else 0, now, now))
+            tid = cur.lastrowid
+        c.commit()
+        _sync(c)
+        return tid
