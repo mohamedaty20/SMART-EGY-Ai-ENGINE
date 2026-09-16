@@ -3863,11 +3863,7 @@ def _open_ms_weak_points_dialog(ms):
         ui.button(_t("close"), on_click=dlg.close).classes(
             BTN_SOFT).style("width:100%;")
     dlg.open()
-```
 
-Replace with exactly (the new ~200-line function):
-
-```
 def _open_ms_weak_points_dialog(ms, project_id):
     ms_id = ms.get("id")
     if not ms_id:
