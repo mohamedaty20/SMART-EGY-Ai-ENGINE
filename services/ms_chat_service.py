@@ -9,8 +9,10 @@ Two modes:
 Uses the existing Gemini wrapper (call_gemini_json) and the OCR helper in
 defect_page.py is passed in by the caller to avoid a circular import.
 """
+import io
 import re
 import json
+import datetime
 
 from services import defect_db as db
 
@@ -302,3 +304,262 @@ async def check_document_against_ms(file_bytes, mime_type, project_id,
         "summary": str(data.get("summary", "")).strip(),
         "error": None,
     }
+
+
+# =====================================================================
+# FIND ERRORS IN MS (#10) — analyse one MS against fixed standards
+# =====================================================================
+_FIND_ERRORS_PROMPT = """You are a senior construction QC reviewer.
+Review the Method Statement (MS) below against these standards:
+- SCP 203 (Saudi Code for Concrete)
+- ECP 202 (Egyptian Code for Concrete)
+- AASHTO (relevant test / material standards)
+- ISO 9001 (quality management)
+
+TASK: Find genuine compliance problems — missing sections, wrong numbers,
+contradictions, wrong references, omissions of required tests, etc.
+Only flag real issues. Do NOT pad.
+
+IMPORTANT: The MS may be in Arabic. Return YOUR FINDINGS in ENGLISH ONLY.
+
+MS CLAUSE INDEX (cite clause ids as "S<id>" when a finding maps to one of
+these clauses — otherwise leave clause_id empty):
+__CLAUSE_INDEX__
+
+FULL MS TEXT:
+__FULL_TEXT__
+
+Return ONE JSON object with this EXACT shape:
+{
+  "findings": [
+    {
+      "severity": "critical" | "major" | "minor",
+      "standard": "SCP 203" | "ECP 202" | "AASHTO" | "ISO",
+      "reference": "SCP 203 section 5.4.2",
+      "clause_id": "3.1",
+      "issue": "one-sentence description of the problem",
+      "recommendation": "one-sentence fix"
+    }
+  ],
+  "summary": {
+    "critical": 0,
+    "major": 0,
+    "minor": 0,
+    "verdict": "one-sentence overall verdict"
+  }
+}
+
+RULES:
+- Max 40 findings.
+- Severity meanings:
+    critical = safety, structural integrity, or non-compliance that voids acceptance.
+    major    = clear standards violation, wrong numbers, missing mandatory test.
+    minor    = wording, missing clarification, weak reference.
+- Only cite clause_id values that appear in the MS CLAUSE INDEX above.
+- Do NOT invent clause ids.
+- Output ONLY the JSON object. No prose. No markdown."""
+
+
+async def find_errors_in_ms(project_id, ms_id, call_gemini_json_fn):
+    """Analyse ONE MS against the fixed standards set.
+    Returns {findings, summary, error}."""
+    try:
+        ms = db.get_ms_by_id(ms_id)
+    except Exception as e:
+        return {"error": "Could not load MS: " + repr(e),
+                "findings": [], "summary": {}}
+    if not ms:
+        return {"error": "MS not found.",
+                "findings": [], "summary": {}}
+
+    full_text = str(ms.get("full_text") or "")
+    clauses = ms.get("clauses") or []
+    if not full_text and not clauses:
+        return {"error": "This MS has no readable text stored.",
+                "findings": [], "summary": {}}
+
+    index_lines = []
+    for c in (clauses or [])[:200]:
+        cid = str(c.get("id", "?")).strip()
+        title = str(c.get("title", "")).strip()[:80]
+        index_lines.append("S" + cid + " | " + title)
+    clause_index = "\n".join(index_lines) or "(no clause index available)"
+
+    ft = full_text[:120000] if full_text else "(no full text)"
+    prompt = (_FIND_ERRORS_PROMPT
+              .replace("__CLAUSE_INDEX__", clause_index)
+              .replace("__FULL_TEXT__", ft))
+
+    try:
+        raw = await call_gemini_json_fn(prompt, temperature=0.0,
+                                          timeout=90, max_tokens=4096)
+    except Exception as e:
+        return {"error": "AI call failed: " + str(e),
+                "findings": [], "summary": {}}
+    data = _parse_json_object(raw)
+    if not data:
+        return {"error": "AI returned unparseable output.",
+                "findings": [], "summary": {}, "raw": (raw or "")[:1500]}
+
+    findings = []
+    for f in (data.get("findings") or [])[:40]:
+        findings.append({
+            "severity": str(f.get("severity") or "minor").lower(),
+            "standard": str(f.get("standard") or ""),
+            "reference": str(f.get("reference") or ""),
+            "clause_id": str(f.get("clause_id") or "").strip(),
+            "issue": str(f.get("issue") or ""),
+            "recommendation": str(f.get("recommendation") or ""),
+        })
+    summary = data.get("summary") or {}
+    return {"findings": findings, "summary": summary, "error": None}
+
+
+def build_ms_errors_pdf(ms, result):
+    """English-only findings PDF. Returns bytes."""
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
+    )
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+    )
+    NAVY = colors.HexColor("#0a0a0a")
+    ACCENT = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+
+    title_st = ParagraphStyle("T", fontName="Helvetica-Bold",
+                                fontSize=14, textColor=NAVY, spaceAfter=2)
+    sub_st = ParagraphStyle("S", fontName="Helvetica",
+                              fontSize=9, textColor=ACCENT, spaceAfter=8)
+    label_st = ParagraphStyle("L", fontName="Helvetica-Bold",
+                                fontSize=8, textColor=NAVY, leading=11)
+    body_st = ParagraphStyle("B", fontName="Helvetica", fontSize=9,
+                               textColor=colors.black, leading=12)
+    cell_st = ParagraphStyle("C", fontName="Helvetica", fontSize=8.5,
+                               textColor=colors.black, leading=11)
+    head_st = ParagraphStyle("H", fontName="Helvetica-Bold",
+                               fontSize=8.5, textColor=colors.white,
+                               leading=11)
+    small_st = ParagraphStyle("Sm", fontName="Helvetica", fontSize=7,
+                                textColor=GREY, leading=9)
+
+    story = []
+    story.append(Paragraph("MS COMPLIANCE REVIEW", title_st))
+    story.append(Paragraph(
+        str(ms.get("ms_number") or "") + "  ·  " +
+        str(ms.get("title") or ""), sub_st))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
+                             spaceAfter=10))
+
+    meta_rows = [
+        [Paragraph("<b>Reviewed against:</b>", label_st),
+         Paragraph("SCP 203 · ECP 202 · AASHTO · ISO 9001", body_st)],
+        [Paragraph("<b>Date:</b>", label_st),
+         Paragraph(datetime.date.today().strftime("%Y-%m-%d"), body_st)],
+    ]
+    t_meta = Table(meta_rows, colWidths=[35*mm, 140*mm])
+    t_meta.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t_meta)
+    story.append(Spacer(1, 12))
+
+    findings = result.get("findings") or []
+    summary = result.get("summary") or {}
+
+    counts = {"critical": 0, "major": 0, "minor": 0}
+    for f in findings:
+        s = str(f.get("severity") or "").lower()
+        if s in counts:
+            counts[s] += 1
+
+    story.append(Paragraph("SUMMARY", label_st))
+    story.append(Spacer(1, 6))
+    kpi_data = [
+        ["Critical", "Major", "Minor", "Total"],
+        [str(counts["critical"]), str(counts["major"]),
+         str(counts["minor"]), str(len(findings))],
+    ]
+    t_kpi = Table(kpi_data, colWidths=[43*mm]*4)
+    t_kpi.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F5F5")),
+        ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(t_kpi)
+    story.append(Spacer(1, 10))
+
+    verdict = str(summary.get("verdict") or "").strip()
+    if verdict:
+        story.append(Paragraph("<b>Verdict:</b> " + verdict, body_st))
+        story.append(Spacer(1, 14))
+
+    if not findings:
+        story.append(Paragraph("No compliance issues found.", body_st))
+    else:
+        story.append(Paragraph("FINDINGS", label_st))
+        story.append(Spacer(1, 6))
+
+        data = [[
+            Paragraph("Sev.", head_st),
+            Paragraph("Standard", head_st),
+            Paragraph("Reference", head_st),
+            Paragraph("MS clause", head_st),
+            Paragraph("Issue", head_st),
+            Paragraph("Recommendation", head_st),
+        ]]
+        for f in findings:
+            sev = str(f.get("severity") or "minor").upper()
+            cid = str(f.get("clause_id") or "").strip()
+            cid_txt = ("S" + cid) if cid else "—"
+            data.append([
+                Paragraph(sev, cell_st),
+                Paragraph(str(f.get("standard") or "—"), cell_st),
+                Paragraph(str(f.get("reference") or "—"), cell_st),
+                Paragraph(cid_txt, cell_st),
+                Paragraph(str(f.get("issue") or ""), cell_st),
+                Paragraph(str(f.get("recommendation") or ""), cell_st),
+            ])
+        t_f = Table(
+            data,
+            colWidths=[16*mm, 22*mm, 28*mm, 18*mm, 51*mm, 40*mm],
+            repeatRows=1,
+        )
+        t_f.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.3,
+             colors.HexColor("#DDDDDD")),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t_f)
+
+    story.append(Spacer(1, 18))
+    story.append(Paragraph(
+        "Generated by Defect Notices — " +
+        datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M") + " UTC",
+        small_st))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
