@@ -299,6 +299,13 @@ T = {
         "ms_chat_kind_check": "DOCUMENT CHECK",
         "ms_chat_source": "Source",
         "ms_chat_thinking": "Thinking...",
+        "ms_errors_title": "Find errors in MS with AI",
+        "ms_errors_analysing": "Analysing against SCP 203 / ECP 202 / AASHTO / ISO...",
+        "ms_errors_takes_time": "This can take up to 90 seconds.",
+        "ms_errors_failed": "Analysis failed",
+        "ms_errors_no_findings": "No compliance issues found.",
+        "ms_errors_download": "Download PDF",
+        "ms_errors_verdict": "Verdict",
     },
     "ar": {
         "app_title": "إشعارات العيوب",
@@ -497,6 +504,13 @@ T = {
         "ms_chat_kind_check": "فحص مستند",
         "ms_chat_source": "المصدر",
         "ms_chat_thinking": "جاري التفكير...",
+        "ms_errors_title": "اكتشاف أخطاء MS بالذكاء الاصطناعي",
+        "ms_errors_analysing": "جاري المقارنة بـ SCP 203 / ECP 202 / AASHTO / ISO...",
+        "ms_errors_takes_time": "قد يستغرق حتى 90 ثانية.",
+        "ms_errors_failed": "فشل التحليل",
+        "ms_errors_no_findings": "لا توجد مشكلات مطابقة.",
+        "ms_errors_download": "تحميل PDF",
+        "ms_errors_verdict": "النتيجة",
     },
 }
 
@@ -3631,7 +3645,7 @@ def _render_reader_main(state, rstate, pid):
         "gap:6px;border-bottom:1px solid var(--border);"
     ):
         def _find_errors():
-            _open_ms_weak_points_dialog(ms)
+            _open_ms_weak_points_dialog(ms, pid)
         def _rate_ms():
             _open_ms_rating_dialog(ms)
         ui.button("Find errors with AI", icon="rule",
@@ -3848,6 +3862,182 @@ def _open_ms_weak_points_dialog(ms):
             "line-height:1.65;color:#b8b8b8;margin-bottom:14px;")
         ui.button(_t("close"), on_click=dlg.close).classes(
             BTN_SOFT).style("width:100%;")
+    dlg.open()
+```
+
+Replace with exactly (the new ~200-line function):
+
+```
+def _open_ms_weak_points_dialog(ms, project_id):
+    ms_id = ms.get("id")
+    if not ms_id:
+        ui.notify("This MS could not be identified.", type="warning")
+        return
+    title_txt = str(ms.get("title") or "this MS")
+
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:0;min-width:340px;max-width:96vw;width:720px;"
+        "max-height:92vh;overflow:hidden;"
+    ):
+        with ui.element('div').style(
+            "padding:18px 20px 14px;border-bottom:1px solid #1e1e1e;"
+        ):
+            ui.label(_t("ms_errors_title")).classes("h1").style(
+                "margin-bottom:4px;")
+            ui.label(title_txt).classes("mono-sm").style(
+                "display:block;color:#808080;")
+
+        body = ui.element('div').style(
+            "padding:18px 20px;max-height:62vh;overflow-y:auto;"
+        )
+
+        with ui.element('div').style(
+            "padding:12px 20px 18px;border-top:1px solid #1e1e1e;"
+            "display:flex;gap:8px;align-items:center;"
+        ):
+            ui.button(_t("close"), on_click=dlg.close).classes(
+                BTN_SOFT).style("flex:1;")
+            dl_holder = ui.element('div').style("flex:1;")
+
+        result_holder = {"data": None}
+
+        def render_running():
+            body.clear()
+            with body:
+                ui.label(_t("ms_errors_analysing")).style(
+                    "font-size:12px;color:#b8b8b8;line-height:1.6;")
+                ui.label(_t("ms_errors_takes_time")).classes(
+                    "mono-sm").style("margin-top:6px;color:#5a5a5a;")
+
+        def render_error(msg):
+            body.clear()
+            with body:
+                ui.icon("error_outline").style(
+                    "font-size:32px;color:#f87171;")
+                ui.label(_t("ms_errors_failed")).style(
+                    "font-size:14px;font-weight:700;color:#e8e8e8;"
+                    "margin-top:8px;")
+                ui.label(str(msg)).classes("mono-sm").style(
+                    "margin-top:6px;color:#b8b8b8;line-height:1.6;"
+                    "word-break:break-word;")
+
+        def render_results(data):
+            findings = data.get("findings") or []
+            summary = data.get("summary") or {}
+            counts = {"critical": 0, "major": 0, "minor": 0}
+            for f in findings:
+                s = str(f.get("severity") or "").lower()
+                if s in counts:
+                    counts[s] += 1
+
+            body.clear()
+            with body:
+                with ui.element('div').style(
+                    "display:grid;grid-template-columns:1fr 1fr 1fr;"
+                    "gap:6px;margin-bottom:12px;"
+                ):
+                    for lbl, key, col in (
+                        ("CRITICAL", "critical", "#f87171"),
+                        ("MAJOR", "major", "#fbbf24"),
+                        ("MINOR", "minor", "#60a5fa"),
+                    ):
+                        with ui.element('div').style(
+                            "background:#101010;border:1px solid #1e1e1e;"
+                            "border-radius:4px;padding:10px 12px;"
+                        ):
+                            ui.label(lbl).classes("label").style(
+                                "font-size:9px;color:" + col + ";")
+                            ui.label(str(counts[key])).style(
+                                "font-size:20px;font-weight:700;"
+                                "color:#e8e8e8;margin-top:2px;")
+
+                verdict = str(summary.get("verdict") or "").strip()
+                if verdict:
+                    ui.label(_t("ms_errors_verdict") + ": " + verdict).style(
+                        "font-size:12px;color:#b8b8b8;line-height:1.6;"
+                        "background:#101010;border:1px solid #1e1e1e;"
+                        "border-radius:4px;padding:10px 12px;"
+                        "margin-bottom:12px;")
+
+                if not findings:
+                    ui.label(_t("ms_errors_no_findings")).style(
+                        "font-size:12px;color:#4ade80;padding:12px 0;")
+                    return
+
+                for f in findings:
+                    sev = str(f.get("severity") or "minor").lower()
+                    col = ("#f87171" if sev == "critical"
+                           else "#fbbf24" if sev == "major" else "#60a5fa")
+                    with ui.element('div').style(
+                        "background:#101010;border:1px solid #1e1e1e;"
+                        "border-radius:4px;padding:10px 12px;"
+                        "margin-bottom:6px;"
+                    ):
+                        with ui.element('div').style(
+                            "display:flex;justify-content:space-between;"
+                            "align-items:center;gap:8px;margin-bottom:6px;"
+                        ):
+                            ui.label(
+                                str(f.get("standard") or "") + "  " +
+                                str(f.get("reference") or "")
+                            ).style(
+                                "font-size:11px;font-weight:700;"
+                                "color:#e8e8e8;word-break:break-word;")
+                            ui.html(
+                                '<span class="badge-role" style="color:' +
+                                col + ';border:1px solid ' + col + '55;">' +
+                                sev.upper() + '</span>')
+                        if f.get("clause_id"):
+                            ui.label("MS clause S" + str(f["clause_id"])
+                                      ).classes("mono-sm").style(
+                                "font-size:10px;color:#5eead4;"
+                                "margin-bottom:4px;")
+                        ui.label(str(f.get("issue") or "")).style(
+                            "font-size:12px;color:#e8e8e8;line-height:1.6;"
+                            "word-break:break-word;")
+                        if f.get("recommendation"):
+                            ui.label("→ " + str(f["recommendation"])).style(
+                                "font-size:11px;color:#b8b8b8;"
+                                "line-height:1.6;margin-top:6px;"
+                                "word-break:break-word;")
+
+        def _do_download():
+            data = result_holder.get("data")
+            if not data:
+                return
+            try:
+                pdf = msc.build_ms_errors_pdf(ms, data)
+                ui.download(pdf, filename="ms_errors_" +
+                            str(ms.get("ms_number") or "MS") + ".pdf")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("PDF failed: " + str(ex), type="negative")
+
+        async def run_ai():
+            try:
+                result = await msc.find_errors_in_ms(
+                    project_id, ms_id, call_gemini_json)
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                render_error(repr(ex))
+                return
+            if result.get("error"):
+                render_error(result["error"])
+                return
+            result_holder["data"] = result
+            render_results(result)
+            dl_holder.clear()
+            with dl_holder:
+                ui.button(_t("ms_errors_download"),
+                          icon="picture_as_pdf",
+                          on_click=_do_download).classes(
+                    BTN_PRIMARY).style("width:100%;")
+
+        render_running()
+        ui.timer(0.05, run_ai, once=True)
+
     dlg.open()
 
 
