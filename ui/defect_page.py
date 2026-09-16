@@ -13,6 +13,9 @@ ui/defect_page.py — Full file.
 - Gemini-style MS Chat UI.
 - Fixed: app-topbar sticky (header + tabs together).
 - Fixed: ms_list no longer duplicates on refresh.
+- Feature: MS Reader tab (browse, chapters, in-MS search).
+- Feature: TDS TOOLS tab (TDS → Method Statement + ITP).
+- Feature: INSPECTIONS tab (daily QC plans, 3-state status, carry-over).
 """
 import io
 import re
@@ -27,6 +30,7 @@ from services import defect_db as db
 from services import defect_service as svc
 from services import ms_chat_service as msc
 from services import tds_service as tds
+from services import inspection_service as ins
 from services.ai_service import call_gemini_json
 from ui.pwa import inject_pwa
 
@@ -1732,6 +1736,8 @@ def build_defect_ui(user_id):
                 _build_ms_reader(state)
             elif tab == "tds":
                 _build_tds_tools(state)
+            elif tab == "inspections":
+                _build_inspections(state)
             elif tab == "admin":
                 _build_admin(state)
             else:
@@ -1747,6 +1753,7 @@ def build_defect_ui(user_id):
                 ("mschat", _t("ms_chat")),
                 ("reader", "MS READER"),
                 ("tds", "TDS TOOLS"),
+                ("inspections", "INSPECTIONS"),
                 ("dashboard", _t("dashboard")),
             ]
             if _is_admin_ui(state.get("user_id")):
@@ -2081,7 +2088,6 @@ def _metric_cell(label, value, variant):
         if variant:
             cls += " " + variant
         ui.label(str(value)).classes(cls)
-
 
 def _build_dashboard_pdf(state, filename="dashboard.pdf"):
     from reportlab.platypus import (
@@ -3300,7 +3306,6 @@ def _open_ms_dialog(state, refresh_drawer):
         preview
     dlg.open()
 
-
 # =====================================================================
 # MS READER (Feature H) — browse + read full MS text
 # =====================================================================
@@ -3353,6 +3358,13 @@ def _reader_highlight(text, q):
         last = m.end()
     out.append(_html_mod.escape(text[last:]))
     return "".join(out)
+
+
+def _reader_safe_anchor(cid):
+    s = re.sub(r'[^0-9A-Za-z]+', '_', str(cid or "").strip())
+    if not s:
+        s = "x"
+    return "ch-" + s
 
 
 def _build_ms_reader(state):
@@ -3519,6 +3531,7 @@ def _render_menu_ms_item(m, rstate, state, q):
             rstate["active_chapter"] = None
             rstate["search_q"] = ""
         rstate["menu_open"] = False
+        rstate["scroll_top"] = True
         state["render_main"]()
     item.on("click", _click_ms)
 
@@ -3532,16 +3545,11 @@ def _render_menu_ms_item(m, rstate, state, q):
     chapters = (ms or {}).get("chapters") or []
 
     with ui.element('div').classes("reader-chapters"):
-        itm = ui.element('div').classes(
-            "reader-chapter-item" + (" active" if not active_chapter else ""))
-        with itm:
-            ui.label("● Read all").style("font-size:10.5px;")
-
-        def _pick_all():
-            rstate["active_chapter"] = None
-            rstate["menu_open"] = False
-            state["render_main"]()
-        itm.on("click", _pick_all)
+        ui.html(
+            '<a class="reader-chapter-item" '
+            'href="#reader-top">● Read all</a>',
+            sanitize=False
+        )
 
         if not chapters:
             ui.label("No chapters extracted yet.").style(
@@ -3555,21 +3563,16 @@ def _render_menu_ms_item(m, rstate, state, q):
                     continue
                 if q and q not in (cid + " " + title).lower():
                     continue
-                active = active_chapter == cid
-                citm = ui.element('div').classes(
-                    "reader-chapter-item" +
-                    (" active" if active else ""))
-                with citm:
-                    label = (("S" + cid + "  ") if cid else "") + title
-                    ui.label(label)
-
-                def _pick(c=cid):
-                    print("[reader] chapter clicked: " + repr(c))
-                    rstate["active_chapter"] = c
-                    rstate["scroll_to"] = c
-                    rstate["menu_open"] = False
-                    state["render_main"]()
-                citm.on("click", _pick)
+                anchor = "ch-" + re.sub(r'[^0-9A-Za-z]+', '_',
+                                         cid or "x")
+                label = (("S" + cid + "  ") if cid else "") + title
+                ui.html(
+                    '<a class="reader-chapter-item" '
+                    'href="#' + _html_mod.escape(anchor) + '" '
+                    'data-chapter="' + _html_mod.escape(cid) + '">' +
+                    _html_mod.escape(label) + '</a>',
+                    sanitize=False
+                )
 
 
 def _render_reader_main(state, rstate, pid):
@@ -3606,7 +3609,6 @@ def _render_reader_main(state, rstate, pid):
     full_text = str(ms.get("full_text") or "")
     chapters = ms.get("chapters") or []
 
-    # ----- Topbar -----
     with ui.element('div').classes("reader-topbar"):
         def _toggle_menu():
             rstate["menu_open"] = not rstate.get("menu_open")
@@ -3619,14 +3621,11 @@ def _render_reader_main(state, rstate, pid):
                      str(ms.get("title") or ""))
         ui.label(title_str).classes("reader-title")
 
-        def _read_all():
-            rstate["active_chapter"] = None
-            state["render_main"]()
-        ui.button("Read all", on_click=_read_all).classes(
-            "reader-readall").props("flat no-caps").style(
-            "font-size:10px;min-height:26px;color:#5eead4;")
+        ui.html(
+            '<a class="reader-readall" href="#reader-top">Read all</a>',
+            sanitize=False
+        )
 
-    # ----- AI action buttons -----
     with ui.element('div').style(
         "padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;"
         "gap:6px;border-bottom:1px solid var(--border);"
@@ -3642,84 +3641,128 @@ def _render_reader_main(state, rstate, pid):
                   on_click=_rate_ms).classes(BTN_SOFT).style(
             "width:100%;font-size:10px;")
 
-    # ----- Search row (uses on_change — the standard NiceGUI pattern) -----
     hits_holder = {"label": None}
-
     with ui.element('div').classes("reader-search"):
         with ui.element('div').style(
             "display:flex;align-items:center;gap:8px;"
         ):
-            def _on_search(e):
+            def _on_search_change(e=None):
+                val = None
                 try:
-                    val = e.value if e and hasattr(e, "value") else ""
+                    if isinstance(e, str):
+                        val = e
+                    elif e is not None and hasattr(e, "value"):
+                        val = e.value
                 except Exception:
-                    val = ""
+                    val = None
+                if val is None:
+                    try:
+                        val = s_in.value or ""
+                    except Exception:
+                        val = ""
                 rstate["search_q"] = str(val or "")
                 print("[reader] search_q=" + repr(rstate["search_q"]))
-                body_refreshable.refresh()
+                try:
+                    body_refreshable.refresh()
+                except Exception as ex:
+                    print("[reader] refresh err: " + repr(ex))
 
             s_in = ui.input(
                 placeholder="Search inside this MS...",
                 value=rstate.get("search_q", ""),
-                on_change=_on_search,
+                on_change=_on_search_change,
             ).style("flex:1;").props("dense clearable")
             h_lbl = ui.label("").style(
                 "font-size:10px;color:#5eead4;font-weight:700;"
                 "min-width:56px;text-align:right;white-space:nowrap;")
             hits_holder["label"] = h_lbl
 
-    # ----- Scrollable body (NiceGUI widget — cannot fail) -----
-    scroll = ui.scroll_area().style(
-        "width:100%;height:65vh;background:#0b0b0b;"
-    )
+    body_slot = ui.element('div').style("width:100%;")
 
-    @ui.refreshable
-    def body_refreshable():
-        scroll.clear()
+    def _set_hits(n):
+        try:
+            if not n:
+                hits_holder["label"].set_text("")
+            else:
+                hits_holder["label"].set_text(
+                    str(n) + (" hit" if n == 1 else " hits"))
+        except Exception:
+            pass
+
+    def render_body():
+        body_slot.clear()
         hits = 0
-        with scroll:
+        with body_slot:
             try:
                 hits = _render_reader_body(full_text, chapters, rstate)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 print("[reader] body err: " + repr(e))
+        _set_hits(hits)
+
+    def _on_search_change2(e=None):
+        val = None
         try:
-            if hits:
-                hits_holder["label"].set_text(
-                    str(hits) + (" hit" if hits == 1 else " hits"))
-            else:
-                hits_holder["label"].set_text("")
+            if isinstance(e, str):
+                val = e
+            elif e is not None and hasattr(e, "value"):
+                val = e.value
+        except Exception:
+            val = None
+        if val is None:
+            try:
+                val = s_in.value or ""
+            except Exception:
+                val = ""
+        rstate["search_q"] = str(val or "")
+        render_body()
+
+    _bound = False
+    try:
+        s_in.on_value_change(_on_search_change2)
+        _bound = True
+    except Exception:
+        pass
+    if not _bound:
+        try:
+            s_in.on("update:model-value", _on_search_change2)
         except Exception:
             pass
 
-    body_refreshable()
+    render_body()
 
-    # ----- If a chapter was clicked, scroll to it -----
-    target = rstate.pop("scroll_to", None)
-    if target:
-        anchor = "ch-" + re.sub(r'[^0-9A-Za-z]+', '_', str(target))
-        print("[reader] scroll_to anchor=" + anchor)
+    if rstate.pop("scroll_top", False):
+        js = (
+            "(function(){"
+            "var tries=0;"
+            "var t=setInterval(function(){"
+            "  var el=document.querySelector('.reader-body-outer')"
+            "       || document.querySelector('.reader-body');"
+            "  if(!el){tries++; if(tries>30){clearInterval(t);} return;}"
+            "  clearInterval(t);"
+            "  try{ el.scrollIntoView({behavior:'smooth',block:'start'}); }"
+            "  catch(e1){"
+            "    try{"
+            "      var r=el.getBoundingClientRect();"
+            "      var y=(window.pageYOffset"
+            "            ||document.documentElement.scrollTop||0)"
+            "            + r.top - 150;"
+            "      if(y<0)y=0;"
+            "      window.scrollTo(0,y);"
+            "    }catch(e2){}"
+            "  }"
+            "},60);"
+            "})();"
+        )
         try:
-            scroll.scroll_to(anchor=anchor)
+            ui.run_javascript(js)
+            print("[reader] scroll scheduled")
         except Exception as e:
-            print("[reader] scroll_to(anchor) failed: " + repr(e))
-            # Fallback: percent-based scroll using chapter line number
-            try:
-                total = max(len(full_text.split("\n")), 1)
-                for ch in chapters:
-                    if str(ch.get("id") or "").strip() == str(target):
-                        ln = ch.get("line", 0)
-                        pct = float(ln) / float(total) * 100.0
-                        print("[reader] scroll_to percent=" + str(pct))
-                        scroll.scroll_to(percent=pct)
-                        break
-            except Exception as e2:
-                print("[reader] percent fallback failed: " + repr(e2))
+            print("[reader] scroll js err: " + repr(e))
 
 
 def _render_reader_body(full_text, chapters, rstate):
-    """Render the entire MS. Returns number of search hits."""
     if not (full_text or "").strip():
         ui.html(
             '<div class="reader-body" style="color:#808080;'
@@ -3796,13 +3839,11 @@ def _open_ms_weak_points_dialog(ms):
     ):
         ui.label("Find errors in MS with AI").classes("h1").style(
             "margin-bottom:6px;")
-        ui.label("Coming in the next update (Push I).").classes(
+        ui.label("Coming in the next update.").classes(
             "muted").style("margin-bottom:12px;color:#fbbf24;")
         ui.label(
             "This will compare \"" + str(ms.get("title") or "this MS") +
-            "\" line by line against SCP 203, ECP 202, AASHTO, and ISO. "
-            "For each weak point it will show what the MS says, what the "
-            "code says, and a downloadable PDF of the full table."
+            "\" line by line against SCP 203, ECP 202, AASHTO, and ISO."
         ).classes("mono-sm").style(
             "line-height:1.65;color:#b8b8b8;margin-bottom:14px;")
         ui.button(_t("close"), on_click=dlg.close).classes(
@@ -3815,18 +3856,1525 @@ def _open_ms_rating_dialog(ms):
         "padding:22px;min-width:320px;max-width:95vw;width:520px;"
     ):
         ui.label("Rate this MS").classes("h1").style("margin-bottom:6px;")
-        ui.label("Coming in the next update (Push I).").classes(
+        ui.label("Coming in the next update.").classes(
             "muted").style("margin-bottom:12px;color:#fbbf24;")
         ui.label(
             "This will show a full analytical rating of \"" +
-            str(ms.get("title") or "this MS") +
-            "\" against the Egyptian codes, with charts, a summary, and a "
-            "downloadable PDF containing the same charts and insights."
+            str(ms.get("title") or "this MS") + "\"."
         ).classes("mono-sm").style(
             "line-height:1.65;color:#b8b8b8;margin-bottom:14px;")
         ui.button(_t("close"), on_click=dlg.close).classes(
             BTN_SOFT).style("width:100%;")
     dlg.open()
+
+
+# =====================================================================
+# TDS TOOLS — upload TDS → AI MOS + ITP
+# =====================================================================
+def _build_tds_tools(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+
+    tstate = state.setdefault("tds", {
+        "result": None, "running": False, "error": None,
+        "filename": "",
+    })
+
+    with ui.element('div').classes("section-head"):
+        ui.label("TDS → MOS & ITP").classes("h1")
+
+        def _refresh():
+            tstate["result"] = None
+            tstate["error"] = None
+            state["render_main"]()
+        ui.button(icon="refresh", on_click=_refresh).props(
+            "flat round dense size=sm").style("color:#808080;")
+
+    ui.label(
+        "Upload a manufacturer Technical Data Sheet (PDF, DOCX, TXT, "
+        "or image). The tool extracts critical parameters with AI and "
+        "drafts a Method Statement + an Inspection & Test Plan."
+    ).classes("muted").style("margin-bottom:12px;line-height:1.6;")
+
+    with ui.element('div').classes("card").style("margin-bottom:12px;"):
+        upload_status = ui.label("").classes("mono-sm").style(
+            "margin-top:6px;display:block;min-height:16px;")
+
+        async def _on_upload(e):
+            if tstate["running"]:
+                ui.notify("Already processing…", type="warning")
+                return
+            try:
+                data = await e.file.read()
+            except Exception as ex:
+                ui.notify("Read failed: " + str(ex), type="negative")
+                return
+
+            name = (e.file.name or "").lower()
+            tstate["filename"] = e.file.name or ""
+            tstate["result"] = None
+            tstate["error"] = None
+
+            upload_status.set_text("Extracting text from " +
+                                    (e.file.name or "file") + "…")
+            upload_status.style(
+                "margin-top:6px;display:block;min-height:16px;"
+                "color:#fbbf24;font-size:10px;")
+
+            text = ""
+            try:
+                if name.endswith((".pdf", ".docx", ".txt", ".md")):
+                    text = await asyncio.to_thread(
+                        svc.extract_document_text, data, e.file.name)
+                elif name.endswith((".jpg", ".jpeg", ".png")):
+                    mime = ("image/jpeg"
+                            if name.endswith((".jpg", ".jpeg"))
+                            else "image/png")
+                    text, err = await _ocr_handwriting(data, mime)
+                    if err and not text:
+                        text = ""
+                else:
+                    text = await asyncio.to_thread(
+                        svc.extract_document_text, data, e.file.name)
+            except Exception as ex:
+                print("[tds] extract failed: " + repr(ex))
+                text = ""
+
+            if not text or len(text.strip()) < 100:
+                tstate["error"] = (
+                    "Could not read enough text from the file. "
+                    "Try a text-based PDF or DOCX."
+                )
+                upload_status.set_text("Failed: not enough text.")
+                upload_status.style(
+                    "margin-top:6px;display:block;min-height:16px;"
+                    "color:#f87171;font-size:10px;")
+                state["render_main"]()
+                return
+
+            upload_status.set_text(
+                "Extracted " + str(len(text)) + " chars. "
+                "Calling AI to draft MOS + ITP… (up to 2 min)")
+
+            tstate["running"] = True
+            try:
+                result = await tds.generate_mos_itp(text, call_gemini_json)
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                result = {"error": "AI failed: " + repr(ex)}
+            tstate["running"] = False
+
+            if result.get("error"):
+                tstate["error"] = result["error"]
+            else:
+                tstate["result"] = result
+            state["render_main"]()
+
+        ui.upload(on_upload=_on_upload, auto_upload=True).style(
+            "width:100%;").props(
+            "flat bordered accept=.pdf,.docx,.txt,.md,.jpg,.jpeg,.png "
+            "label='Upload TDS (PDF / DOCX / TXT / Image)'")
+        upload_status
+
+    if tstate.get("error"):
+        with ui.element('div').classes("card").style(
+            "border-left:3px solid #f87171;margin-bottom:12px;"
+        ):
+            ui.label("Error").style(
+                "font-size:11px;font-weight:700;color:#f87171;")
+            ui.label(str(tstate["error"])).classes("mono-sm").style(
+                "margin-top:4px;line-height:1.6;color:#b8b8b8;")
+            raw = tstate.get("result") or {}
+            if raw.get("raw"):
+                ui.label(str(raw["raw"])[:500]).classes("mono-sm").style(
+                    "margin-top:6px;color:#5a5a5a;font-size:9px;")
+
+    result = tstate.get("result")
+    if not result:
+        return
+
+    product = result.get("product") or {}
+    mos = result.get("method_statement") or {}
+    itp = result.get("inspection_test_plan") or {}
+    crit = result.get("critical_parameters") or []
+
+    with ui.element('div').style(
+        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+        "margin-bottom:12px;"
+    ):
+        def _mos_txt():
+            try:
+                lines = []
+                lines.append(mos.get("title") or "METHOD STATEMENT")
+                lines.append("=" * 60)
+                p_bits = []
+                if product.get("name"):
+                    p_bits.append("Product: " + str(product["name"]))
+                if product.get("manufacturer"):
+                    p_bits.append("Manufacturer: " +
+                                  str(product["manufacturer"]))
+                if product.get("tds_reference"):
+                    p_bits.append("TDS ref: " +
+                                  str(product["tds_reference"]))
+                if product.get("category"):
+                    p_bits.append("Category: " +
+                                  str(product["category"]))
+                lines.extend(p_bits)
+                lines.append("Date: " +
+                             datetime.date.today().strftime("%Y-%m-%d"))
+                lines.append("")
+                if product.get("description"):
+                    lines.append(str(product["description"]))
+                    lines.append("")
+                if crit:
+                    lines.append("KEY PARAMETERS FROM TDS")
+                    lines.append("-" * 60)
+                    for cp in crit:
+                        lines.append(
+                            str(cp.get("parameter") or "") + " : " +
+                            str(cp.get("value") or "")
+                            + ("  (" + str(cp["source_note"]) + ")"
+                               if cp.get("source_note") else "")
+                        )
+                    lines.append("")
+                for sec in (mos.get("sections") or []):
+                    num = str(sec.get("number") or "").strip()
+                    head = str(sec.get("heading") or "").strip()
+                    head_line = (num + ". " + head) if num else head
+                    if not head_line:
+                        continue
+                    lines.append(head_line)
+                    lines.append("-" * len(head_line))
+                    body = str(sec.get("body") or "").strip()
+                    if body:
+                        lines.append(body)
+                    lines.append("")
+                lines.append("")
+                lines.append("PREPARED BY (QC): ____________________")
+                lines.append("APPROVED BY (CONSULTANT): ____________________")
+                lines.append("")
+                txt = "\n".join(lines).encode("utf-8")
+                ui.download(txt, filename="method_statement.txt")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("TXT failed: " + str(ex), type="negative")
+
+        def _itp_txt():
+            try:
+                lines = []
+                lines.append(itp.get("title") or
+                             "INSPECTION & TEST PLAN")
+                lines.append("=" * 100)
+                p_bits = []
+                if product.get("name"):
+                    p_bits.append("Product: " + str(product["name"]))
+                if product.get("manufacturer"):
+                    p_bits.append("Manufacturer: " +
+                                  str(product["manufacturer"]))
+                lines.extend(p_bits)
+                lines.append("Date: " +
+                             datetime.date.today().strftime("%Y-%m-%d"))
+                lines.append("")
+                headers = ["#", "Activity", "Reference", "Checkpoint",
+                           "Acceptance criteria", "Method",
+                           "Frequency", "Responsible"]
+                widths = [3, 22, 16, 26, 34, 20, 12, 14]
+                def _row(cells):
+                    out = []
+                    for i, c in enumerate(cells):
+                        c = str(c or "").replace("\n", " ")
+                        w = widths[i]
+                        if i == 0:
+                            out.append(c.rjust(w))
+                        else:
+                            out.append(c[:w].ljust(w))
+                    return " | ".join(out)
+                lines.append(_row(headers))
+                lines.append("-+-".join("-" * w for w in widths))
+                for i, r in enumerate(itp.get("rows") or [], start=1):
+                    lines.append(_row([
+                        str(i),
+                        r.get("activity") or "",
+                        r.get("reference") or "",
+                        r.get("checkpoint") or "",
+                        r.get("acceptance_criteria") or "",
+                        r.get("method") or "",
+                        r.get("frequency") or "",
+                        r.get("responsible") or "",
+                    ]))
+                lines.append("")
+                txt = "\n".join(lines).encode("utf-8")
+                ui.download(txt, filename="inspection_test_plan.txt")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("TXT failed: " + str(ex), type="negative")
+
+        def _dl_mos():
+            try:
+                pdf = tds.build_mos_pdf(product, mos, crit)
+                ui.download(pdf, filename="method_statement.pdf")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("PDF failed: " + str(ex), type="negative")
+
+        def _dl_itp():
+            try:
+                pdf = tds.build_itp_pdf(product, itp)
+                ui.download(pdf, filename="inspection_test_plan.pdf")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("PDF failed: " + str(ex), type="negative")
+
+        ui.button("Method Statement — TXT", icon="description",
+                  on_click=_mos_txt).classes(BTN_SOFT).style(
+            "width:100%;font-size:10px;")
+        ui.button("ITP — TXT", icon="description",
+                  on_click=_itp_txt).classes(BTN_SOFT).style(
+            "width:100%;font-size:10px;")
+        ui.button("Method Statement — PDF", icon="picture_as_pdf",
+                  on_click=_dl_mos).classes(BTN_PRIMARY).style(
+            "width:100%;font-size:10px;")
+        ui.button("ITP — PDF", icon="picture_as_pdf",
+                  on_click=_dl_itp).classes(BTN_PRIMARY).style(
+            "width:100%;font-size:10px;")
+
+    with ui.element('div').classes("card").style("margin-bottom:12px;"):
+        ui.label("PRODUCT").classes("label")
+        ui.label(str(product.get("name") or "Not specified")).style(
+            "font-size:14px;font-weight:700;color:#e8e8e8;margin-top:4px;")
+        bits = []
+        if product.get("manufacturer"):
+            bits.append("Mfr: " + str(product["manufacturer"]))
+        if product.get("tds_reference"):
+            bits.append("TDS: " + str(product["tds_reference"]))
+        if product.get("category"):
+            bits.append("Cat: " + str(product["category"]))
+        if bits:
+            ui.label(" · ".join(bits)).classes("mono-sm").style(
+                "margin-top:4px;color:#b8b8b8;")
+
+    with ui.element('div').classes("card").style("margin-bottom:12px;"):
+        ui.html(
+            '<div style="font-size:15px;font-weight:700;'
+            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
+            'padding-bottom:8px;margin-bottom:12px;'
+            'letter-spacing:-0.01em;">' +
+            _html_mod.escape(mos.get("title") or "METHOD STATEMENT") +
+            '</div>'
+        )
+        for sec in (mos.get("sections") or []):
+            num = str(sec.get("number") or "").strip()
+            head = str(sec.get("heading") or "").strip()
+            head_line = (num + ". " + head) if num else head
+            if not head_line:
+                continue
+            ui.html(
+                '<div style="font-size:12px;font-weight:700;'
+                'color:#5eead4;margin-top:14px;margin-bottom:4px;'
+                'letter-spacing:0.02em;">' +
+                _html_mod.escape(head_line) + '</div>'
+            )
+            body = str(sec.get("body") or "").strip()
+            if body:
+                ui.html(
+                    '<pre style="margin:0 0 4px 0;white-space:pre-wrap;'
+                    'word-break:break-word;font-family:inherit;'
+                    'font-size:12px;line-height:1.7;color:#d0d0d0;">' +
+                    _html_mod.escape(body) + '</pre>'
+                )
+
+    with ui.element('div').classes("card").style("margin-bottom:12px;"):
+        ui.html(
+            '<div style="font-size:15px;font-weight:700;'
+            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
+            'padding-bottom:8px;margin-bottom:12px;'
+            'letter-spacing:-0.01em;">' +
+            _html_mod.escape(itp.get("title") or "INSPECTION & TEST PLAN") +
+            '</div>'
+        )
+        rows = itp.get("rows") or []
+        if not rows:
+            ui.label("No ITP rows generated.").classes("muted")
+        else:
+            html = ('<table style="width:100%;border-collapse:collapse;'
+                    'font-size:10.5px;'
+                    'font-variant-numeric:tabular-nums;">'
+                    '<thead><tr style="background:#0a0a0a;">')
+            heads = ["#", "Activity", "Reference", "Checkpoint",
+                     "Acceptance criteria", "Method", "Freq.", "Resp."]
+            for h in heads:
+                html += ('<th style="text-align:left;padding:6px 6px;'
+                         'font-size:9px;letter-spacing:0.12em;'
+                         'color:#5eead4;text-transform:uppercase;'
+                         'border-bottom:1px solid #1e1e1e;">' +
+                         _html_mod.escape(h) + '</th>')
+            html += '</tr></thead><tbody>'
+            for i, r in enumerate(rows, start=1):
+                html += '<tr style="border-bottom:1px solid #1e1e1e;">'
+                cells = [
+                    str(i),
+                    str(r.get("activity") or ""),
+                    str(r.get("reference") or ""),
+                    str(r.get("checkpoint") or ""),
+                    str(r.get("acceptance_criteria") or ""),
+                    str(r.get("method") or ""),
+                    str(r.get("frequency") or ""),
+                    str(r.get("responsible") or ""),
+                ]
+                for j, c in enumerate(cells):
+                    col = "#e8e8e8" if j == 0 else "#d0d0d0"
+                    html += ('<td style="padding:6px 6px;'
+                             'vertical-align:top;color:' + col + ';'
+                             'font-size:10.5px;line-height:1.45;">' +
+                             _html_mod.escape(c) + '</td>')
+                html += '</tr>'
+            html += '</tbody></table>'
+            ui.html(html)
+
+# =====================================================================
+# MS CHAT — Gemini style
+# =====================================================================
+# =====================================================================
+# MS READER + CITATIONS (Feature #8)
+# =====================================================================
+_CITE_RE = re.compile(r'\[S([\w.\-]+)\]')
+
+
+def _clause_map_for_project(pid):
+    try:
+        clauses = db.get_clauses_for_element(pid) or []
+    except Exception:
+        return {}
+    out = {}
+    for c in clauses:
+        cid = str(c.get("id", "")).strip()
+        if cid:
+            out[cid] = c
+    return out
+
+
+def _open_clause_modal(cid, pid):
+    clauses = _clause_map_for_project(pid)
+    clause = clauses.get(str(cid))
+    if not clause:
+        ui.notify("Clause S" + str(cid) + " not found in the uploaded MS.",
+                    type="warning")
+        return
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:20px;min-width:320px;max-width:95vw;width:520px;"
+        "max-height:88vh;overflow-y:auto;"
+    ):
+        with ui.element('div').style(
+            "display:flex;align-items:center;gap:8px;"
+            "padding-bottom:10px;border-bottom:1px solid #1e1e1e;"
+            "margin-bottom:12px;"
+        ):
+            ui.html('<span class="cite-pill" style="cursor:default;">[S' +
+                    _html_mod.escape(str(cid)) + ']</span>')
+            ui.label(str(clause.get("title", ""))).style(
+                "font-size:14px;font-weight:700;color:#e8e8e8;"
+                "letter-spacing:-0.01em;")
+        body = str(clause.get("text", "") or "")
+        if body:
+            ui.html('<div style="font-size:13px;color:#e3e3e3;'
+                    'line-height:1.7;white-space:pre-wrap;'
+                    'word-break:break-word;">' +
+                    _html_mod.escape(body) + '</div>')
+        else:
+            ui.label("(This clause has no body text stored.)").classes(
+                "mono-sm").style("color:#5a5a5a;")
+        ui.button(_t("close"), on_click=dlg.close).classes(
+            BTN_SOFT).style("width:100%;margin-top:16px;")
+    dlg.open()
+
+
+def _render_answer_with_citations(answer, pid):
+    text = str(answer or "")
+    if not text:
+        return
+    clauses = _clause_map_for_project(pid)
+    html_parts = []
+    last = 0
+    for m in _CITE_RE.finditer(text):
+        if m.start() > last:
+            html_parts.append(_html_mod.escape(text[last:m.start()]))
+        cid = m.group(1)
+        if cid in clauses:
+            html_parts.append(
+                '<span class="cite-pill" data-cid="' +
+                _html_mod.escape(cid) +
+                '" title="Tap to view the clause text">[' +
+                _html_mod.escape(cid) + ']</span>'
+            )
+        else:
+            html_parts.append(
+                '<span class="cite-pill miss">[' +
+                _html_mod.escape(cid) + ']</span>'
+            )
+        last = m.end()
+    if last < len(text):
+        html_parts.append(_html_mod.escape(text[last:]))
+    ui.html('<div class="gem-ai">' + "".join(html_parts) + '</div>')
+
+
+def _open_ms_reader_dialog(pid):
+    if not pid:
+        ui.notify(_t("setup_first"), type="warning")
+        return
+    try:
+        docs = db.list_ms(pid) or []
+    except Exception as e:
+        ui.notify("Failed to load MS: " + str(e), type="negative")
+        return
+    if not docs:
+        ui.notify(_t("ms_chat_need_ms"), type="warning")
+        return
+
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:0;max-width:640px;width:95vw;max-height:90vh;"
+        "overflow:hidden;"
+    ):
+        with ui.element('div').style(
+            "padding:16px 18px 12px;border-bottom:1px solid #1e1e1e;"
+            "display:flex;justify-content:space-between;align-items:center;"
+        ):
+            ui.label("METHOD STATEMENTS").style(
+                "font-size:13px;font-weight:700;color:#e8e8e8;"
+                "letter-spacing:0.06em;")
+            ui.label(str(len(docs)) + " uploaded").classes("mono-sm").style(
+                "font-size:10px;color:#808080;")
+
+        view_holder = ui.element('div').style(
+            "padding:14px 18px 18px;max-height:calc(90vh - 120px);"
+            "overflow-y:auto;"
+        )
+
+        def render_list():
+            view_holder.clear()
+            with view_holder:
+                for doc in docs:
+                    with ui.element('div').classes("ms-reader-doc") as card:
+                        with ui.element('div').style(
+                            "display:flex;justify-content:space-between;"
+                            "align-items:flex-start;gap:8px;"
+                        ):
+                            with ui.element('div').style(
+                                "flex:1;min-width:0;"
+                            ):
+                                ui.label(
+                                    str(doc.get("ms_number", "")) + "  " +
+                                    str(doc.get("title", ""))
+                                ).style(
+                                    "font-size:12px;font-weight:700;"
+                                    "color:#e8e8e8;word-break:break-word;")
+                                ui.label(
+                                    str(doc.get("element_type", "")) + " · " +
+                                    str(doc.get("discipline", ""))
+                                ).classes("mono-sm").style(
+                                    "font-size:10px;color:#808080;"
+                                    "margin-top:2px;")
+                            ui.html('<span class="badge-seen">' +
+                                    str(len(doc.get("clauses") or [])) +
+                                    ' clauses</span>')
+
+                        def _open(d=doc):
+                            render_doc(d)
+                        card.on("click", _open)
+
+        def render_doc(doc):
+            view_holder.clear()
+            with view_holder:
+                with ui.element('div').style(
+                    "display:flex;align-items:center;gap:8px;"
+                    "margin-bottom:12px;"
+                ):
+                    def _back():
+                        render_list()
+                    ui.button(icon="arrow_back", on_click=_back).props(
+                        "flat round dense size=sm").style("color:#5eead4;")
+                    with ui.element('div').style("flex:1;min-width:0;"):
+                        ui.label(str(doc.get("title", ""))).style(
+                            "font-size:14px;font-weight:700;color:#e8e8e8;")
+                        ui.label(str(doc.get("ms_number", "")) + " · " +
+                                  str(doc.get("element_type", "")) + " · " +
+                                  str(doc.get("discipline", ""))).classes(
+                            "mono-sm").style(
+                            "font-size:10px;color:#808080;margin-top:2px;")
+
+                clauses = doc.get("clauses") or []
+                if not clauses:
+                    ui.label("No clauses stored for this document.").classes(
+                        "mono-sm").style("color:#5a5a5a;padding:20px 0;"
+                                          "text-align:center;")
+                    return
+                for c in clauses:
+                    with ui.element('div').classes("ms-reader-clause"):
+                        with ui.element('div').style(
+                            "display:flex;align-items:baseline;gap:2px;"
+                        ):
+                            ui.html('<span class="cid">S' +
+                                    _html_mod.escape(str(c.get("id", ""))) +
+                                    '</span>')
+                            ui.html('<span class="ctitle">' +
+                                    _html_mod.escape(
+                                        str(c.get("title", ""))) +
+                                    '</span>')
+                        if c.get("text"):
+                            ui.html('<div class="ctext">' +
+                                    _html_mod.escape(str(c.get("text", "")))
+                                    + '</div>')
+
+        render_list()
+
+        with ui.element('div').style(
+            "padding:10px 18px 16px;border-top:1px solid #1e1e1e;"
+        ):
+            ui.button(_t("close"), on_click=dlg.close).classes(
+                BTN_SOFT).style("width:100%;")
+
+    dlg.open()
+
+
+def _ensure_cite_click_listener():
+    ui.run_javascript("""
+        (function(){
+          if (window._citeListenerAttached) return;
+          window._citeListenerAttached = true;
+          document.body.addEventListener('click', function(ev){
+            var el = ev.target.closest('.cite-pill[data-cid]');
+            if (el) {
+              emitEvent('cite_click', el.getAttribute('data-cid'));
+            }
+          });
+        })();
+    """)
+
+
+def _build_ms_chat(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    pid = state["project_id"]
+    uid = state["user_id"]
+    _current_uid_holder["uid"] = uid
+    user = state.get("user") or {}
+    my_name = (user.get("name") or user.get("email") or "me")
+
+    _ensure_cite_click_listener()
+    if not state.get("_cite_handler_registered"):
+        def _on_cite_click(e):
+            try:
+                cid = e.args[0] if e.args else None
+            except Exception:
+                cid = None
+            if cid:
+                _open_clause_modal(cid, state.get("project_id"))
+        ui.on("cite_click", _on_cite_click)
+        state["_cite_handler_registered"] = True
+
+    with ui.element('div').classes("chat-tools"):
+        def _open_reader():
+            _open_ms_reader_dialog(pid)
+        ui.button(icon="menu_book", on_click=_open_reader).props(
+            "round dense size=sm").tooltip("Browse Method Statements")
+
+        def _clear_hist():
+            try:
+                db.ms_chat_clear(pid, uid)
+                ui.notify(_t("ms_chat_cleared"), type="positive")
+                ms_list.refresh()
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("Clear failed: " + str(ex), type="negative")
+        ui.button(icon="delete_sweep", on_click=_clear_hist).props(
+            "round dense size=sm").tooltip(_t("ms_chat_clear"))
+
+        def _refresh():
+            state["render_main"]()
+        ui.button(icon="refresh", on_click=_refresh).props(
+            "round dense size=sm").tooltip("Refresh")
+
+    with ui.element('div').style("padding:0 4px 8px 4px;"):
+        ui.label(_t("ms_chat_title")).style(
+            "font-size:18px;font-weight:700;color:#e3e3e3;"
+            "letter-spacing:-0.01em;")
+
+    clauses_count = len(db.get_clauses_for_element(pid))
+    if clauses_count == 0:
+        with ui.element('div').style(
+            "text-align:center;padding:60px 20px;"
+        ):
+            ui.icon("description").style(
+                "font-size:36px;color:#5a5a5a;")
+            ui.label(_t("ms_chat_need_ms")).style(
+                "color:#9aa0a6;font-size:13px;margin-top:14px;"
+                "line-height:1.7;max-width:320px;margin-left:auto;"
+                "margin-right:auto;display:block;")
+        return
+
+    q_input_holder = {"el": None}
+
+    @ui.refreshable
+    def ms_list():
+        try:
+            msgs = db.ms_chat_list(pid, uid, limit=200) or []
+        except Exception:
+            msgs = []
+
+        if not msgs:
+            with ui.element('div').classes("gem-wrap"):
+                with ui.element('div').classes("gem-empty"):
+                    ui.label("Hi " + my_name.split()[0] + " 👋").classes(
+                        "gem-empty-title")
+                    ui.label(
+                        "Ask me anything about your Method Statements. "
+                        "I'll answer from the uploaded MS and cite the "
+                        "clause."
+                    ).classes("gem-empty-sub")
+                    with ui.element('div').classes("gem-empty-chips"):
+                        def _make_suggest(question):
+                            def _fill():
+                                try:
+                                    el = q_input_holder.get("el")
+                                    if el is not None:
+                                        el.value = question
+                                except Exception:
+                                    pass
+                            return _fill
+                        ui.label(
+                            "What is the minimum cover for columns?"
+                        ).classes("gem-chip").on(
+                            "click",
+                            _make_suggest(
+                                "What is the minimum cover for "
+                                "columns exposed to weather?"))
+                        ui.label(
+                            "Lap length for tension bars?"
+                        ).classes("gem-chip").on(
+                            "click",
+                            _make_suggest(
+                                "What is the lap length for tension bars?"))
+                        ui.label(
+                            "Curing requirements?"
+                        ).classes("gem-chip").on(
+                            "click",
+                            _make_suggest(
+                                "What are the curing requirements?"))
+            return
+
+        with ui.element('div').classes("gem-wrap"):
+            for m in msgs:
+                _render_ms_message(m, on_delete=ms_list.refresh, pid=pid)
+
+    ms_list()
+
+    with ui.element('div').classes("gem-composer"):
+        with ui.element('div').classes("gem-composer-inner"):
+
+            async def _on_doc(e):
+                try:
+                    data = await e.file.read()
+                except Exception as ex:
+                    ui.notify(_t("upload_failed") + str(ex),
+                               type="negative")
+                    return
+                if not data:
+                    ui.notify(_t("empty_file"), type="warning")
+                    return
+                name = (e.file.name or "").lower()
+                if name.endswith(".pdf"):
+                    mime = "application/pdf"
+                elif name.endswith(".png"):
+                    mime = "image/png"
+                else:
+                    mime = "image/jpeg"
+
+                ui.notify(_t("ms_chat_reading"), type="info", timeout=2000)
+                try:
+                    result = await msc.check_document_against_ms(
+                        file_bytes=data, mime_type=mime, project_id=pid,
+                        ocr_fn=_ocr_handwriting,
+                        call_gemini_json_fn=call_gemini_json)
+                except Exception as ex:
+                    ui.notify(_t("ms_chat_failed") + str(ex),
+                               type="negative")
+                    return
+                if result.get("error"):
+                    ui.notify(_t("ms_chat_failed") +
+                               str(result["error"]), type="negative")
+                    return
+                resp = {k: result.get(k) for k in
+                        ("doc_type", "extracted", "checks", "overall",
+                         "summary", "ocr_text")}
+                try:
+                    db.ms_chat_add(pid, uid, my_name, "check",
+                                    _t("ms_chat_check_btn"), resp)
+                except Exception as ex:
+                    ui.notify("Save failed: " + str(ex), type="negative")
+                    return
+                try:
+                    ms_list.refresh()
+                except Exception:
+                    pass
+                ui.run_javascript(
+                    "window.scrollTo({top: document.body.scrollHeight,"
+                    " behavior:'smooth'});")
+
+            hidden_upload_holder = ui.element('div').style(
+                "position:absolute;left:-9999px;top:-9999px;width:1px;"
+                "height:1px;overflow:hidden;")
+            with hidden_upload_holder:
+                ui.upload(on_upload=_on_doc, auto_upload=True).props(
+                    "flat bordered accept=image/*,.pdf").style(
+                    "width:1px;height:1px;")
+
+            with ui.element('div').classes("gem-pill"):
+                def _open_picker():
+                    try:
+                        ui.run_javascript("""
+                            (function() {
+                              var holders = document.querySelectorAll(
+                                '.gem-composer-inner .q-uploader');
+                              for (var i = 0; i < holders.length; i++) {
+                                var inp = holders[i].querySelector(
+                                  'input[type=file]');
+                                if (inp) { inp.click(); return; }
+                              }
+                            })();
+                        """)
+                    except Exception as e:
+                        print("[ms] open picker failed: " + repr(e))
+
+                ui.button(icon="add", on_click=_open_picker).classes(
+                    "gem-icon-btn plus").props("flat round dense")
+
+                q_input = ui.textarea(
+                    placeholder=_t("ms_chat_ask_placeholder")
+                ).style("width:100%;").props("dense autogrow borderless")
+                q_input_holder["el"] = q_input
+
+                send_btn = ui.button(icon="arrow_upward").classes(
+                    "gem-icon-btn send").props("flat round dense")
+
+                send_state = {"busy": False}
+
+                async def _ask():
+                    if send_state["busy"]:
+                        ui.notify("Still waiting for the previous answer…",
+                                   type="warning")
+                        return
+                    q = (q_input.value or "").strip()
+                    if not q:
+                        return
+                    send_state["busy"] = True
+                    try:
+                        send_btn.classes(remove="active")
+                        send_btn.props("loading")
+                    except Exception:
+                        pass
+
+                    result = None
+                    err_msg = None
+                    try:
+                        result = await asyncio.wait_for(
+                            msc.ask_ms_question(pid, q, call_gemini_json),
+                            timeout=90.0)
+                    except asyncio.TimeoutError:
+                        err_msg = ("The AI did not respond within 90s. "
+                                    "Please try again.")
+                    except Exception as ex:
+                        import traceback
+                        traceback.print_exc()
+                        err_msg = repr(ex)
+                    finally:
+                        try:
+                            send_btn.props(remove="loading")
+                        except Exception:
+                            pass
+                        send_state["busy"] = False
+
+                    if err_msg:
+                        ui.notify(_t("ms_chat_failed") + err_msg,
+                                   type="negative", timeout=9000)
+                        return
+
+                    if not result or result.get("error"):
+                        ui.notify(
+                            _t("ms_chat_failed") +
+                            str((result or {}).get("error", "Empty result")),
+                            type="negative")
+                        return
+                    answer = (result.get("answer") or "").strip()
+                    if not answer:
+                        ui.notify("The AI returned an empty answer.",
+                                   type="warning")
+                        return
+
+                    try:
+                        db.ms_chat_add(pid, uid, my_name, "question", q,
+                                        {"answer": answer})
+                    except Exception as ex:
+                        import traceback
+                        traceback.print_exc()
+                        ui.notify("Could not save the answer: " + str(ex),
+                                   type="negative")
+                        return
+
+                    q_input.value = ""
+                    try:
+                        send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                    try:
+                        ms_list.refresh()
+                    except Exception:
+                        pass
+                    ui.run_javascript(
+                        "window.scrollTo({top: document.body.scrollHeight,"
+                        " behavior:'smooth'});")
+
+                def _on_send():
+                    try:
+                        ui.timer(0.01, _ask, once=True)
+                    except Exception:
+                        pass
+
+                send_btn.on("click", _on_send)
+
+                def _on_input(e):
+                    txt = (q_input.value or "").strip()
+                    try:
+                        if txt:
+                            send_btn.classes(add="active")
+                        else:
+                            send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                q_input.on("update:model-value", _on_input)
+                q_input.on("keydown.enter", lambda _: _on_send())
+
+            ui.label("MS Chat · answers only from the uploaded Method "
+                       "Statements").classes("gem-hint")
+
+    ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});")
+    ui.timer(0.35, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+    ui.timer(0.9, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+
+    state.setdefault("_ms_chat_last_id", db.ms_chat_max_id(pid, uid))
+
+    async def _ms_poll():
+        try:
+            cur_max = db.ms_chat_max_id(pid, uid)
+        except Exception:
+            return
+        if cur_max != state.get("_ms_chat_last_id"):
+            state["_ms_chat_last_id"] = cur_max
+            try:
+                ms_list.refresh()
+            except Exception:
+                pass
+
+    ui.timer(5.0, _ms_poll)
+
+
+def _render_ms_message(m, on_delete=None, pid=None):
+    kind = (m.get("kind") or "question").lower()
+    author = m.get("author") or "?"
+    created = str(m.get("created_at") or "")[:16]
+    body = str(m.get("body") or "")
+    resp = m.get("response") or {}
+    mid = m.get("id")
+
+    with ui.element('div').classes("gem-row user"):
+        with ui.element('div').style(
+            "display:flex;flex-direction:column;align-items:flex-end;"
+            "max-width:82%;"
+        ):
+            with ui.element('div').classes("gem-user"):
+                ui.label(body)
+            with ui.element('div').classes("gem-msg-meta"):
+                ui.label(created)
+
+    with ui.element('div').classes("gem-row ai"):
+        with ui.element('div').style("width:100%;min-width:0;"):
+            if kind == "question":
+                answer = str(resp.get("answer") or "")
+                if not answer:
+                    ui.label("(No answer was saved for this question.)").style(
+                        "font-size:12px;color:#808080;font-style:italic;")
+                elif pid:
+                    _render_answer_with_citations(answer, pid)
+                else:
+                    ui.label(answer).classes("gem-ai")
+            else:
+                _render_gem_check_card(resp)
+
+            with ui.element('div').classes("gem-msg-meta"):
+                ui.label(_t("ms_chat_kind_question") if kind == "question"
+                          else _t("ms_chat_kind_check"))
+                if mid:
+                    def _del(did=mid):
+                        db.ms_chat_delete(
+                            did, _current_uid_holder.get("uid"))
+                        ui.notify("Deleted.", type="positive")
+                        if on_delete:
+                            on_delete()
+                    btn = ui.label("Delete").classes("gem-del")
+                    btn.on("click", _del)
+
+
+def _render_gem_check_card(resp):
+    with ui.element('div').classes("gem-check-card"):
+        ui.label(_t("ms_chat_check_btn")).classes("gem-check-title")
+
+        doc_type = resp.get("doc_type") or ""
+        if doc_type:
+            with ui.element('div').classes("gem-kv-row"):
+                ui.html("<b>Type</b> " +
+                        _html_mod.escape(str(doc_type)))
+
+        extracted = resp.get("extracted") or {}
+        if extracted:
+            for k, v in extracted.items():
+                with ui.element('div').classes("gem-kv-row"):
+                    ui.html("<b>" + _html_mod.escape(str(k)) + "</b> " +
+                            _html_mod.escape(str(v)))
+
+        checks = resp.get("checks") or []
+        if checks:
+            with ui.element('div').style("margin-top:10px;"):
+                for c in checks:
+                    v = (c.get("verdict") or "").lower()
+                    vcls = ("ok" if v == "ok" else
+                            "warn" if v == "warn" else "fail")
+                    field = str(c.get("field") or "")
+                    val = str(c.get("value") or "")
+                    req = str(c.get("ms_requirement") or "")
+                    cid = str(c.get("clause_id") or "")
+                    note = str(c.get("note") or "")
+                    with ui.element('div').classes("gem-check-row"):
+                        with ui.element('div'):
+                            ui.label(field).classes("gem-check-field")
+                            ui.label(val).classes("gem-check-val")
+                        ui.html('<span class="gem-verdict ' + vcls + '">' +
+                                (v or "").upper() + '</span>')
+                        if req or cid or note:
+                            bits = []
+                            if req:
+                                bits.append("MS: " + req)
+                            if cid:
+                                bits.append("[S" + cid + "]")
+                            if note:
+                                bits.append(note)
+                            ui.html('<div class="gem-check-note">' +
+                                    _html_mod.escape(" · ".join(bits)) +
+                                    '</div>')
+
+        overall = (resp.get("overall") or "").lower()
+        if overall:
+            ocls = ("ok" if overall == "compliant" else
+                    "warn" if overall == "conditional" else "fail")
+            olabel = ("COMPLIANT" if overall == "compliant" else
+                      "CONDITIONAL" if overall == "conditional"
+                      else "NON-COMPLIANT")
+            with ui.element('div').style(
+                "display:flex;justify-content:space-between;"
+                "align-items:center;margin-top:12px;"
+                "padding-top:10px;border-top:1px solid #232426;"
+            ):
+                ui.label(_t("ms_chat_overall")).classes("gem-check-title")
+                ui.html('<span class="gem-verdict ' + ocls + '">' +
+                        olabel + '</span>')
+
+        summary = resp.get("summary") or ""
+        if summary:
+            ui.label(str(summary)).style(
+                "font-size:12.5px;color:#b8b8b8;"
+                "margin-top:10px;line-height:1.6;")
+
+
+def _open_member_profile(user_id):
+    u = db.get_user(user_id)
+    if not u:
+        return
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:22px;min-width:260px;max-width:95vw;width:340px;"
+    ):
+        with ui.element('div').style(
+            "display:flex;flex-direction:column;align-items:center;gap:8px;"
+        ):
+            av = '<div class="avatar-big">'
+            if u.get("photo_bytes"):
+                try:
+                    b64 = base64.b64encode(u["photo_bytes"]).decode("ascii")
+                    av += '<img src="data:image/jpeg;base64,' + b64 + '"/>'
+                except Exception:
+                    av += _html_mod.escape(_initial(u.get("name") or ""))
+            else:
+                av += _html_mod.escape(_initial(u.get("name") or ""))
+            av += '</div>'
+            ui.html(av)
+            ui.label(u.get("name") or "—").style(
+                "font-size:15px;font-weight:700;color:#e8e8e8;")
+            if u.get("title"):
+                color = _chat_author_color(u["title"])
+                ui.label(u["title"]).style(
+                    "font-size:11px;color:" + color + ";font-weight:600;"
+                    "letter-spacing:0.05em;"
+                )
+            if u.get("email"):
+                ui.label(u["email"]).classes("mono-sm").style(
+                    "margin-top:2px;")
+        ui.element('div').style("height:14px;")
+        ui.button(_t("close"), on_click=dlg.close).classes(BTN_SOFT).style(
+            "width:100%;"
+        )
+    dlg.open()
+
+
+# =====================================================================
+# TEAM CHAT
+# =====================================================================
+def _chat_render_body(body):
+    safe = _html_mod.escape(str(body or ""))
+    parts = safe.split(" ")
+    out = []
+    for p in parts:
+        if p.startswith("@") and len(p) > 1:
+            out.append('<span class="mention-chip">' + p + '</span>')
+        else:
+            out.append(p)
+    return " ".join(out)
+
+
+def _parse_dt(s):
+    try:
+        return datetime.datetime.strptime(str(s)[:19],
+                                            "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def _build_chat(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    pid = state["project_id"]
+    user = state.get("user") or {}
+    my_name = (user.get("name") or user.get("email") or "me")
+    my_uid = state["user_id"]
+
+    with ui.element('div').classes("section-head"):
+        ui.label(_t("chat_title")).classes("h1")
+
+        def _refresh():
+            state["render_main"]()
+        ui.button(icon="refresh", on_click=_refresh).props(
+            "flat round dense size=sm").style("color:#808080;")
+
+    ui.label(_t("chat_sub")).classes("muted").style("margin-bottom:12px;")
+
+    fstate = {"query": "", "from": "", "to": "", "reply_to": None}
+
+    authors = db.chat_authors(pid)
+    if my_name not in authors:
+        authors = [my_name] + authors
+
+    def _on_search(e):
+        fstate["query"] = (e.value or "").strip().lower()
+        chat_list.refresh()
+
+    def _on_from(e):
+        fstate["from"] = (e.value or "").strip()
+        chat_list.refresh()
+
+    def _on_to(e):
+        fstate["to"] = (e.value or "").strip()
+        chat_list.refresh()
+
+    with ui.element('div').style(
+        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
+        "margin-bottom:8px;"
+    ):
+        ui.input(label=_t("chat_filter_from"), on_change=_on_from).props(
+            "dense type=date")
+        ui.input(label=_t("chat_filter_to"), on_change=_on_to).props(
+            "dense type=date")
+
+    reply_holder = ui.element('div').style("width:100%;")
+
+    def render_reply_indicator():
+        reply_holder.clear()
+        rid = fstate.get("reply_to")
+        if not rid:
+            return
+        target = db.chat_get(rid) or {}
+        with reply_holder:
+            with ui.element('div').style(
+                "display:flex;justify-content:space-between;"
+                "align-items:center;background:#161616;"
+                "border:1px solid #262626;border-radius:3px;"
+                "padding:6px 10px;margin-bottom:6px;"
+            ):
+                ui.label(
+                    _t("chat_replying_to") + ": " +
+                    str(target.get("author", "")) + " — " +
+                    str(target.get("body", ""))[:60]
+                ).style("font-size:10px;color:#b8b8b8;")
+
+                def _cancel():
+                    fstate["reply_to"] = None
+                    render_reply_indicator()
+                ui.button(_t("chat_cancel"), on_click=_cancel).props(
+                    "flat dense no-caps size=sm").style(
+                    "color:#808080;font-size:10px;")
+
+    render_reply_indicator()
+
+    _prof_cache = {}
+
+    def _get_profile(uid):
+        if not uid:
+            return {}
+        if uid not in _prof_cache:
+            try:
+                _prof_cache[uid] = db.get_user(uid) or {}
+            except Exception:
+                _prof_cache[uid] = {}
+        return _prof_cache[uid]
+
+    @ui.refreshable
+    def chat_list():
+        msgs = db.chat_list(pid, limit=300)
+        if fstate["query"]:
+            q = fstate["query"]
+
+            def _m(m):
+                return (q in (m.get("body") or "").lower() or
+                        q in (m.get("author") or "").lower())
+            msgs = [m for m in msgs if _m(m)]
+        if fstate["from"]:
+            msgs = [m for m in msgs
+                    if (m.get("created_at") or "")[:10] >= fstate["from"]]
+        if fstate["to"]:
+            msgs = [m for m in msgs
+                    if (m.get("created_at") or "")[:10] <= fstate["to"]]
+
+        if not msgs:
+            with ui.element('div').classes("gem-wrap"):
+                with ui.element('div').classes("gem-empty"):
+                    ui.label(_t("chat_title")).classes("gem-empty-title")
+                    ui.label(_t("chat_sub")).classes("gem-empty-sub")
+            return
+
+        by_id = {m["id"]: m for m in msgs}
+
+        with ui.element('div').classes("gem-wrap"):
+            for m in msgs:
+                mid = m.get("id")
+                author = m.get("author") or ""
+                body = m.get("body") or ""
+                created_raw = m.get("created_at") or ""
+                created = str(created_raw)[:16]
+                reply_to = m.get("reply_to_id")
+                is_mine = (str(author) == str(my_name))
+                prof = _get_profile(m.get("user_id"))
+                title = prof.get("title") or ""
+                a_color = _chat_author_color(title)
+
+                with ui.element('div').classes(
+                    "gem-row user" if is_mine else "gem-row ai"
+                ):
+                    if is_mine:
+                        with ui.element('div').style(
+                            "display:flex;flex-direction:column;"
+                            "align-items:flex-end;max-width:82%;"
+                        ):
+                            with ui.element('div').style(
+                                "display:flex;align-items:center;gap:6px;"
+                                "margin-bottom:4px;"
+                            ):
+                                def _open_prof_me(uid=m.get("user_id")):
+                                    if uid:
+                                        _open_member_profile(uid)
+                                name_lbl = ui.label(author).style(
+                                    "font-size:11px;font-weight:700;"
+                                    "color:" + a_color + ";cursor:pointer;"
+                                )
+                                name_lbl.on("click", _open_prof_me)
+                                if title:
+                                    ui.label("· " + title).style(
+                                        "font-size:10px;color:#808080;")
+                                ui.label(created).classes("chat-time")
+
+                            if reply_to and reply_to in by_id:
+                                parent = by_id[reply_to]
+                                ui.html(
+                                    '<div class="chat-reply-quote" '
+                                    'style="margin-bottom:6px;">' +
+                                    '<b>' + _html_mod.escape(
+                                        str(parent.get("author", ""))) +
+                                    '</b>: ' +
+                                    _html_mod.escape(
+                                        str(parent.get("body", ""))[:80]) +
+                                    '</div>'
+                                )
+                            with ui.element('div').classes("gem-user"):
+                                ui.html(_chat_render_body(body))
+                            with ui.element('div').classes("gem-msg-meta"):
+                                def _reply_mine(rid=mid):
+                                    fstate["reply_to"] = rid
+                                    render_reply_indicator()
+                                ui.label(_t("chat_reply")).classes(
+                                    "gem-del").style(
+                                    "cursor:pointer;color:#5a5a5a;"
+                                ).on("click", _reply_mine)
+
+                                cd = _parse_dt(created_raw)
+                                remaining = 0
+                                if cd:
+                                    try:
+                                        age = (datetime.datetime.utcnow() -
+                                               cd).total_seconds()
+                                        remaining = max(0, 60 - age)
+                                    except Exception:
+                                        remaining = 0
+                                if remaining > 0:
+                                    del_holder = ui.element('span')
+                                    with del_holder:
+                                        def _del(did=mid):
+                                            ok, reason = \
+                                                db.chat_delete_secure(
+                                                    did, my_uid,
+                                                    within_seconds=60)
+                                            if ok:
+                                                ui.notify(
+                                                    _t("chat_deleted"),
+                                                    type="positive")
+                                                chat_list.refresh()
+                                            elif reason == "too_late":
+                                                ui.notify(
+                                                    _t("delete_too_late"),
+                                                    type="warning")
+                                                chat_list.refresh()
+                                            elif reason == "not_owner":
+                                                ui.notify(
+                                                    _t("delete_not_owner"),
+                                                    type="warning")
+                                            else:
+                                                ui.notify(
+                                                    _t("delete_failed"),
+                                                    type="negative")
+                                        ui.label(_t("chat_delete")).classes(
+                                            "gem-del"
+                                        ).style(
+                                            "cursor:pointer;color:#5a5a5a;"
+                                        ).on("click", _del)
+                                    def _hide(h=del_holder):
+                                        try:
+                                            h.clear()
+                                        except Exception:
+                                            pass
+                                    ui.timer(remaining, _hide, once=True)
+
+                    else:
+                        with ui.element('div').style(
+                            "width:100%;min-width:0;"
+                        ):
+                            with ui.element('div').style(
+                                "display:flex;align-items:center;gap:6px;"
+                                "margin-bottom:4px;"
+                            ):
+                                def _open_prof(uid=m.get("user_id")):
+                                    if uid:
+                                        _open_member_profile(uid)
+                                name_lbl = ui.label(author).style(
+                                    "font-size:11px;font-weight:700;"
+                                    "color:" + a_color + ";cursor:pointer;"
+                                )
+                                name_lbl.on("click", _open_prof)
+                                if title:
+                                    ui.label("· " + title).style(
+                                        "font-size:10px;color:#808080;")
+                                ui.label(created).classes("chat-time")
+
+                            if reply_to and reply_to in by_id:
+                                parent = by_id[reply_to]
+                                ui.html(
+                                    '<div class="chat-reply-quote">' +
+                                    '<b>' + _html_mod.escape(
+                                        str(parent.get("author", ""))) +
+                                    '</b>: ' +
+                                    _html_mod.escape(
+                                        str(parent.get("body", ""))[:80]) +
+                                    '</div>'
+                                )
+
+                            ui.html('<div class="gem-ai">' +
+                                    _chat_render_body(body) + '</div>')
+
+                            def _reply_other(rid=mid):
+                                fstate["reply_to"] = rid
+                                render_reply_indicator()
+                            ui.label(_t("chat_reply")).classes(
+                                "gem-del").style(
+                                "cursor:pointer;color:#5a5a5a;"
+                            ).on("click", _reply_other)
+
+    with ui.element('div').classes("chat-tools"):
+        def _toggle_search():
+            search_box.set_visibility(not search_box.visible)
+        ui.button(icon="search", on_click=_toggle_search).props(
+            "round dense size=sm")
+
+    search_box = ui.input(placeholder=_t("chat_search"),
+                            on_change=_on_search).style(
+        "width:100%;margin-bottom:12px;display:none;").props("dense clearable")
+
+    chat_list()
+
+    with ui.element('div').classes("gem-composer"):
+        with ui.element('div').classes("gem-composer-inner"):
+            mention_holder = ui.element('div').style(
+                "position:absolute;bottom:100%;left:0;right:0;"
+                "display:none;"
+            )
+
+            with ui.element('div').classes("gem-pill"):
+                body_in = ui.textarea(
+                    placeholder=_t("chat_placeholder")
+                ).style("width:100%;").props("dense autogrow borderless")
+
+                send_btn = ui.button(icon="arrow_upward").classes(
+                    "gem-icon-btn send").props("flat round dense")
+
+                def _send():
+                    txt = (body_in.value or "").strip()
+                    if not txt:
+                        return
+                    mentions = re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
+                    mentions = [m for m in mentions if m and m != my_name]
+                    try:
+                        db.chat_add(pid, state["user_id"], my_name, txt,
+                                     reply_to_id=fstate.get("reply_to"),
+                                     mentions=mentions)
+                    except Exception as ex:
+                        ui.notify("Send failed: " + str(ex), type="negative")
+                        return
+                    body_in.value = ""
+                    try:
+                        send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                    fstate["reply_to"] = None
+                    render_reply_indicator()
+                    mention_holder.style("display:none;")
+                    chat_list.refresh()
+                    ui.run_javascript(
+                        "window.scrollTo({top: document.body.scrollHeight,"
+                        " behavior:'smooth'});")
+
+                send_btn.on("click", _send)
+
+                def _update_mentions():
+                    txt = body_in.value or ""
+                    last = txt.split()[-1] if txt.split() else ""
+                    if last.startswith("@") and len(last) >= 1:
+                        query = last[1:].lower()
+                        matches = [a for a in authors
+                                   if query in (a or "").lower()][:6]
+                        mention_holder.clear()
+                        mention_holder.style("display:block;")
+                        with mention_holder:
+                            with ui.element('div').classes("mention-drop"):
+                                if not matches:
+                                    ui.label("No matches").classes(
+                                        "mention-item").style(
+                                        "color:#5a5a5a;")
+                                for a in matches:
+                                    def _pick(nm=a):
+                                        parts = (body_in.value or "").split()
+                                        if parts and parts[-1].startswith("@"):
+                                            parts[-1] = "@" + nm
+                                        else:
+                                            parts.append("@" + nm)
+                                        body_in.value = " ".join(parts) + " "
+                                        mention_holder.style("display:none;")
+                                        try:
+                                            send_btn.classes(add="active")
+                                        except Exception:
+                                            pass
+                                    ui.label(a).classes("mention-item").on(
+                                        "click", _pick)
+                    else:
+                        mention_holder.style("display:none;")
+
+                def _on_input(e):
+                    txt = (body_in.value or "").strip()
+                    try:
+                        if txt:
+                            send_btn.classes(add="active")
+                        else:
+                            send_btn.classes(remove="active")
+                    except Exception:
+                        pass
+                    _update_mentions()
+
+                body_in.on("update:model-value", _on_input)
+                body_in.on('keydown.enter', lambda _: _send())
+
+    state.setdefault("_chat_last_id", db.chat_max_id(pid))
+    ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});")
+    ui.timer(0.35, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+    ui.timer(0.9, lambda: ui.run_javascript(
+        "window.scrollTo({top: document.body.scrollHeight,"
+        " behavior:'auto'});"), once=True)
+
+    async def _poll():
+        try:
+            cur_max = db.chat_max_id(pid)
+        except Exception:
+            return
+        if cur_max != state.get("_chat_last_id"):
+            state["_chat_last_id"] = cur_max
+            try:
+                near_bottom = await ui.run_javascript(
+                    "(window.innerHeight + window.scrollY) >= "
+                    "(document.body.scrollHeight - 200)")
+            except Exception:
+                near_bottom = True
+            try:
+                chat_list.refresh()
+            except Exception:
+                pass
+            if near_bottom:
+                try:
+                    await ui.run_javascript(
+                        "window.scrollTo({top: document.body.scrollHeight,"
+                        " behavior:'smooth'});")
+                except Exception:
+                    pass
+
+    ui.timer(5.0, _poll)
+
+
 # =====================================================================
 # NEW DEFECT
 # =====================================================================
@@ -6079,1532 +7627,6 @@ def _open_change_password_dialog(state):
 
 
 # =====================================================================
-# TEAM CHAT
-# =====================================================================
-def _chat_render_body(body):
-    safe = _html_mod.escape(str(body or ""))
-    parts = safe.split(" ")
-    out = []
-    for p in parts:
-        if p.startswith("@") and len(p) > 1:
-            out.append('<span class="mention-chip">' + p + '</span>')
-        else:
-            out.append(p)
-    return " ".join(out)
-
-
-def _parse_dt(s):
-    try:
-        return datetime.datetime.strptime(str(s)[:19],
-                                            "%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return None
-
-
-def _build_chat(state):
-    if not state.get("project_id"):
-        _render_no_project(state, state["render_main"])
-        return
-    pid = state["project_id"]
-    user = state.get("user") or {}
-    my_name = (user.get("name") or user.get("email") or "me")
-    my_uid = state["user_id"]
-
-    with ui.element('div').classes("section-head"):
-        ui.label(_t("chat_title")).classes("h1")
-
-        def _refresh():
-            state["render_main"]()
-        ui.button(icon="refresh", on_click=_refresh).props(
-            "flat round dense size=sm").style("color:#808080;")
-
-    ui.label(_t("chat_sub")).classes("muted").style("margin-bottom:12px;")
-
-    fstate = {"query": "", "from": "", "to": "", "reply_to": None}
-
-    authors = db.chat_authors(pid)
-    if my_name not in authors:
-        authors = [my_name] + authors
-
-    def _on_search(e):
-        fstate["query"] = (e.value or "").strip().lower()
-        chat_list.refresh()
-
-    def _on_from(e):
-        fstate["from"] = (e.value or "").strip()
-        chat_list.refresh()
-
-    def _on_to(e):
-        fstate["to"] = (e.value or "").strip()
-        chat_list.refresh()
-
-    with ui.element('div').style(
-        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
-        "margin-bottom:8px;"
-    ):
-        ui.input(label=_t("chat_filter_from"), on_change=_on_from).props(
-            "dense type=date")
-        ui.input(label=_t("chat_filter_to"), on_change=_on_to).props(
-            "dense type=date")
-
-    reply_holder = ui.element('div').style("width:100%;")
-
-    def render_reply_indicator():
-        reply_holder.clear()
-        rid = fstate.get("reply_to")
-        if not rid:
-            return
-        target = db.chat_get(rid) or {}
-        with reply_holder:
-            with ui.element('div').style(
-                "display:flex;justify-content:space-between;"
-                "align-items:center;background:#161616;"
-                "border:1px solid #262626;border-radius:3px;"
-                "padding:6px 10px;margin-bottom:6px;"
-            ):
-                ui.label(
-                    _t("chat_replying_to") + ": " +
-                    str(target.get("author", "")) + " — " +
-                    str(target.get("body", ""))[:60]
-                ).style("font-size:10px;color:#b8b8b8;")
-
-                def _cancel():
-                    fstate["reply_to"] = None
-                    render_reply_indicator()
-                ui.button(_t("chat_cancel"), on_click=_cancel).props(
-                    "flat dense no-caps size=sm").style(
-                    "color:#808080;font-size:10px;")
-
-    render_reply_indicator()
-
-    _prof_cache = {}
-
-    def _get_profile(uid):
-        if not uid:
-            return {}
-        if uid not in _prof_cache:
-            try:
-                _prof_cache[uid] = db.get_user(uid) or {}
-            except Exception:
-                _prof_cache[uid] = {}
-        return _prof_cache[uid]
-
-    @ui.refreshable
-    def chat_list():
-        msgs = db.chat_list(pid, limit=300)
-        if fstate["query"]:
-            q = fstate["query"]
-
-            def _m(m):
-                return (q in (m.get("body") or "").lower() or
-                        q in (m.get("author") or "").lower())
-            msgs = [m for m in msgs if _m(m)]
-        if fstate["from"]:
-            msgs = [m for m in msgs
-                    if (m.get("created_at") or "")[:10] >= fstate["from"]]
-        if fstate["to"]:
-            msgs = [m for m in msgs
-                    if (m.get("created_at") or "")[:10] <= fstate["to"]]
-
-        if not msgs:
-            with ui.element('div').classes("gem-wrap"):
-                with ui.element('div').classes("gem-empty"):
-                    ui.label(_t("chat_title")).classes("gem-empty-title")
-                    ui.label(_t("chat_sub")).classes("gem-empty-sub")
-            return
-
-        by_id = {m["id"]: m for m in msgs}
-
-        with ui.element('div').classes("gem-wrap"):
-            for m in msgs:
-                mid = m.get("id")
-                author = m.get("author") or ""
-                body = m.get("body") or ""
-                created_raw = m.get("created_at") or ""
-                created = str(created_raw)[:16]
-                reply_to = m.get("reply_to_id")
-                is_mine = (str(author) == str(my_name))
-                prof = _get_profile(m.get("user_id"))
-                title = prof.get("title") or ""
-                a_color = _chat_author_color(title)
-
-                # ---- both sides: author + time always visible ----
-                with ui.element('div').classes(
-                    "gem-row user" if is_mine else "gem-row ai"
-                ):
-                    if is_mine:
-                        with ui.element('div').style(
-                            "display:flex;flex-direction:column;"
-                            "align-items:flex-end;max-width:82%;"
-                        ):
-                            # author line (small, above the bubble)
-                            with ui.element('div').style(
-                                "display:flex;align-items:center;gap:6px;"
-                                "margin-bottom:4px;"
-                            ):
-                                def _open_prof_me(uid=m.get("user_id")):
-                                    if uid:
-                                        _open_member_profile(uid)
-                                name_lbl = ui.label(author).style(
-                                    "font-size:11px;font-weight:700;"
-                                    "color:" + a_color + ";cursor:pointer;"
-                                )
-                                name_lbl.on("click", _open_prof_me)
-                                if title:
-                                    ui.label("· " + title).style(
-                                        "font-size:10px;color:#808080;")
-                                ui.label(created).classes("chat-time")
-
-                            if reply_to and reply_to in by_id:
-                                parent = by_id[reply_to]
-                                ui.html(
-                                    '<div class="chat-reply-quote" '
-                                    'style="margin-bottom:6px;">' +
-                                    '<b>' + _html_mod.escape(
-                                        str(parent.get("author", ""))) +
-                                    '</b>: ' +
-                                    _html_mod.escape(
-                                        str(parent.get("body", ""))[:80]) +
-                                    '</div>'
-                                )
-                            with ui.element('div').classes("gem-user"):
-                                ui.html(_chat_render_body(body))
-                            with ui.element('div').classes("gem-msg-meta"):
-                                def _reply_mine(rid=mid):
-                                    fstate["reply_to"] = rid
-                                    render_reply_indicator()
-                                ui.label(_t("chat_reply")).classes(
-                                    "gem-del").style(
-                                    "cursor:pointer;color:#5a5a5a;"
-                                ).on("click", _reply_mine)
-
-                                cd = _parse_dt(created_raw)
-                                remaining = 0
-                                if cd:
-                                    try:
-                                        age = (datetime.datetime.utcnow() -
-                                               cd).total_seconds()
-                                        remaining = max(0, 60 - age)
-                                    except Exception:
-                                        remaining = 0
-                                if remaining > 0:
-                                    del_holder = ui.element('span')
-                                    with del_holder:
-                                        def _del(did=mid):
-                                            ok, reason = \
-                                                db.chat_delete_secure(
-                                                    did, my_uid,
-                                                    within_seconds=60)
-                                            if ok:
-                                                ui.notify(
-                                                    _t("chat_deleted"),
-                                                    type="positive")
-                                                chat_list.refresh()
-                                            elif reason == "too_late":
-                                                ui.notify(
-                                                    _t("delete_too_late"),
-                                                    type="warning")
-                                                chat_list.refresh()
-                                            elif reason == "not_owner":
-                                                ui.notify(
-                                                    _t("delete_not_owner"),
-                                                    type="warning")
-                                            else:
-                                                ui.notify(
-                                                    _t("delete_failed"),
-                                                    type="negative")
-                                        ui.label(_t("chat_delete")).classes(
-                                            "gem-del"
-                                        ).style(
-                                            "cursor:pointer;color:#5a5a5a;"
-                                        ).on("click", _del)
-                                    def _hide(h=del_holder):
-                                        try:
-                                            h.clear()
-                                        except Exception:
-                                            pass
-                                    ui.timer(remaining, _hide, once=True)
-
-                    else:
-                        with ui.element('div').style(
-                            "width:100%;min-width:0;"
-                        ):
-                            with ui.element('div').style(
-                                "display:flex;align-items:center;gap:6px;"
-                                "margin-bottom:4px;"
-                            ):
-                                def _open_prof(uid=m.get("user_id")):
-                                    if uid:
-                                        _open_member_profile(uid)
-                                name_lbl = ui.label(author).style(
-                                    "font-size:11px;font-weight:700;"
-                                    "color:" + a_color + ";cursor:pointer;"
-                                )
-                                name_lbl.on("click", _open_prof)
-                                if title:
-                                    ui.label("· " + title).style(
-                                        "font-size:10px;color:#808080;")
-                                ui.label(created).classes("chat-time")
-
-                            if reply_to and reply_to in by_id:
-                                parent = by_id[reply_to]
-                                ui.html(
-                                    '<div class="chat-reply-quote">' +
-                                    '<b>' + _html_mod.escape(
-                                        str(parent.get("author", ""))) +
-                                    '</b>: ' +
-                                    _html_mod.escape(
-                                        str(parent.get("body", ""))[:80]) +
-                                    '</div>'
-                                )
-
-                            ui.html('<div class="gem-ai">' +
-                                    _chat_render_body(body) + '</div>')
-
-                            def _reply_other(rid=mid):
-                                fstate["reply_to"] = rid
-                                render_reply_indicator()
-                            ui.label(_t("chat_reply")).classes(
-                                "gem-del").style(
-                                "cursor:pointer;color:#5a5a5a;"
-                            ).on("click", _reply_other)
-
-    with ui.element('div').classes("chat-tools"):
-        def _toggle_search():
-            search_box.set_visibility(not search_box.visible)
-        ui.button(icon="search", on_click=_toggle_search).props(
-            "round dense size=sm")
-
-    search_box = ui.input(placeholder=_t("chat_search"),
-                            on_change=_on_search).style(
-        "width:100%;margin-bottom:12px;display:none;").props("dense clearable")
-
-    chat_list()
-
-    with ui.element('div').classes("gem-composer"):
-        with ui.element('div').classes("gem-composer-inner"):
-            mention_holder = ui.element('div').style(
-                "position:absolute;bottom:100%;left:0;right:0;"
-                "display:none;"
-            )
-
-            with ui.element('div').classes("gem-pill"):
-                body_in = ui.textarea(
-                    placeholder=_t("chat_placeholder")
-                ).style("width:100%;").props("dense autogrow borderless")
-
-                send_btn = ui.button(icon="arrow_upward").classes(
-                    "gem-icon-btn send").props("flat round dense")
-
-                def _send():
-                    txt = (body_in.value or "").strip()
-                    if not txt:
-                        return
-                    mentions = re.findall(r"@([A-Za-z0-9_.\-]+)", txt)
-                    mentions = [m for m in mentions if m and m != my_name]
-                    try:
-                        db.chat_add(pid, state["user_id"], my_name, txt,
-                                     reply_to_id=fstate.get("reply_to"),
-                                     mentions=mentions)
-                    except Exception as ex:
-                        ui.notify("Send failed: " + str(ex), type="negative")
-                        return
-                    body_in.value = ""
-                    try:
-                        send_btn.classes(remove="active")
-                    except Exception:
-                        pass
-                    fstate["reply_to"] = None
-                    render_reply_indicator()
-                    mention_holder.style("display:none;")
-                    chat_list.refresh()
-                    ui.run_javascript(
-                        "window.scrollTo({top: document.body.scrollHeight,"
-                        " behavior:'smooth'});")
-
-                send_btn.on("click", _send)
-
-                def _update_mentions():
-                    txt = body_in.value or ""
-                    last = txt.split()[-1] if txt.split() else ""
-                    if last.startswith("@") and len(last) >= 1:
-                        query = last[1:].lower()
-                        matches = [a for a in authors
-                                   if query in (a or "").lower()][:6]
-                        mention_holder.clear()
-                        mention_holder.style("display:block;")
-                        with mention_holder:
-                            with ui.element('div').classes("mention-drop"):
-                                if not matches:
-                                    ui.label("No matches").classes(
-                                        "mention-item").style(
-                                        "color:#5a5a5a;")
-                                for a in matches:
-                                    def _pick(nm=a):
-                                        parts = (body_in.value or "").split()
-                                        if parts and parts[-1].startswith("@"):
-                                            parts[-1] = "@" + nm
-                                        else:
-                                            parts.append("@" + nm)
-                                        body_in.value = " ".join(parts) + " "
-                                        mention_holder.style("display:none;")
-                                        try:
-                                            send_btn.classes(add="active")
-                                        except Exception:
-                                            pass
-                                    ui.label(a).classes("mention-item").on(
-                                        "click", _pick)
-                    else:
-                        mention_holder.style("display:none;")
-
-                def _on_input(e):
-                    txt = (body_in.value or "").strip()
-                    try:
-                        if txt:
-                            send_btn.classes(add="active")
-                        else:
-                            send_btn.classes(remove="active")
-                    except Exception:
-                        pass
-                    _update_mentions()
-
-                body_in.on("update:model-value", _on_input)
-                body_in.on('keydown.enter', lambda _: _send())
-
-    state.setdefault("_chat_last_id", db.chat_max_id(pid))
-    ui.run_javascript(
-        "window.scrollTo({top: document.body.scrollHeight,"
-        " behavior:'auto'});")
-    ui.timer(0.35, lambda: ui.run_javascript(
-        "window.scrollTo({top: document.body.scrollHeight,"
-        " behavior:'auto'});"), once=True)
-    ui.timer(0.9, lambda: ui.run_javascript(
-        "window.scrollTo({top: document.body.scrollHeight,"
-        " behavior:'auto'});"), once=True)
-
-    async def _poll():
-        try:
-            cur_max = db.chat_max_id(pid)
-        except Exception:
-            return
-        if cur_max != state.get("_chat_last_id"):
-            state["_chat_last_id"] = cur_max
-            try:
-                near_bottom = await ui.run_javascript(
-                    "(window.innerHeight + window.scrollY) >= "
-                    "(document.body.scrollHeight - 200)")
-            except Exception:
-                near_bottom = True
-            try:
-                chat_list.refresh()
-            except Exception:
-                pass
-            if near_bottom:
-                try:
-                    await ui.run_javascript(
-                        "window.scrollTo({top: document.body.scrollHeight,"
-                        " behavior:'smooth'});")
-                except Exception:
-                    pass
-
-    ui.timer(5.0, _poll)
-
-
-# =====================================================================
-# MS CHAT — Gemini style
-# =====================================================================
-# =====================================================================
-# MS READER + CITATIONS (Feature #8)
-# =====================================================================
-_CITE_RE = re.compile(r'\[S([\w.\-]+)\]')
-
-
-def _clause_map_for_project(pid):
-    try:
-        clauses = db.get_clauses_for_element(pid) or []
-    except Exception:
-        return {}
-    out = {}
-    for c in clauses:
-        cid = str(c.get("id", "")).strip()
-        if cid:
-            out[cid] = c
-    return out
-
-
-def _open_clause_modal(cid, pid):
-    clauses = _clause_map_for_project(pid)
-    clause = clauses.get(str(cid))
-    if not clause:
-        ui.notify("Clause S" + str(cid) + " not found in the uploaded MS.",
-                    type="warning")
-        return
-    with ui.dialog() as dlg, ui.card().style(
-        "padding:20px;min-width:320px;max-width:95vw;width:520px;"
-        "max-height:88vh;overflow-y:auto;"
-    ):
-        with ui.element('div').style(
-            "display:flex;align-items:center;gap:8px;"
-            "padding-bottom:10px;border-bottom:1px solid #1e1e1e;"
-            "margin-bottom:12px;"
-        ):
-            ui.html('<span class="cite-pill" style="cursor:default;">[S' +
-                    _html_mod.escape(str(cid)) + ']</span>')
-            ui.label(str(clause.get("title", ""))).style(
-                "font-size:14px;font-weight:700;color:#e8e8e8;"
-                "letter-spacing:-0.01em;")
-        body = str(clause.get("text", "") or "")
-        if body:
-            ui.html('<div style="font-size:13px;color:#e3e3e3;'
-                    'line-height:1.7;white-space:pre-wrap;'
-                    'word-break:break-word;">' +
-                    _html_mod.escape(body) + '</div>')
-        else:
-            ui.label("(This clause has no body text stored.)").classes(
-                "mono-sm").style("color:#5a5a5a;")
-        ui.button(_t("close"), on_click=dlg.close).classes(
-            BTN_SOFT).style("width:100%;margin-top:16px;")
-    dlg.open()
-
-
-def _render_answer_with_citations(answer, pid):
-    """Render an AI answer; [S<id>] tokens become clickable pills."""
-    text = str(answer or "")
-    if not text:
-        return
-    clauses = _clause_map_for_project(pid)
-    html_parts = []
-    last = 0
-    for m in _CITE_RE.finditer(text):
-        if m.start() > last:
-            html_parts.append(_html_mod.escape(text[last:m.start()]))
-        cid = m.group(1)
-        if cid in clauses:
-            html_parts.append(
-                '<span class="cite-pill" data-cid="' +
-                _html_mod.escape(cid) +
-                '" title="Tap to view the clause text">[' +
-                _html_mod.escape(cid) + ']</span>'
-            )
-        else:
-            html_parts.append(
-                '<span class="cite-pill miss">[' +
-                _html_mod.escape(cid) + ']</span>'
-            )
-        last = m.end()
-    if last < len(text):
-        html_parts.append(_html_mod.escape(text[last:]))
-    ui.html('<div class="gem-ai">' + "".join(html_parts) + '</div>')
-
-
-def _open_ms_reader_dialog(pid):
-    if not pid:
-        ui.notify(_t("setup_first"), type="warning")
-        return
-    try:
-        docs = db.list_ms(pid) or []
-    except Exception as e:
-        ui.notify("Failed to load MS: " + str(e), type="negative")
-        return
-    if not docs:
-        ui.notify(_t("ms_chat_need_ms"), type="warning")
-        return
-
-    with ui.dialog() as dlg, ui.card().style(
-        "padding:0;max-width:640px;width:95vw;max-height:90vh;"
-        "overflow:hidden;"
-    ):
-        with ui.element('div').style(
-            "padding:16px 18px 12px;border-bottom:1px solid #1e1e1e;"
-            "display:flex;justify-content:space-between;align-items:center;"
-        ):
-            ui.label("METHOD STATEMENTS").style(
-                "font-size:13px;font-weight:700;color:#e8e8e8;"
-                "letter-spacing:0.06em;")
-            ui.label(str(len(docs)) + " uploaded").classes("mono-sm").style(
-                "font-size:10px;color:#808080;")
-
-        view_holder = ui.element('div').style(
-            "padding:14px 18px 18px;max-height:calc(90vh - 120px);"
-            "overflow-y:auto;"
-        )
-
-        def render_list():
-            view_holder.clear()
-            with view_holder:
-                for doc in docs:
-                    with ui.element('div').classes("ms-reader-doc") as card:
-                        with ui.element('div').style(
-                            "display:flex;justify-content:space-between;"
-                            "align-items:flex-start;gap:8px;"
-                        ):
-                            with ui.element('div').style(
-                                "flex:1;min-width:0;"
-                            ):
-                                ui.label(
-                                    str(doc.get("ms_number", "")) + "  " +
-                                    str(doc.get("title", ""))
-                                ).style(
-                                    "font-size:12px;font-weight:700;"
-                                    "color:#e8e8e8;word-break:break-word;")
-                                ui.label(
-                                    str(doc.get("element_type", "")) + " · " +
-                                    str(doc.get("discipline", ""))
-                                ).classes("mono-sm").style(
-                                    "font-size:10px;color:#808080;"
-                                    "margin-top:2px;")
-                            ui.html('<span class="badge-seen">' +
-                                    str(len(doc.get("clauses") or [])) +
-                                    ' clauses</span>')
-
-                        def _open(d=doc):
-                            render_doc(d)
-                        card.on("click", _open)
-
-        def render_doc(doc):
-            view_holder.clear()
-            with view_holder:
-                with ui.element('div').style(
-                    "display:flex;align-items:center;gap:8px;"
-                    "margin-bottom:12px;"
-                ):
-                    def _back():
-                        render_list()
-                    ui.button(icon="arrow_back", on_click=_back).props(
-                        "flat round dense size=sm").style("color:#5eead4;")
-                    with ui.element('div').style("flex:1;min-width:0;"):
-                        ui.label(str(doc.get("title", ""))).style(
-                            "font-size:14px;font-weight:700;color:#e8e8e8;")
-                        ui.label(str(doc.get("ms_number", "")) + " · " +
-                                  str(doc.get("element_type", "")) + " · " +
-                                  str(doc.get("discipline", ""))).classes(
-                            "mono-sm").style(
-                            "font-size:10px;color:#808080;margin-top:2px;")
-
-                clauses = doc.get("clauses") or []
-                if not clauses:
-                    ui.label("No clauses stored for this document.").classes(
-                        "mono-sm").style("color:#5a5a5a;padding:20px 0;"
-                                          "text-align:center;")
-                    return
-                for c in clauses:
-                    with ui.element('div').classes("ms-reader-clause"):
-                        with ui.element('div').style(
-                            "display:flex;align-items:baseline;gap:2px;"
-                        ):
-                            ui.html('<span class="cid">S' +
-                                    _html_mod.escape(str(c.get("id", ""))) +
-                                    '</span>')
-                            ui.html('<span class="ctitle">' +
-                                    _html_mod.escape(
-                                        str(c.get("title", ""))) +
-                                    '</span>')
-                        if c.get("text"):
-                            ui.html('<div class="ctext">' +
-                                    _html_mod.escape(str(c.get("text", "")))
-                                    + '</div>')
-
-        render_list()
-
-        with ui.element('div').style(
-            "padding:10px 18px 16px;border-top:1px solid #1e1e1e;"
-        ):
-            ui.button(_t("close"), on_click=dlg.close).classes(
-                BTN_SOFT).style("width:100%;")
-
-    dlg.open()
-
-
-def _ensure_cite_click_listener():
-    ui.run_javascript("""
-        (function(){
-          if (window._citeListenerAttached) return;
-          window._citeListenerAttached = true;
-          document.body.addEventListener('click', function(ev){
-            var el = ev.target.closest('.cite-pill[data-cid]');
-            if (el) {
-              emitEvent('cite_click', el.getAttribute('data-cid'));
-            }
-          });
-        })();
-    """)
-
-
-def _build_ms_chat(state):
-    if not state.get("project_id"):
-        _render_no_project(state, state["render_main"])
-        return
-    pid = state["project_id"]
-    uid = state["user_id"]
-    _current_uid_holder["uid"] = uid
-    user = state.get("user") or {}
-    my_name = (user.get("name") or user.get("email") or "me")
-
-    # Floating tools (top-right)
-    # Register the delegated citation-click listener + Python handler
-    # exactly once per page. Safe to call every render.
-    _ensure_cite_click_listener()
-    if not state.get("_cite_handler_registered"):
-        def _on_cite_click(e):
-            try:
-                cid = e.args[0] if e.args else None
-            except Exception:
-                cid = None
-            if cid:
-                _open_clause_modal(cid, state.get("project_id"))
-        ui.on("cite_click", _on_cite_click)
-        state["_cite_handler_registered"] = True
-
-    # Floating tools (top-right)
-    with ui.element('div').classes("chat-tools"):
-        def _open_reader():
-            _open_ms_reader_dialog(pid)
-        ui.button(icon="menu_book", on_click=_open_reader).props(
-            "round dense size=sm").tooltip("Browse Method Statements")
-
-        def _clear_hist():
-            try:
-                db.ms_chat_clear(pid, uid)
-                ui.notify(_t("ms_chat_cleared"), type="positive")
-                ms_list.refresh()
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("Clear failed: " + str(ex), type="negative")
-        ui.button(icon="delete_sweep", on_click=_clear_hist).props(
-            "round dense size=sm").tooltip(_t("ms_chat_clear"))
-
-        def _refresh():
-            state["render_main"]()
-        ui.button(icon="refresh", on_click=_refresh).props(
-            "round dense size=sm").tooltip("Refresh")
-
-    with ui.element('div').style("padding:0 4px 8px 4px;"):
-        ui.label(_t("ms_chat_title")).style(
-            "font-size:18px;font-weight:700;color:#e3e3e3;"
-            "letter-spacing:-0.01em;")
-
-    clauses_count = len(db.get_clauses_for_element(pid))
-    if clauses_count == 0:
-        with ui.element('div').style(
-            "text-align:center;padding:60px 20px;"
-        ):
-            ui.icon("description").style(
-                "font-size:36px;color:#5a5a5a;")
-            ui.label(_t("ms_chat_need_ms")).style(
-                "color:#9aa0a6;font-size:13px;margin-top:14px;"
-                "line-height:1.7;max-width:320px;margin-left:auto;"
-                "margin-right:auto;display:block;")
-        return
-
-    # Placeholder for the input widget — will be assigned later.
-    q_input_holder = {"el": None}
-
-    # ---------- Refreshable message list (fully self-contained) ----------
-    @ui.refreshable
-    def ms_list():
-        try:
-            msgs = db.ms_chat_list(pid, uid, limit=200) or []
-        except Exception:
-            msgs = []
-
-        if not msgs:
-            # Gemini-style empty state
-            with ui.element('div').classes("gem-wrap"):
-                with ui.element('div').classes("gem-empty"):
-                    ui.label("Hi " + my_name.split()[0] + " 👋").classes(
-                        "gem-empty-title")
-                    ui.label(
-                        "Ask me anything about your Method Statements. "
-                        "I'll answer from the uploaded MS and cite the "
-                        "clause."
-                    ).classes("gem-empty-sub")
-                    with ui.element('div').classes("gem-empty-chips"):
-                        def _make_suggest(question):
-                            def _fill():
-                                try:
-                                    el = q_input_holder.get("el")
-                                    if el is not None:
-                                        el.value = question
-                                except Exception:
-                                    pass
-                            return _fill
-                        ui.label(
-                            "What is the minimum cover for columns?"
-                        ).classes("gem-chip").on(
-                            "click",
-                            _make_suggest(
-                                "What is the minimum cover for "
-                                "columns exposed to weather?"))
-                        ui.label(
-                            "Lap length for tension bars?"
-                        ).classes("gem-chip").on(
-                            "click",
-                            _make_suggest(
-                                "What is the lap length for tension bars?"))
-                        ui.label(
-                            "Curing requirements?"
-                        ).classes("gem-chip").on(
-                            "click",
-                            _make_suggest(
-                                "What are the curing requirements?"))
-            return
-
-        with ui.element('div').classes("gem-wrap"):
-            for m in msgs:
-                _render_ms_message(m, on_delete=ms_list.refresh, pid=pid)
-
-    ms_list()
-
-    # ---------- Gemini-style composer (fixed bottom) ----------
-    with ui.element('div').classes("gem-composer"):
-        with ui.element('div').classes("gem-composer-inner"):
-
-            async def _on_doc(e):
-                try:
-                    data = await e.file.read()
-                except Exception as ex:
-                    ui.notify(_t("upload_failed") + str(ex),
-                               type="negative")
-                    return
-                if not data:
-                    ui.notify(_t("empty_file"), type="warning")
-                    return
-                name = (e.file.name or "").lower()
-                if name.endswith(".pdf"):
-                    mime = "application/pdf"
-                elif name.endswith(".png"):
-                    mime = "image/png"
-                else:
-                    mime = "image/jpeg"
-
-                ui.notify(_t("ms_chat_reading"), type="info", timeout=2000)
-                try:
-                    result = await msc.check_document_against_ms(
-                        file_bytes=data, mime_type=mime, project_id=pid,
-                        ocr_fn=_ocr_handwriting,
-                        call_gemini_json_fn=call_gemini_json)
-                except Exception as ex:
-                    ui.notify(_t("ms_chat_failed") + str(ex),
-                               type="negative")
-                    return
-                if result.get("error"):
-                    ui.notify(_t("ms_chat_failed") +
-                               str(result["error"]), type="negative")
-                    return
-                resp = {k: result.get(k) for k in
-                        ("doc_type", "extracted", "checks", "overall",
-                         "summary", "ocr_text")}
-                try:
-                    db.ms_chat_add(pid, uid, my_name, "check",
-                                    _t("ms_chat_check_btn"), resp)
-                except Exception as ex:
-                    ui.notify("Save failed: " + str(ex), type="negative")
-                    return
-                try:
-                    ms_list.refresh()
-                except Exception:
-                    pass
-                ui.run_javascript(
-                    "window.scrollTo({top: document.body.scrollHeight,"
-                    " behavior:'smooth'});")
-
-            hidden_upload_holder = ui.element('div').style(
-                "position:absolute;left:-9999px;top:-9999px;width:1px;"
-                "height:1px;overflow:hidden;")
-            with hidden_upload_holder:
-                ui.upload(on_upload=_on_doc, auto_upload=True).props(
-                    "flat bordered accept=image/*,.pdf").style(
-                    "width:1px;height:1px;")
-
-            with ui.element('div').classes("gem-pill"):
-                def _open_picker():
-                    try:
-                        ui.run_javascript("""
-                            (function() {
-                              var holders = document.querySelectorAll(
-                                '.gem-composer-inner .q-uploader');
-                              for (var i = 0; i < holders.length; i++) {
-                                var inp = holders[i].querySelector(
-                                  'input[type=file]');
-                                if (inp) { inp.click(); return; }
-                              }
-                            })();
-                        """)
-                    except Exception as e:
-                        print("[ms] open picker failed: " + repr(e))
-
-                ui.button(icon="add", on_click=_open_picker).classes(
-                    "gem-icon-btn plus").props("flat round dense")
-
-                q_input = ui.textarea(
-                    placeholder=_t("ms_chat_ask_placeholder")
-                ).style("width:100%;").props("dense autogrow borderless")
-                q_input_holder["el"] = q_input
-
-                send_btn = ui.button(icon="arrow_upward").classes(
-                    "gem-icon-btn send").props("flat round dense")
-
-                send_state = {"busy": False}
-
-                async def _ask():
-                    if send_state["busy"]:
-                        ui.notify("Still waiting for the previous answer…",
-                                   type="warning")
-                        return
-                    q = (q_input.value or "").strip()
-                    if not q:
-                        return
-                    send_state["busy"] = True
-                    try:
-                        send_btn.classes(remove="active")
-                        send_btn.props("loading")
-                    except Exception:
-                        pass
-
-                    result = None
-                    err_msg = None
-                    try:
-                        result = await asyncio.wait_for(
-                            msc.ask_ms_question(pid, q, call_gemini_json),
-                            timeout=90.0)
-                    except asyncio.TimeoutError:
-                        err_msg = ("The AI did not respond within 90s. "
-                                    "Please try again.")
-                    except Exception as ex:
-                        import traceback
-                        traceback.print_exc()
-                        err_msg = repr(ex)
-                    finally:
-                        try:
-                            send_btn.props(remove="loading")
-                        except Exception:
-                            pass
-                        send_state["busy"] = False
-
-                    if err_msg:
-                        ui.notify(_t("ms_chat_failed") + err_msg,
-                                   type="negative", timeout=9000)
-                        return
-
-                    if not result or result.get("error"):
-                        ui.notify(
-                            _t("ms_chat_failed") +
-                            str((result or {}).get("error", "Empty result")),
-                            type="negative")
-                        return
-                    answer = (result.get("answer") or "").strip()
-                    if not answer:
-                        ui.notify("The AI returned an empty answer.",
-                                   type="warning")
-                        return
-
-                    try:
-                        db.ms_chat_add(pid, uid, my_name, "question", q,
-                                        {"answer": answer})
-                    except Exception as ex:
-                        import traceback
-                        traceback.print_exc()
-                        ui.notify("Could not save the answer: " + str(ex),
-                                   type="negative")
-                        return
-
-                    q_input.value = ""
-                    try:
-                        send_btn.classes(remove="active")
-                    except Exception:
-                        pass
-                    try:
-                        ms_list.refresh()
-                    except Exception:
-                        pass
-                    ui.run_javascript(
-                        "window.scrollTo({top: document.body.scrollHeight,"
-                        " behavior:'smooth'});")
-                def _on_send():
-                    try:
-                        ui.timer(0.01, _ask, once=True)
-                    except Exception:
-                        pass
-
-                send_btn.on("click", _on_send)
-
-                def _on_input(e):
-                    txt = (q_input.value or "").strip()
-                    try:
-                        if txt:
-                            send_btn.classes(add="active")
-                        else:
-                            send_btn.classes(remove="active")
-                    except Exception:
-                        pass
-                q_input.on("update:model-value", _on_input)
-                q_input.on("keydown.enter", lambda _: _on_send())
-
-            ui.label("MS Chat · answers only from the uploaded Method "
-                       "Statements").classes("gem-hint")
-
-    ui.run_javascript(
-        "window.scrollTo({top: document.body.scrollHeight,"
-        " behavior:'auto'});")
-    ui.timer(0.35, lambda: ui.run_javascript(
-        "window.scrollTo({top: document.body.scrollHeight,"
-        " behavior:'auto'});"), once=True)
-    ui.timer(0.9, lambda: ui.run_javascript(
-        "window.scrollTo({top: document.body.scrollHeight,"
-        " behavior:'auto'});"), once=True)
-
-    state.setdefault("_ms_chat_last_id", db.ms_chat_max_id(pid, uid))
-
-    async def _ms_poll():
-        try:
-            cur_max = db.ms_chat_max_id(pid, uid)
-        except Exception:
-            return
-        if cur_max != state.get("_ms_chat_last_id"):
-            state["_ms_chat_last_id"] = cur_max
-            try:
-                ms_list.refresh()
-            except Exception:
-                pass
-
-    ui.timer(5.0, _ms_poll)
-
-
-def _render_ms_message(m, on_delete=None, pid=None):
-    """Render a single MS Chat message in Gemini style."""
-    kind = (m.get("kind") or "question").lower()
-    author = m.get("author") or "?"
-    created = str(m.get("created_at") or "")[:16]
-    body = str(m.get("body") or "")
-    resp = m.get("response") or {}
-    mid = m.get("id")
-
-    # User message — right-aligned pill
-    with ui.element('div').classes("gem-row user"):
-        with ui.element('div').style(
-            "display:flex;flex-direction:column;align-items:flex-end;"
-            "max-width:82%;"
-        ):
-            with ui.element('div').classes("gem-user"):
-                ui.label(body)
-            with ui.element('div').classes("gem-msg-meta"):
-                ui.label(created)
-
-    # AI reply — plain body, no bubble
-    with ui.element('div').classes("gem-row ai"):
-        with ui.element('div').style("width:100%;min-width:0;"):
-            if kind == "question":
-                answer = str(resp.get("answer") or "")
-                if not answer:
-                    ui.label("(No answer was saved for this question.)").style(
-                        "font-size:12px;color:#808080;font-style:italic;")
-                elif pid:
-                    _render_answer_with_citations(answer, pid)
-                else:
-                    ui.label(answer).classes("gem-ai")
-            else:
-                _render_gem_check_card(resp)
-
-            with ui.element('div').classes("gem-msg-meta"):
-                ui.label(_t("ms_chat_kind_question") if kind == "question"
-                          else _t("ms_chat_kind_check"))
-                if mid:
-                    def _del(did=mid):
-                        db.ms_chat_delete(
-                            did, _current_uid_holder.get("uid"))
-                        ui.notify("Deleted.", type="positive")
-                        if on_delete:
-                            on_delete()
-                    btn = ui.label("Delete").classes("gem-del")
-                    btn.on("click", _del)
-
-
-def _render_gem_check_card(resp):
-    """Doc-check result shown as a Gemini-like info card."""
-    with ui.element('div').classes("gem-check-card"):
-        ui.label(_t("ms_chat_check_btn")).classes("gem-check-title")
-
-        doc_type = resp.get("doc_type") or ""
-        if doc_type:
-            with ui.element('div').classes("gem-kv-row"):
-                ui.html("<b>Type</b> " +
-                        _html_mod.escape(str(doc_type)))
-
-        extracted = resp.get("extracted") or {}
-        if extracted:
-            for k, v in extracted.items():
-                with ui.element('div').classes("gem-kv-row"):
-                    ui.html("<b>" + _html_mod.escape(str(k)) + "</b> " +
-                            _html_mod.escape(str(v)))
-
-        checks = resp.get("checks") or []
-        if checks:
-            with ui.element('div').style("margin-top:10px;"):
-                for c in checks:
-                    v = (c.get("verdict") or "").lower()
-                    vcls = ("ok" if v == "ok" else
-                            "warn" if v == "warn" else "fail")
-                    field = str(c.get("field") or "")
-                    val = str(c.get("value") or "")
-                    req = str(c.get("ms_requirement") or "")
-                    cid = str(c.get("clause_id") or "")
-                    note = str(c.get("note") or "")
-                    with ui.element('div').classes("gem-check-row"):
-                        with ui.element('div'):
-                            ui.label(field).classes("gem-check-field")
-                            ui.label(val).classes("gem-check-val")
-                        ui.html('<span class="gem-verdict ' + vcls + '">' +
-                                (v or "").upper() + '</span>')
-                        if req or cid or note:
-                            bits = []
-                            if req:
-                                bits.append("MS: " + req)
-                            if cid:
-                                bits.append("[S" + cid + "]")
-                            if note:
-                                bits.append(note)
-                            ui.html('<div class="gem-check-note">' +
-                                    _html_mod.escape(" · ".join(bits)) +
-                                    '</div>')
-
-        overall = (resp.get("overall") or "").lower()
-        if overall:
-            ocls = ("ok" if overall == "compliant" else
-                    "warn" if overall == "conditional" else "fail")
-            olabel = ("COMPLIANT" if overall == "compliant" else
-                      "CONDITIONAL" if overall == "conditional"
-                      else "NON-COMPLIANT")
-            with ui.element('div').style(
-                "display:flex;justify-content:space-between;"
-                "align-items:center;margin-top:12px;"
-                "padding-top:10px;border-top:1px solid #232426;"
-            ):
-                ui.label(_t("ms_chat_overall")).classes("gem-check-title")
-                ui.html('<span class="gem-verdict ' + ocls + '">' +
-                        olabel + '</span>')
-
-        summary = resp.get("summary") or ""
-        if summary:
-            ui.label(str(summary)).style(
-                "font-size:12.5px;color:#b8b8b8;"
-                "margin-top:10px;line-height:1.6;")
-
-
-def _open_member_profile(user_id):
-    u = db.get_user(user_id)
-    if not u:
-        return
-    with ui.dialog() as dlg, ui.card().style(
-        "padding:22px;min-width:260px;max-width:95vw;width:340px;"
-    ):
-        with ui.element('div').style(
-            "display:flex;flex-direction:column;align-items:center;gap:8px;"
-        ):
-            av = '<div class="avatar-big">'
-            if u.get("photo_bytes"):
-                try:
-                    b64 = base64.b64encode(u["photo_bytes"]).decode("ascii")
-                    av += '<img src="data:image/jpeg;base64,' + b64 + '"/>'
-                except Exception:
-                    av += _html_mod.escape(_initial(u.get("name") or ""))
-            else:
-                av += _html_mod.escape(_initial(u.get("name") or ""))
-            av += '</div>'
-            ui.html(av)
-            ui.label(u.get("name") or "—").style(
-                "font-size:15px;font-weight:700;color:#e8e8e8;")
-            if u.get("title"):
-                color = _chat_author_color(u["title"])
-                ui.label(u["title"]).style(
-                    "font-size:11px;color:" + color + ";font-weight:600;"
-                    "letter-spacing:0.05em;"
-                )
-            if u.get("email"):
-                ui.label(u["email"]).classes("mono-sm").style(
-                    "margin-top:2px;")
-        ui.element('div').style("height:14px;")
-        ui.button(_t("close"), on_click=dlg.close).classes(BTN_SOFT).style(
-            "width:100%;"
-        )
-    dlg.open()
-
-# =====================================================================
-# TDS TOOLS — upload TDS → AI MOS + ITP
-# =====================================================================
-def _build_tds_tools(state):
-    if not state.get("project_id"):
-        _render_no_project(state, state["render_main"])
-        return
-
-    tstate = state.setdefault("tds", {
-        "result": None, "running": False, "error": None,
-        "filename": "",
-    })
-
-    with ui.element('div').classes("section-head"):
-        ui.label("TDS → MOS & ITP").classes("h1")
-
-        def _refresh():
-            tstate["result"] = None
-            tstate["error"] = None
-            state["render_main"]()
-        ui.button(icon="refresh", on_click=_refresh).props(
-            "flat round dense size=sm").style("color:#808080;")
-
-    ui.label(
-        "Upload a manufacturer Technical Data Sheet (PDF, DOCX, TXT, "
-        "or image). The tool extracts critical parameters with AI and "
-        "drafts a Method Statement + an Inspection & Test Plan."
-    ).classes("muted").style("margin-bottom:12px;line-height:1.6;")
-
-    # ---- Upload card ----
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        upload_status = ui.label("").classes("mono-sm").style(
-            "margin-top:6px;display:block;min-height:16px;")
-
-        async def _on_upload(e):
-            if tstate["running"]:
-                ui.notify("Already processing…", type="warning")
-                return
-            try:
-                data = await e.file.read()
-            except Exception as ex:
-                ui.notify("Read failed: " + str(ex), type="negative")
-                return
-
-            name = (e.file.name or "").lower()
-            tstate["filename"] = e.file.name or ""
-            tstate["result"] = None
-            tstate["error"] = None
-
-            upload_status.set_text("Extracting text from " +
-                                    (e.file.name or "file") + "…")
-            upload_status.style(
-                "margin-top:6px;display:block;min-height:16px;"
-                "color:#fbbf24;font-size:10px;")
-
-            text = ""
-            try:
-                if name.endswith((".pdf", ".docx", ".txt", ".md")):
-                    text = await asyncio.to_thread(
-                        svc.extract_document_text, data, e.file.name)
-                elif name.endswith((".jpg", ".jpeg", ".png")):
-                    mime = ("image/jpeg"
-                            if name.endswith((".jpg", ".jpeg"))
-                            else "image/png")
-                    text, err = await _ocr_handwriting(data, mime)
-                    if err and not text:
-                        text = ""
-                else:
-                    text = await asyncio.to_thread(
-                        svc.extract_document_text, data, e.file.name)
-            except Exception as ex:
-                print("[tds] extract failed: " + repr(ex))
-                text = ""
-
-            if not text or len(text.strip()) < 100:
-                tstate["error"] = (
-                    "Could not read enough text from the file. "
-                    "Try a text-based PDF or DOCX."
-                )
-                upload_status.set_text("Failed: not enough text.")
-                upload_status.style(
-                    "margin-top:6px;display:block;min-height:16px;"
-                    "color:#f87171;font-size:10px;")
-                state["render_main"]()
-                return
-
-            upload_status.set_text(
-                "Extracted " + str(len(text)) + " chars. "
-                "Calling AI to draft MOS + ITP… (up to 2 min)")
-
-            tstate["running"] = True
-            try:
-                result = await tds.generate_mos_itp(text, call_gemini_json)
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                result = {"error": "AI failed: " + repr(ex)}
-            tstate["running"] = False
-
-            if result.get("error"):
-                tstate["error"] = result["error"]
-            else:
-                tstate["result"] = result
-            state["render_main"]()
-
-        ui.upload(on_upload=_on_upload, auto_upload=True).style(
-            "width:100%;").props(
-            "flat bordered accept=.pdf,.docx,.txt,.md,.jpg,.jpeg,.png "
-            "label='Upload TDS (PDF / DOCX / TXT / Image)'")
-        upload_status
-
-    # ---- Error card ----
-    if tstate.get("error"):
-        with ui.element('div').classes("card").style(
-            "border-left:3px solid #f87171;margin-bottom:12px;"
-        ):
-            ui.label("Error").style(
-                "font-size:11px;font-weight:700;color:#f87171;")
-            ui.label(str(tstate["error"])).classes("mono-sm").style(
-                "margin-top:4px;line-height:1.6;color:#b8b8b8;")
-            raw = tstate.get("result") or {}
-            if raw.get("raw"):
-                ui.label(str(raw["raw"])[:500]).classes("mono-sm").style(
-                    "margin-top:6px;color:#5a5a5a;font-size:9px;")
-
-    # ---- Results ----
-    result = tstate.get("result")
-    if not result:
-        return
-
-    product = result.get("product") or {}
-    mos = result.get("method_statement") or {}
-    itp = result.get("inspection_test_plan") or {}
-    crit = result.get("critical_parameters") or []
-
-    # Download buttons (TXT row above, PDF row below)
-    with ui.element('div').style(
-        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
-        "margin-bottom:12px;"
-    ):
-        def _mos_txt():
-            try:
-                lines = []
-                lines.append(mos.get("title") or "METHOD STATEMENT")
-                lines.append("=" * 60)
-                p_bits = []
-                if product.get("name"):
-                    p_bits.append("Product: " + str(product["name"]))
-                if product.get("manufacturer"):
-                    p_bits.append("Manufacturer: " +
-                                  str(product["manufacturer"]))
-                if product.get("tds_reference"):
-                    p_bits.append("TDS ref: " +
-                                  str(product["tds_reference"]))
-                if product.get("category"):
-                    p_bits.append("Category: " +
-                                  str(product["category"]))
-                lines.extend(p_bits)
-                lines.append("Date: " +
-                             datetime.date.today().strftime("%Y-%m-%d"))
-                lines.append("")
-                if product.get("description"):
-                    lines.append(str(product["description"]))
-                    lines.append("")
-                if crit:
-                    lines.append("KEY PARAMETERS FROM TDS")
-                    lines.append("-" * 60)
-                    for cp in crit:
-                        lines.append(
-                            str(cp.get("parameter") or "") + " : " +
-                            str(cp.get("value") or "")
-                            + ("  (" + str(cp["source_note"]) + ")"
-                               if cp.get("source_note") else "")
-                        )
-                    lines.append("")
-                for sec in (mos.get("sections") or []):
-                    num = str(sec.get("number") or "").strip()
-                    head = str(sec.get("heading") or "").strip()
-                    head_line = (num + ". " + head) if num else head
-                    if not head_line:
-                        continue
-                    lines.append(head_line)
-                    lines.append("-" * len(head_line))
-                    body = str(sec.get("body") or "").strip()
-                    if body:
-                        lines.append(body)
-                    lines.append("")
-                lines.append("")
-                lines.append("PREPARED BY (QC): ____________________")
-                lines.append("APPROVED BY (CONSULTANT): ____________________")
-                lines.append("")
-                txt = "\n".join(lines).encode("utf-8")
-                ui.download(txt, filename="method_statement.txt")
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("TXT failed: " + str(ex), type="negative")
-
-        def _itp_txt():
-            try:
-                lines = []
-                lines.append(itp.get("title") or
-                             "INSPECTION & TEST PLAN")
-                lines.append("=" * 100)
-                p_bits = []
-                if product.get("name"):
-                    p_bits.append("Product: " + str(product["name"]))
-                if product.get("manufacturer"):
-                    p_bits.append("Manufacturer: " +
-                                  str(product["manufacturer"]))
-                lines.extend(p_bits)
-                lines.append("Date: " +
-                             datetime.date.today().strftime("%Y-%m-%d"))
-                lines.append("")
-                headers = ["#", "Activity", "Reference", "Checkpoint",
-                           "Acceptance criteria", "Method",
-                           "Frequency", "Responsible"]
-                widths = [3, 22, 16, 26, 34, 20, 12, 14]
-                def _row(cells):
-                    out = []
-                    for i, c in enumerate(cells):
-                        c = str(c or "").replace("\n", " ")
-                        w = widths[i]
-                        if i == 0:
-                            out.append(c.rjust(w))
-                        else:
-                            out.append(c[:w].ljust(w))
-                    return " | ".join(out)
-                lines.append(_row(headers))
-                lines.append("-+-".join("-" * w for w in widths))
-                for i, r in enumerate(itp.get("rows") or [], start=1):
-                    lines.append(_row([
-                        str(i),
-                        r.get("activity") or "",
-                        r.get("reference") or "",
-                        r.get("checkpoint") or "",
-                        r.get("acceptance_criteria") or "",
-                        r.get("method") or "",
-                        r.get("frequency") or "",
-                        r.get("responsible") or "",
-                    ]))
-                lines.append("")
-                txt = "\n".join(lines).encode("utf-8")
-                ui.download(txt, filename="inspection_test_plan.txt")
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("TXT failed: " + str(ex), type="negative")
-
-        def _dl_mos():
-            try:
-                pdf = tds.build_mos_pdf(product, mos, crit)
-                ui.download(pdf, filename="method_statement.pdf")
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("PDF failed: " + str(ex), type="negative")
-
-        def _dl_itp():
-            try:
-                pdf = tds.build_itp_pdf(product, itp)
-                ui.download(pdf, filename="inspection_test_plan.pdf")
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("PDF failed: " + str(ex), type="negative")
-
-        ui.button("Method Statement — TXT", icon="description",
-                  on_click=_mos_txt).classes(BTN_SOFT).style(
-            "width:100%;font-size:10px;")
-        ui.button("ITP — TXT", icon="description",
-                  on_click=_itp_txt).classes(BTN_SOFT).style(
-            "width:100%;font-size:10px;")
-        ui.button("Method Statement — PDF", icon="picture_as_pdf",
-                  on_click=_dl_mos).classes(BTN_PRIMARY).style(
-            "width:100%;font-size:10px;")
-        ui.button("ITP — PDF", icon="picture_as_pdf",
-                  on_click=_dl_itp).classes(BTN_PRIMARY).style(
-            "width:100%;font-size:10px;")
-
-    # Product summary
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        ui.label("PRODUCT").classes("label")
-        ui.label(str(product.get("name") or "Not specified")).style(
-            "font-size:14px;font-weight:700;color:#e8e8e8;margin-top:4px;")
-        bits = []
-        if product.get("manufacturer"):
-            bits.append("Mfr: " + str(product["manufacturer"]))
-        if product.get("tds_reference"):
-            bits.append("TDS: " + str(product["tds_reference"]))
-        if product.get("category"):
-            bits.append("Cat: " + str(product["category"]))
-        if bits:
-            ui.label(" · ".join(bits)).classes("mono-sm").style(
-                "margin-top:4px;color:#b8b8b8;")
-
-    # Method Statement render
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        ui.html(
-            '<div style="font-size:15px;font-weight:700;'
-            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
-            'padding-bottom:8px;margin-bottom:12px;'
-            'letter-spacing:-0.01em;">' +
-            _html_mod.escape(mos.get("title") or "METHOD STATEMENT") +
-            '</div>'
-        )
-        for sec in (mos.get("sections") or []):
-            num = str(sec.get("number") or "").strip()
-            head = str(sec.get("heading") or "").strip()
-            head_line = (num + ". " + head) if num else head
-            if not head_line:
-                continue
-            ui.html(
-                '<div style="font-size:12px;font-weight:700;'
-                'color:#5eead4;margin-top:14px;margin-bottom:4px;'
-                'letter-spacing:0.02em;">' +
-                _html_mod.escape(head_line) + '</div>'
-            )
-            body = str(sec.get("body") or "").strip()
-            if body:
-                ui.html(
-                    '<pre style="margin:0 0 4px 0;white-space:pre-wrap;'
-                    'word-break:break-word;font-family:inherit;'
-                    'font-size:12px;line-height:1.7;color:#d0d0d0;">' +
-                    _html_mod.escape(body) + '</pre>'
-                )
-
-    # ITP render
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        ui.html(
-            '<div style="font-size:15px;font-weight:700;'
-            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
-            'padding-bottom:8px;margin-bottom:12px;'
-            'letter-spacing:-0.01em;">' +
-            _html_mod.escape(itp.get("title") or "INSPECTION & TEST PLAN") +
-            '</div>'
-        )
-        rows = itp.get("rows") or []
-        if not rows:
-            ui.label("No ITP rows generated.").classes("muted")
-        else:
-            html = ('<table style="width:100%;border-collapse:collapse;'
-                    'font-size:10.5px;'
-                    'font-variant-numeric:tabular-nums;">'
-                    '<thead><tr style="background:#0a0a0a;">')
-            heads = ["#", "Activity", "Reference", "Checkpoint",
-                     "Acceptance criteria", "Method", "Freq.", "Resp."]
-            for h in heads:
-                html += ('<th style="text-align:left;padding:6px 6px;'
-                         'font-size:9px;letter-spacing:0.12em;'
-                         'color:#5eead4;text-transform:uppercase;'
-                         'border-bottom:1px solid #1e1e1e;">' +
-                         _html_mod.escape(h) + '</th>')
-            html += '</tr></thead><tbody>'
-            for i, r in enumerate(rows, start=1):
-                html += '<tr style="border-bottom:1px solid #1e1e1e;">'
-                cells = [
-                    str(i),
-                    str(r.get("activity") or ""),
-                    str(r.get("reference") or ""),
-                    str(r.get("checkpoint") or ""),
-                    str(r.get("acceptance_criteria") or ""),
-                    str(r.get("method") or ""),
-                    str(r.get("frequency") or ""),
-                    str(r.get("responsible") or ""),
-                ]
-                for j, c in enumerate(cells):
-                    col = "#e8e8e8" if j == 0 else "#d0d0d0"
-                    html += ('<td style="padding:6px 6px;'
-                             'vertical-align:top;color:' + col + ';'
-                             'font-size:10.5px;line-height:1.45;">' +
-                             _html_mod.escape(c) + '</td>')
-                html += '</tr>'
-            html += '</tbody></table>'
-            ui.html(html)
-# =====================================================================
 # ADMIN PANEL
 # =====================================================================
 def _build_admin(state):
@@ -7959,3 +7981,599 @@ def _build_admin_billing(state):
                                 "width:100%;font-size:10px;min-height:28px;")
 
     render()
+
+
+# =====================================================================
+# INSPECTIONS — daily QC inspection plans with 3-state status
+# =====================================================================
+def _insp_today():
+    return datetime.date.today().strftime("%Y-%m-%d")
+
+
+def _maybe_auto_carry(pid):
+    today = _insp_today()
+    try:
+        if db.inspection_table_get(pid, today):
+            return
+    except Exception:
+        return
+    try:
+        prev = db.inspection_table_get_latest_before(pid, today)
+    except Exception:
+        prev = None
+    if not prev:
+        return
+    prev_t = prev.get("table") or {}
+    rows = prev_t.get("rows") or []
+    carried = [r for r in rows
+               if str(r.get("status") or "") in ("suspended", "rejected")]
+    if not carried:
+        return
+    new_t = {"columns": prev_t.get("columns") or [], "rows": carried}
+    try:
+        db.inspection_table_upsert(pid, today, "",
+                                    new_t, is_carried=True)
+        print("[insp] auto-carried " + str(len(carried)) +
+              " rows into " + today)
+    except Exception as e:
+        print("[insp] auto-carry failed: " + repr(e))
+
+
+def _build_inspections(state):
+    if not state.get("project_id"):
+        _render_no_project(state, state["render_main"])
+        return
+    pid = state["project_id"]
+    today = _insp_today()
+
+    istate = state.setdefault("inspections", {
+        "date": today,
+        "edit_mode": False,
+        "dirty": False,
+        "table_data": None,
+        "source_filename": "",
+        "has_loaded": False,
+    })
+
+    if istate.get("date") == today:
+        _maybe_auto_carry(pid)
+
+    if not istate.get("has_loaded") or \
+            istate.get("loaded_date") != istate["date"]:
+        row = db.inspection_table_get(pid, istate["date"])
+        if row:
+            istate["table_data"] = row.get("table") or {}
+            istate["source_filename"] = row.get("source_filename") or ""
+        else:
+            istate["table_data"] = None
+            istate["source_filename"] = ""
+        istate["has_loaded"] = True
+        istate["loaded_date"] = istate["date"]
+        istate["dirty"] = False
+        istate["edit_mode"] = False
+
+    can_edit = _can(state, "edit") or _can(state, "raise")
+
+    with ui.element('div').classes("section-head"):
+        ui.label("INSPECTIONS").classes("h1")
+
+        if istate.get("table_data") and can_edit:
+            def _toggle_edit():
+                istate["edit_mode"] = not istate["edit_mode"]
+                state["render_main"]()
+            icon = "edit_off" if istate["edit_mode"] else "edit"
+            ui.button(icon=icon, on_click=_toggle_edit).props(
+                "flat round dense size=sm").style(
+                "color:#5eead4;" if istate["edit_mode"] else "color:#808080;"
+            ).tooltip("Edit table")
+
+        def _refresh():
+            istate["has_loaded"] = False
+            state["render_main"]()
+        ui.button(icon="refresh", on_click=_refresh).props(
+            "flat round dense size=sm").style("color:#808080;")
+
+    ui.label(
+        "Upload a daily quality inspection plan (PDF / JPG / PNG). "
+        "The AI extracts it as a table. Mark each inspection Accepted, "
+        "Suspended or Rejected."
+    ).classes("muted").style("margin-bottom:12px;line-height:1.6;")
+
+    with ui.element('div').style(
+        "display:flex;gap:8px;align-items:center;margin-bottom:12px;"
+    ):
+        ui.label("Date:").style(
+            "font-size:11px;color:#b8b8b8;font-weight:600;")
+
+        def _on_date(e):
+            new_d = (e.value or today).strip() or today
+            if new_d == istate["date"]:
+                return
+            istate["date"] = new_d
+            istate["has_loaded"] = False
+            istate["edit_mode"] = False
+            istate["dirty"] = False
+            state["render_main"]()
+
+        date_in = ui.input(value=istate["date"],
+                            on_change=_on_date).props(
+            "dense type=date").style("flex:1;")
+
+    if istate.get("dirty") and istate.get("table_data") and can_edit:
+        def _do_save():
+            tdata = istate["table_data"] or {}
+            try:
+                db.inspection_table_upsert(
+                    pid, istate["date"],
+                    istate.get("source_filename") or "",
+                    tdata, is_carried=False)
+                istate["dirty"] = False
+                ui.notify("Saved.", type="positive")
+                try:
+                    db.activity_add(
+                        pid, state.get("user_id"), "inspection_saved",
+                        target_type="inspection_table",
+                        target_id=istate["date"],
+                        details=str(len(tdata.get("rows") or [])) +
+                                " rows",
+                        user_name=(state.get("user") or {}).get("name", ""))
+                except Exception:
+                    pass
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("Save failed: " + str(ex), type="negative")
+                return
+            state["render_main"]()
+        ui.button("Save changes", icon="save", on_click=_do_save).classes(
+            BTN_PRIMARY).style("width:100%;margin-bottom:12px;")
+
+    upload_holder = ui.element('div').style("width:100%;margin-bottom:12px;")
+    upload_status = ui.label("").classes("mono-sm").style(
+        "margin-top:6px;display:block;min-height:16px;")
+
+    async def _process_upload(data, filename):
+        upload_status.set_text("Extracting table from " +
+                                filename + "…")
+        upload_status.style(
+            "margin-top:6px;display:block;min-height:16px;"
+            "color:#fbbf24;font-size:10px;")
+        try:
+            result = await ins.extract_inspection_table(
+                data, filename, _ocr_handwriting, call_gemini_json)
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            result = {"error": "Extract failed: " + repr(ex)}
+
+        if result.get("error"):
+            upload_status.set_text("Failed: " + str(result["error"]))
+            upload_status.style(
+                "margin-top:6px;display:block;min-height:16px;"
+                "color:#f87171;font-size:10px;")
+            return
+
+        new_rows = result.get("rows") or []
+        new_cols = result.get("columns") or []
+        if not new_rows or not new_cols:
+            upload_status.set_text("No table found in the file.")
+            upload_status.style(
+                "margin-top:6px;display:block;min-height:16px;"
+                "color:#f87171;font-size:10px;")
+            return
+
+        existing = istate.get("table_data")
+        if existing and (existing.get("rows") or []):
+            _open_add_or_replace_dialog(
+                state, istate, new_cols, new_rows, filename,
+                upload_status)
+            return
+
+        new_t = {"columns": new_cols,
+                 "rows": [{"cells": [str(c) for c in r],
+                            "status": "", "note": "",
+                            "defect_uid": ""} for r in new_rows]}
+        try:
+            db.inspection_table_upsert(
+                pid, istate["date"], filename, new_t, is_carried=False)
+            istate["table_data"] = new_t
+            istate["source_filename"] = filename
+            istate["has_loaded"] = True
+            istate["loaded_date"] = istate["date"]
+            istate["edit_mode"] = True
+            ui.notify("Table extracted.", type="positive")
+        except Exception as ex:
+            ui.notify("Save failed: " + str(ex), type="negative")
+            return
+        upload_status.set_text("")
+        state["render_main"]()
+
+    async def _on_upload(e):
+        try:
+            data = await e.file.read()
+        except Exception as ex:
+            ui.notify("Read failed: " + str(ex), type="negative")
+            return
+        filename = e.file.name or "upload"
+        await _process_upload(data, filename)
+
+    with upload_holder:
+        ui.upload(on_upload=_on_upload, auto_upload=True).style(
+            "width:100%;").props(
+            "flat bordered accept=.pdf,.jpg,.jpeg,.png,.docx,.txt "
+            "label='Upload inspection plan (PDF / JPG / PNG)'")
+        upload_status
+
+    tdata = istate.get("table_data")
+    if not tdata:
+        with ui.element('div').classes("card").style(
+            "text-align:center;padding:32px 20px;"
+        ):
+            ui.icon("checklist").style(
+                "font-size:32px;color:#5a5a5a;")
+            ui.label("No inspection plan for " + istate["date"]).style(
+                "font-size:13px;color:#b8b8b8;margin-top:12px;")
+            ui.label(
+                "Upload a plan above, or pick a different date."
+            ).classes("mono-sm").style("margin-top:6px;")
+        return
+
+    columns = list(tdata.get("columns") or [])
+    rows = list(tdata.get("rows") or [])
+    if not columns:
+        ui.label("Table has no columns.").classes("muted")
+        return
+
+    grid_template = ("grid-template-columns: " +
+                      " ".join(["minmax(80px,1fr)"] * len(columns)) +
+                      " 40px 40px 40px 60px;")
+
+    with ui.element('div').style(
+        "background:#0e0e0e;border:1px solid #1e1e1e;border-radius:6px;"
+        "overflow:hidden;margin-bottom:12px;"
+    ):
+        with ui.element('div').style(
+            "display:grid;" + grid_template +
+            "gap:1px;background:#1e1e1e;"
+        ):
+            for c in columns:
+                ui.label(str(c)).style(
+                    "padding:8px 10px;background:#0a0a0a;"
+                    "font-size:11px;font-weight:700;color:#5eead4;"
+                    "letter-spacing:0.02em;text-transform:uppercase;"
+                    "word-break:break-word;")
+            for h, col in (("Acc", "#4ade80"),
+                            ("Sus", "#fbbf24"),
+                            ("Rej", "#f87171")):
+                ui.label(h).style(
+                    "padding:8px 4px;background:#0a0a0a;text-align:center;"
+                    "font-size:10px;font-weight:700;color:" + col + ";")
+            ui.label("Note").style(
+                "padding:8px 10px;background:#0a0a0a;"
+                "font-size:10px;font-weight:700;color:#808080;")
+
+            for ridx, r in enumerate(rows):
+                cells = list(r.get("cells") or [])
+                if len(cells) < len(columns):
+                    cells = cells + [""] * (len(columns) - len(cells))
+                elif len(cells) > len(columns):
+                    cells = cells[:len(columns)]
+
+                for cidx, cellv in enumerate(cells):
+                    if istate["edit_mode"] and can_edit:
+                        def _on_cell_change(e, ri=ridx, ci=cidx):
+                            try:
+                                istate["table_data"]["rows"][ri]["cells"][ci] = \
+                                    str(e.value or "")
+                                istate["dirty"] = True
+                            except Exception:
+                                pass
+                        ui.input(value=str(cellv),
+                                  on_change=_on_cell_change).props(
+                            "dense borderless").style(
+                            "background:#101010;padding:0;min-height:34px;"
+                            "font-size:11px;color:#e8e8e8;")
+                    else:
+                        ui.label(str(cellv)).style(
+                            "padding:8px 10px;background:#101010;"
+                            "font-size:11px;color:#d0d0d0;"
+                            "word-break:break-word;")
+
+                cur_status = str(r.get("status") or "")
+                for sval, scolor in (("accepted", "#4ade80"),
+                                      ("suspended", "#fbbf24"),
+                                      ("rejected", "#f87171")):
+                    active = (cur_status == sval)
+                    box = ui.element('div').style(
+                        "background:" +
+                        (scolor if active else "#101010") +
+                        ";border:1px solid " +
+                        (scolor if active else "#2a2a2a") +
+                        ";border-radius:4px;width:22px;height:22px;"
+                        "margin:6px auto;cursor:" +
+                        ("pointer" if (can_edit and istate["edit_mode"])
+                         else "default") + ";")
+
+                    def _on_box_click(sv=sval, ri=ridx, act=active):
+                        if not (can_edit and istate["edit_mode"]):
+                            return
+                        if act:
+                            return
+                        if sv in ("suspended", "rejected"):
+                            _open_insp_defect_dialog(state, istate, ri, sv)
+                        else:
+                            _set_insp_status(state, istate, ri, sv)
+                    box.on("click", _on_box_click)
+
+                note_txt = str(r.get("note") or "")
+                if istate["edit_mode"] and can_edit:
+                    def _on_note_change(e, ri=ridx):
+                        try:
+                            istate["table_data"]["rows"][ri]["note"] = \
+                                str(e.value or "")
+                            istate["dirty"] = True
+                        except Exception:
+                            pass
+                    ui.input(value=note_txt,
+                              on_change=_on_note_change).props(
+                        "dense borderless").style(
+                        "background:#101010;padding:0;min-height:34px;"
+                        "font-size:11px;color:#e8e8e8;")
+                else:
+                    ui.label(note_txt).style(
+                        "padding:8px 10px;background:#101010;"
+                        "font-size:10.5px;color:#b8b8b8;"
+                        "word-break:break-word;")
+
+    def _download_pdf():
+        try:
+            proj = db.get_project(pid) or {}
+            pdf = ins.build_inspection_pdf(
+                proj, istate["date"], istate["table_data"] or {})
+            ui.download(pdf,
+                        filename="inspection_" + istate["date"] + ".pdf")
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            ui.notify("PDF failed: " + str(ex), type="negative")
+
+    ui.button("Download day " + istate["date"] + " as PDF",
+              icon="picture_as_pdf",
+              on_click=_download_pdf).classes(BTN_SOFT).style(
+        "width:100%;margin-top:4px;")
+
+
+def _set_insp_status(state, istate, row_idx, status):
+    try:
+        istate["table_data"]["rows"][row_idx]["status"] = status
+        istate["dirty"] = True
+    except Exception:
+        pass
+    state["render_main"]()
+
+
+def _open_insp_defect_dialog(state, istate, row_idx, status):
+    tdata = istate.get("table_data") or {}
+    rows = tdata.get("rows") or []
+    row = rows[row_idx] if row_idx < len(rows) else {}
+    cells = list(row.get("cells") or [])
+    cols = list(tdata.get("columns") or [])
+
+    def _find_col(*keys):
+        for i, c in enumerate(cols):
+            lc = str(c).lower()
+            for k in keys:
+                if k in lc:
+                    return i
+        return -1
+
+    floor_i = _find_col("floor", "level", "story")
+    insp_i = _find_col("inspection", "activity", "item", "task")
+    loc_i = _find_col("location", "place", "area", "zone")
+    spec_i = _find_col("spec", "code", "reference", "standard")
+
+    floor_v = cells[floor_i] if 0 <= floor_i < len(cells) else ""
+    insp_v = cells[insp_i] if 0 <= insp_i < len(cells) else ""
+    if not insp_v:
+        insp_v = cells[0] if cells else "Inspection"
+    loc_v = cells[loc_i] if 0 <= loc_i < len(cells) else ""
+    spec_v = cells[spec_i] if 0 <= spec_i < len(cells) else ""
+
+    project = db.get_project(state["project_id"]) or {}
+    default_sub = project.get("subcontractor") or ""
+    default_eng = (state.get("user") or {}).get("name") or \
+                  project.get("engineer_name") or ""
+
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:22px;min-width:340px;max-width:96vw;width:540px;"
+        "max-height:92vh;overflow-y:auto;"
+    ):
+        ui.label("Defect properties").classes("h1").style(
+            "margin-bottom:4px;")
+        ui.label("This " + status.upper() + " inspection will be logged "
+                  "as a defect.").classes("muted").style(
+            "margin-bottom:14px;")
+
+        ui.label("Inspection").classes("label").style(
+            "display:block;margin-bottom:3px;")
+        ui.label(str(insp_v)).style(
+            "font-size:12px;font-weight:600;color:#e8e8e8;"
+            "margin-bottom:10px;")
+
+        sub_in = ui.input("Subcontractor", value=default_sub).style(
+            "width:100%;")
+        zone_in = ui.input("Zone / Floor", value=str(floor_v)).style(
+            "width:100%;")
+        place_in = ui.input("Place of the defect",
+                              value=str(loc_v)).style("width:100%;")
+        sev_in = ui.select(_severity_options(), value="Medium",
+                            label="Severity").style("width:100%;")
+        with ui.element('div').style(
+            "display:grid;grid-template-columns:1fr 1fr;gap:8px;"
+        ):
+            deadline_in = ui.select(
+                {"1": "1 day", "2": "2 days", "3": "3 days",
+                 "5": "5 days", "7": "7 days", "14": "14 days"},
+                value="3", label="Deadline")
+            engineer_in = ui.input("Engineer name",
+                                     value=default_eng)
+        nature_in = ui.textarea(
+            "Defect nature / comment",
+            value=str(row.get("note") or "")
+        ).style("width:100%;margin-top:8px;").props("dense autogrow")
+
+        def _confirm():
+            note = (nature_in.value or "").strip()
+            if not note:
+                ui.notify("Enter the defect nature / comment.",
+                           type="warning")
+                return
+            if not sub_in.value.strip():
+                ui.notify("Enter the subcontractor.", type="warning")
+                return
+
+            uid = svc.generate_uid("INS")
+            selected = [{
+                "name": str(insp_v)[:120] or "Inspection defect",
+                "location_hint": str(place_in.value or loc_v)[:60],
+                "severity": sev_in.value or "Medium",
+                "ms_violations": [],
+                "code_violations": ([str(spec_v)]
+                                     if str(spec_v).strip() else []),
+                "repair_action": "",
+                "zone": str(zone_in.value or floor_v or "General"),
+                "context_mismatch": True,
+            }]
+            try:
+                db.save_defect(
+                    project_id=state["project_id"], uid=uid,
+                    zone=str(zone_in.value or floor_v or "General"),
+                    subcontractor=sub_in.value.strip(),
+                    deadline_days=int(deadline_in.value),
+                    raise_type="qc_internal",
+                    photo_bytes=None,
+                    note=note,
+                    selected=selected,
+                    notice_pdf=None,
+                    engineer_name=engineer_in.value or "",
+                    place=str(place_in.value or loc_v or ""),
+                    defect_type="General",
+                )
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("Defect creation failed: " + str(ex),
+                           type="negative")
+                return
+
+            try:
+                db.activity_add(
+                    state["project_id"], state.get("user_id"),
+                    "inspection_" + status,
+                    target_type="defect", target_id=uid,
+                    details=str(insp_v)[:80],
+                    user_name=(state.get("user") or {}).get("name", ""))
+            except Exception:
+                pass
+
+            try:
+                istate["table_data"]["rows"][row_idx]["status"] = status
+                istate["table_data"]["rows"][row_idx]["note"] = note
+                istate["table_data"]["rows"][row_idx]["defect_uid"] = uid
+                istate["dirty"] = True
+            except Exception:
+                pass
+            ui.notify("Defect " + uid + " created.", type="positive")
+            dlg.close()
+            state["render_main"]()
+
+        def _cancel():
+            dlg.close()
+
+        with ui.element('div').style(
+            "display:flex;gap:8px;margin-top:16px;"
+        ):
+            ui.button("Confirm", icon="check",
+                      on_click=_confirm).classes(BTN_PRIMARY).style(
+                "flex:1;")
+            ui.button("Cancel", on_click=_cancel).classes(BTN_SOFT).style(
+                "flex:1;")
+    dlg.open()
+
+
+def _open_add_or_replace_dialog(state, istate, new_cols, new_rows,
+                                  filename, upload_status):
+    pid = state["project_id"]
+    existing = istate.get("table_data") or {}
+
+    def _apply_add():
+        merged = ins.merge_tables(existing, new_rows)
+        try:
+            db.inspection_table_upsert(
+                pid, istate["date"], filename, merged,
+                is_carried=False)
+            istate["table_data"] = merged
+            istate["source_filename"] = filename
+            istate["has_loaded"] = True
+            istate["loaded_date"] = istate["date"]
+            istate["edit_mode"] = True
+            ui.notify("Added " + str(merged.get("added", 0)) +
+                       " new inspection(s).", type="positive")
+        except Exception as ex:
+            ui.notify("Save failed: " + str(ex), type="negative")
+            return
+        dlg.close()
+        state["render_main"]()
+
+    def _apply_replace():
+        new_t = {"columns": new_cols,
+                 "rows": [{"cells": [str(c) for c in r],
+                            "status": "", "note": "",
+                            "defect_uid": ""} for r in new_rows]}
+        try:
+            db.inspection_table_upsert(
+                pid, istate["date"], filename, new_t,
+                is_carried=False)
+            istate["table_data"] = new_t
+            istate["source_filename"] = filename
+            istate["has_loaded"] = True
+            istate["loaded_date"] = istate["date"]
+            istate["edit_mode"] = True
+            ui.notify("Replaced with new table.", type="positive")
+        except Exception as ex:
+            ui.notify("Save failed: " + str(ex), type="negative")
+            return
+        dlg.close()
+        state["render_main"]()
+
+    with ui.dialog() as dlg, ui.card().style(
+        "padding:22px;min-width:320px;max-width:96vw;width:520px;"
+    ):
+        ui.label("A table already exists for " + istate["date"]).classes(
+            "h1").style("margin-bottom:6px;")
+        ui.label(
+            "Choose how to combine the newly uploaded plan with the "
+            "existing table for this date."
+        ).classes("mono-sm").style(
+            "line-height:1.6;color:#b8b8b8;margin-bottom:14px;")
+
+        ui.label("Existing: " +
+                  str(len((existing.get("rows") or []))) +
+                  " rows").classes("mono-sm").style(
+            "color:#b8b8b8;font-size:11px;")
+        ui.label("New upload: " + str(len(new_rows)) +
+                  " rows").classes("mono-sm").style(
+            "color:#b8b8b8;font-size:11px;margin-bottom:12px;")
+
+        with ui.element('div').style(
+            "display:flex;flex-direction:column;gap:8px;"
+        ):
+            ui.button("Add to existing", icon="add",
+                      on_click=_apply_add).classes(BTN_PRIMARY).style(
+                "width:100%;")
+            ui.button("Create new and replace existing", icon="swap_horiz",
+                      on_click=_apply_replace).classes(BTN_DANGER).style(
+                "width:100%;")
+            ui.button("Cancel", on_click=dlg.close).classes(
+                BTN_SOFT).style("width:100%;")
+    dlg.open()
